@@ -1,0 +1,34 @@
+{
+  "_comment": "Hex-grid calibration mapping CCRR codes to FULL-image pixel centers for materials/map/Americas_all.jpg (11772x7566). Flat-top hexes, even-q offset (EVEN columns shifted DOWN by half a row). Column-first CCRR ('0803' = col 08, row 03). Pinned 2026-06-30 interactively with Ray: 3 operator-confirmed anchor hexes (Olympia 0803, Augusta 8405, Puerto Rico 8243) read off the printed map + FFT-measured pitch, least-squares fit (all anchors <1px residual; geometry ratio 1.1540 vs ideal flat-top 1.1547). Independently validated at two UN-FITTED hexes (4025 Oklahoma, 7522 Richmond) where predicted CCRR == printed CCRR. SINGLE-segment uniform model (no seam, unlike TWU's board). ONLY LAND hexes are numbered/playable; ocean is blank (no hexes). Hex labels appear printed at/near the geometric center (NOT offset above like TWU's board) - confirm during terrain sampling.",
+  "orientation": "flat-top",
+  "offset_scheme": "even-q (even columns shifted DOWN by half row pitch)",
+  "image_full": [11772, 7566],
+  "col_pitch_x": 132.21,
+  "row_pitch_y": 152.58,
+  "odd_col_y_offset": 0.0,
+  "even_col_y_offset": 76.29,
+  "ref_hexes": [
+    {"hex": "0803", "x": 1262, "y": 655, "col": 8, "row": 3, "note": "Olympia (Pacific NW) - operator-confirmed anchor"},
+    {"hex": "8405", "x": 11310, "y": 962, "col": 84, "row": 5, "note": "Augusta, ME (NE Atlantic) - operator-confirmed anchor (Tesseract 96%)"},
+    {"hex": "8243", "x": 11045, "y": 6759, "col": 82, "row": 43, "note": "San Juan / Puerto Rico (SE) - operator-confirmed anchor"},
+    {"hex": "4025", "x": 5493, "y": 4013, "col": 40, "row": 25, "note": "Oklahoma/Kansas - independent spot-check, printed CCRR matched prediction"},
+    {"hex": "7522", "x": 10120, "y": 3479, "col": 75, "row": 22, "note": "Richmond, VA - independent spot-check, printed CCRR matched prediction"}
+  ],
+  "origin": {"col": 1, "row": 1, "x": 336.5, "y": 274.4, "note": "lattice origin (col 1 row 1 center, ODD column = no even-offset). Cols 1-6 are off-coast Pacific ocean (blank/unnumbered) but the coordinate system extends there; first numbered land column is ~07 at the coast."},
+  "x_model": {
+    "type": "uniform_linear",
+    "x_intercept_col0": 204.29,
+    "col_pitch_x": 132.21,
+    "note": "x = 204.29 + col*132.21  (col=1 -> 336.5). Single segment, no seam. cpx from Olympia(col8)->Augusta(col84) long baseline + FFT, residual <1px across all anchors."
+  },
+  "y_model": {
+    "type": "uniform_linear",
+    "y_intercept_row0": 121.82,
+    "row_pitch_y": 152.58,
+    "even_col_down_offset": 76.29,
+    "note": "y = 121.82 + row*152.58 + (col even ? 76.29 : 0)  (row=1 odd-col -> 274.4). Uniform across whole board; least-squares over 3 anchors, residual <1px. Ratio rpy/cpx=1.1540 (ideal flat-top 1.1547)."
+  },
+  "formula": "col=int(CCRR[:2]); row=int(CCRR[2:]); x = 204.29 + col*132.21; y = 121.82 + row*152.58 + ((col%2==0)? 76.29 : 0.0)   [pixels in FULL-image space]",
+  "confidence": "high",
+  "notes": "Pinned + independently validated 2026-06-30 (see _comment). Grid spans ~cols 1-89 x rows 1-49; numbered/PLAYABLE hexes are the LAND subset only (ocean is blank, no hexes - mask to land). Puerto Rico (8144/8243 + numbered neighbors) is a DISCONNECTED island cluster on the SAME global lattice, separated from the mainland by blank ocean - not an inset. NEXT (terrain digitization): hex-fill layer (water/clear/forest/towns, calibrated to known-terrain exemplar hexes, nearest-match) + hexside EDGE layer (rivers=thin solid lines, rail=lines, MOUNTAINS=thick brown granulated bands along hexsides). NOTE: mountains are HEXSIDE terrain in GotA, NOT hex-fill - that is why the first-pass interior-sampling classifier found only 2."
+}

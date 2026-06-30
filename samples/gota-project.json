@@ -1,0 +1,13 @@
+{
+  "name": "Guns of the Americas",
+  "map": "samples/gota-map.jpg",
+  "imageFull": [11772, 7566],
+  "hexgrid": "samples/gota-hexgrid.json",
+  "terrain": "samples/gota-terrain.json",
+  "hexsides": "samples/gota-hexsides.draft.json",
+  "traces": [
+    { "name": "rivers", "img": "samples/traces-display/rivers.png", "layer": "rivers" },
+    { "name": "mountains", "img": "samples/traces-display/mountains.png", "layer": "mountains" },
+    { "name": "impassible", "img": "samples/traces-display/impassible.png", "layer": "impassible" }
+  ]
+}
