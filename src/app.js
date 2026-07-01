@@ -162,6 +162,11 @@ async function main() {
       const text = await readFile(file);
       store.importTerrain(text);
       ui.status('Imported terrain.json', 2000);
+    },
+    importWmp: async (file) => {
+      const text = await readFile(file);
+      const count = store.importTerrain(text, { provenance: 'draft' });
+      ui.status(`Imported ${count || 0} hexes as WMP draft — refine + confirm (toggle Anomalies to see draft hexes)`, 4000);
     }
   });
 

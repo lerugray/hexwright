@@ -42,7 +42,7 @@ export class UI {
       'load-map', 'load-grid', 'load-terrain', 'load-sides', 'load-sample',
       'fit-view', 'undo', 'clear-select',
       'view-mode', 'toggle-brush', 'export-overlay', 'toggle-anomaly', 'load-palette', 'anomaly-status',
-      'import-sides', 'import-terrain', 'export-btn', 'export-popover',
+      'import-sides', 'import-terrain', 'import-wmp', 'export-btn', 'export-popover',
       'export-sides-file', 'export-sides-copy', 'export-terrain-file', 'export-terrain-copy',
       'inspector', 'inspector-close', 'inspector-hex', 'inspector-terrain',
       'hex-svg', 'hex-shape', 'hex-edges', 'edge-selects', 'inspector-features',
@@ -269,6 +269,7 @@ export class UI {
     this.els['load-sample'].addEventListener('click', handlers.sample);
     this.els['import-sides'].addEventListener('change', (e) => handlers.importSides(e.target.files[0]));
     this.els['import-terrain'].addEventListener('change', (e) => handlers.importTerrain(e.target.files[0]));
+    this.els['import-wmp'].addEventListener('change', (e) => handlers.importWmp(e.target.files[0]));
   }
 
   // ----------------- toolbar -----------------
