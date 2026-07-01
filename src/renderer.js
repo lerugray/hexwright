@@ -15,6 +15,7 @@ export class MapRenderer {
     this.highlighted = { hex: null, edge: null, neighbor: null };
 
     this.viewMode = 'both';          // 'map' | 'classification' | 'both'
+    this.overlayAlpha = 1;           // Both-view terrain-fill opacity (UI slider)
     this.anomalyMode = false;
 
     this.brush = { active: false, terrainKey: null, onPaint: null, onShiftClick: null };
@@ -399,7 +400,16 @@ export class MapRenderer {
 
     if (this.viewMode !== 'map' && state.grid && this.store.centers) {
       const fillMode = this.viewMode === 'classification' ? 'full' : 'overlay';
-      this._drawHexFills(ctx, this.view, fillMode);
+      if (fillMode === 'overlay') {
+        // Both view: terrain fills fade with the Overlay slider so the scan
+        // underneath stays traceable; hexsides/glyphs/grid keep full strength.
+        ctx.save();
+        ctx.globalAlpha = this.overlayAlpha;
+        this._drawHexFills(ctx, this.view, fillMode);
+        ctx.restore();
+      } else {
+        this._drawHexFills(ctx, this.view, fillMode);
+      }
       this._drawHexsides(ctx, this.view);
       this._drawFeatureGlyphs(ctx, this.view);
     }
