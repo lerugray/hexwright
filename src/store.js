@@ -43,6 +43,9 @@ export class ProjectStore {
     this.state = this.makeEmpty();
     this.undoStack = [];
     this.redoStack = [];
+    this.strokeActive = false;
+    this.strokeChanged = false;
+    this.strokeSnap = null;
     this.centers = null;
     this.adj = null;
     this.edgeIndex = null; // edgeKey -> featureKey[]
@@ -112,6 +115,9 @@ export class ProjectStore {
     }
     this.undoStack = [];
     this.redoStack = [];
+    this.strokeActive = false;
+    this.strokeChanged = false;
+    this.strokeSnap = null;
 
     const palette = this.palette || {};
     const terrAliases = palette.terrainAliases || {};
@@ -232,9 +238,34 @@ export class ProjectStore {
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance)
     };
+    if (this.strokeActive) {
+      if (!this.strokeSnap) this.strokeSnap = snap;
+      this.strokeChanged = true;
+      return;
+    }
     this.undoStack.push(snap);
     if (this.undoStack.length > MAX_UNDO) this.undoStack.shift();
     this.redoStack = [];
+  }
+
+  beginStroke() {
+    if (this.strokeActive) return;
+    this.strokeActive = true;
+    this.strokeChanged = false;
+    this.strokeSnap = null;
+  }
+
+  endStroke() {
+    if (!this.strokeActive) return false;
+    this.strokeActive = false;
+    if (this.strokeChanged && this.strokeSnap) {
+      this.undoStack.push(this.strokeSnap);
+      if (this.undoStack.length > MAX_UNDO) this.undoStack.shift();
+      this.redoStack = [];
+    }
+    this.strokeChanged = false;
+    this.strokeSnap = null;
+    return true;
   }
 
   canUndo() { return this.undoStack.length > 0; }
@@ -410,6 +441,23 @@ export class ProjectStore {
     else this.state.hexsides[key] = arr;
     this.rebuildIndex();
     this.notify('hexsides');
+  }
+
+  setHexsideFeature(a, b, featureKey, on = true) {
+    const pair = normalizePair(a, b);
+    const key = pairKey(pair.a, pair.b);
+    const current = this.edgeFeatures(pair.a, pair.b);
+    const has = current.includes(featureKey);
+    if ((on && has) || (!on && !has)) return false;
+    const arr = on
+      ? [...current, featureKey]
+      : current.filter(k => k !== featureKey);
+    this.pushUndo();
+    if (arr.length === 0) delete this.state.hexsides[key];
+    else this.state.hexsides[key] = arr;
+    this.rebuildIndex();
+    this.notify('hexsides');
+    return true;
   }
 
   importHexsides(input) {
