@@ -32,6 +32,7 @@ export class UI {
     this.edgePaintActive = false;
     this.edgePaintFeature = null;
     this.anomalyActive = false;
+    this.helpOpen = false;
 
     this.buildInspectorEdges();
     this.bindGlobal();
@@ -43,7 +44,7 @@ export class UI {
   gatherElements() {
     const ids = [
       'load-map', 'load-grid', 'load-terrain', 'load-sides', 'load-sample',
-      'fit-view', 'undo', 'clear-select',
+      'fit-view', 'undo', 'clear-select', 'toggle-help',
       'view-mode', 'toggle-brush', 'toggle-edge-paint', 'edge-paint-picker', 'export-overlay', 'toggle-anomaly', 'load-palette', 'anomaly-status',
       'import-sides', 'import-terrain', 'import-wmp', 'export-btn', 'export-popover',
       'import-twu',
@@ -51,7 +52,8 @@ export class UI {
       'inspector', 'inspector-close', 'inspector-hex', 'inspector-terrain',
       'hex-svg', 'hex-shape', 'hex-edges', 'edge-selects', 'inspector-features',
       'terrain-legend', 'hexside-legend', 'feature-legend', 'trace-controls', 'trace-opacity',
-      'overlay-opacity', 'toggle-nudge', 'count-land', 'layer-counts', 'status'
+      'overlay-opacity', 'toggle-nudge', 'count-land', 'layer-counts', 'status',
+      'help-overlay', 'close-help'
     ];
     for (const id of ids) this.els[id] = document.getElementById(id);
   }
@@ -223,10 +225,29 @@ export class UI {
 
   bindGlobal() {
     document.addEventListener('keydown', (e) => {
-      const typing = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT';
+      const tag = e.target?.tagName || '';
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+      if (e.key === 'Escape') {
+        if (this.helpOpen) {
+          e.preventDefault();
+          this.toggleHelp(false);
+          return;
+        }
+        if (!typing) this.closeInspector();
+        return;
+      }
+
       if (typing) return;
 
-      if (e.key === 'Escape') this.closeInspector();
+      if (this._isHelpToggleKey(e)) {
+        e.preventDefault();
+        this.toggleHelp();
+        return;
+      }
+
+      if (this.helpOpen) return;
+
       if (e.key.toLowerCase() === 'b') this.toggleBrush();
       if (e.key.toLowerCase() === 'e') this.toggleEdgePaint();
       if (e.key.toLowerCase() === 'n') this.toggleNudge();
@@ -270,6 +291,11 @@ export class UI {
     this.els['undo'].addEventListener('click', () => this.store.undo());
     this.els['clear-select'].addEventListener('click', () => this.closeInspector());
     this.els['inspector-close'].addEventListener('click', () => this.closeInspector());
+    this.els['toggle-help'].addEventListener('click', () => this.toggleHelp());
+    this.els['close-help'].addEventListener('click', () => this.toggleHelp(false));
+    this.els['help-overlay'].addEventListener('click', (e) => {
+      if (e.target === this.els['help-overlay']) this.toggleHelp(false);
+    });
     // The inspector floats over the map canvas, inside the same wrapper that has the
     // pan/hex-select pointer handler. Without this, a trusted click on any inspector
     // control also fires the canvas pointerdown/up -> it re-selects the hex under the
@@ -357,6 +383,27 @@ export class UI {
   setViewMode(mode) {
     this.renderer.setViewMode(mode);
     this._reflectViewMode();
+  }
+
+  _isHelpToggleKey(e) {
+    return e.key === '?' || (e.key === '/' && e.shiftKey);
+  }
+
+  toggleHelp(force) {
+    const next = typeof force === 'boolean' ? force : !this.helpOpen;
+    if (next === this.helpOpen) return;
+    this.helpOpen = next;
+    this.els['help-overlay'].hidden = !next;
+    document.body.classList.toggle('modal-open', next);
+    this._reflectHelp();
+    if (next) this.els['close-help'].focus();
+    else this.els['toggle-help'].focus();
+  }
+
+  _reflectHelp() {
+    const btn = this.els['toggle-help'];
+    btn.classList.toggle('active', this.helpOpen);
+    btn.setAttribute('aria-expanded', String(this.helpOpen));
   }
 
   cycleViewMode() {

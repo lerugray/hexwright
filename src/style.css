@@ -197,6 +197,14 @@ button:disabled, .file-btn:disabled {
 }
 #load-sample:hover { background: var(--accent-2); }
 
+.help-toggle {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
 .file-btn {
   display: inline-flex;
   align-items: center;
@@ -395,6 +403,124 @@ button:disabled, .file-btn:disabled {
   border-radius: 4px;
   padding: 1px 4px;
   font-size: 11px;
+}
+
+.help-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(5, 7, 9, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.help-overlay[hidden] {
+  display: none;
+}
+
+.help-modal {
+  width: min(860px, 100%);
+  max-height: min(88vh, 840px);
+  display: flex;
+  flex-direction: column;
+  border-color: var(--accent);
+  box-shadow: 0 16px 44px var(--shadow);
+}
+
+.help-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--chrome);
+}
+
+.help-modal-head h2 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+.help-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.help-modal-body {
+  margin-top: 10px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.help-section {
+  margin-top: 14px;
+}
+
+.help-section:first-child {
+  margin-top: 0;
+}
+
+.help-section h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.help-section ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.help-section li code {
+  font-family: var(--mono);
+  background: var(--chrome);
+  border: 1px solid var(--chrome-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+
+.help-modal kbd {
+  font-family: var(--mono);
+  background: var(--chrome);
+  border: 1px solid var(--chrome-2);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 11px;
+}
+
+.help-shortcuts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.help-shortcuts-table th,
+.help-shortcuts-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--chrome);
+}
+
+.help-shortcuts-table th {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .inspector {
