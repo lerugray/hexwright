@@ -7,3 +7,4 @@ node_modules/
 verify/*.png
 verify/export-*.json
 verify/wmp-out.json
+local/
