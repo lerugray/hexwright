@@ -341,7 +341,10 @@ async function main() {
       if (!restored.grid) restored.grid = project.grid;
       if (project.palette) restored.palette = project.palette;
       await loadAndRender(restored);
-      renderer.setViewMode('classification');
+      // The manifest brings a real map image — restore into Both view so the
+      // scan is visible for tracing (classification would hide it and make
+      // the Overlay slider a silent no-op).
+      renderer.setViewMode('both');
       ui.status(`Restored autosave for ${project.name}.`, 4500);
       return;
     }

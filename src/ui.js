@@ -294,7 +294,11 @@ export class UI {
 
     // Terrain-fill (classification overlay) opacity — lets the scan show
     // through in Both view for hand-tracing; hexsides/grid stay full-strength.
+    // Dragging it in Map/Classification view switches to Both first: the
+    // slider only means something where map AND fills are drawn together, so
+    // it must never silently no-op.
     this.els['overlay-opacity'].addEventListener('input', (e) => {
+      if (this.renderer.viewMode !== 'both') this.setViewMode('both');
       this.renderer.overlayAlpha = parseFloat(e.target.value);
       this.renderer.draw();
     });
