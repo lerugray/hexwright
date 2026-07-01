@@ -75,6 +75,50 @@ label.file-btn:focus-within {
 }
 .io-group { border-right: none; }
 
+.mode-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-right: 1px solid var(--chrome);
+}
+
+.seg {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--chrome-2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.seg button {
+  border: none;
+  border-radius: 0;
+  background: var(--chrome);
+  border-right: 1px solid var(--chrome-2);
+  padding: 6px 10px;
+}
+.seg button:last-child { border-right: none; }
+.seg button.active {
+  background: var(--accent);
+  color: #111;
+  font-weight: 600;
+}
+
+button.active {
+  background: var(--accent);
+  color: #111;
+  font-weight: 600;
+}
+
+.anomaly-status {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 button, .file-btn {
   appearance: none;
   border: 1px solid var(--chrome-2);
@@ -194,6 +238,16 @@ button:disabled, .file-btn:disabled {
   display: grid;
   gap: 5px;
 }
+.legend-section { margin-top: 8px; }
+.legend-section:first-child { margin-top: 0; }
+.legend-section h3 {
+  margin: 0 0 5px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 600;
+}
 .legend-list li {
   display: flex;
   align-items: center;
@@ -205,6 +259,20 @@ button:disabled, .file-btn:disabled {
   height: 16px;
   border-radius: 3px;
   border: 1px solid var(--chrome-2);
+  flex-shrink: 0;
+}
+.legend-line {
+  width: 22px;
+  height: 0;
+  border-top: 3px solid;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.legend-glyph {
+  width: 18px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1;
   flex-shrink: 0;
 }
 
@@ -361,6 +429,11 @@ button:disabled, .file-btn:disabled {
 .hex-edge.dim {
   stroke: #333;
 }
+.hex-edge-layer {
+  fill: none;
+  stroke-linecap: round;
+  pointer-events: none;
+}
 
 .edge-selects {
   position: absolute;
@@ -370,20 +443,84 @@ button:disabled, .file-btn:disabled {
   height: 100%;
   pointer-events: none;
 }
-.edge-selects select {
+.edge-features {
   position: absolute;
   transform: translate(-50%, -50%);
-  width: 84px;
-  padding: 2px 4px;
-  font-size: 11px;
-  background: var(--desk);
-  color: var(--text);
-  border: 1px solid var(--chrome-2);
-  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   pointer-events: auto;
 }
-.edge-selects select:focus {
-  border-color: var(--accent);
+.edge-features.disabled { opacity: 0.35; }
+.edge-label {
+  font-size: 9px;
+  color: var(--muted);
+  background: var(--desk);
+  padding: 0 4px;
+  border-radius: 3px;
+  line-height: 1;
+}
+.edge-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+  max-width: 78px;
+}
+.edge-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  background: var(--desk);
+  border: 1px solid var(--chrome-2);
+  cursor: pointer;
+}
+.edge-chip input[type="checkbox"] {
+  width: 11px;
+  height: 11px;
+  cursor: pointer;
+  margin: 0;
+}
+.edge-chip input[type="checkbox"]:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.inspector-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--chrome);
+}
+.feature-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  background: var(--desk);
+  border: 1px solid var(--chrome-2);
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.feature-chip input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+.feature-glyph {
+  font-size: 14px;
+  line-height: 1;
+}
+.feature-label {
+  color: var(--text);
 }
 
 .inspector-hint {
@@ -431,3 +568,9 @@ button:disabled, .file-btn:disabled {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* v2 chip fix: checkbox is a visual-only indicator; the chip div handles clicks
+   (avoids the label+checkbox double-toggle on trusted clicks). */
+.feature-chip input[type="checkbox"],
+.edge-chip input[type="checkbox"] { pointer-events: none; }
+.feature-chip, .edge-chip { cursor: pointer; }

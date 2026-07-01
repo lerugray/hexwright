@@ -63,23 +63,22 @@ try {
   rec('click a hex opens the inspector', opened, opened?`hex=${hexCode}`:'inspector never unhid across scan');
   if (opened) await page.screenshot({path: VER+'/02-inspector.png'});
 
-  // Assign a river on the first edge select, if inspector open
+  // Assign a river via a TRUSTED click on the edge chip (NOT dispatchEvent — a synthetic
+  // event hides the label/checkbox double-toggle class of bug that a real click exposes).
   let assigned=false;
   if (opened) {
-    const selCount = await page.locator('#edge-selects select').count();
-    if (selCount>0) {
-      // pick an edge whose neighbor exists (has real options); set to 'river'
-      await page.locator('#edge-selects select').first().selectOption({label:'river'}).catch(async()=>{
-        await page.locator('#edge-selects select').first().selectOption('river').catch(()=>{});
-      });
+    const riverChip = page.locator('#edge-selects .edge-chip[data-feature="river"]').filter({ has: page.locator('input:not([disabled])') }).first();
+    const chipCount = await page.locator('#edge-selects .edge-chip[data-feature="river"]').count();
+    if (await riverChip.count() > 0) {
+      await riverChip.scrollIntoViewIfNeeded().catch(()=>{});
+      await riverChip.click({ timeout: 5000 }).catch(()=>{});
       await sleep(400);
       assigned = await page.evaluate(()=>{
-        // check any river recorded in store/export
-        try{ const s=window.hexwright.store; const st=s.getState?s.getState():(s.state||s);
-          const j=JSON.stringify(st); return /river/i.test(j) && (j.match(/"a"\s*:/g)||[]).length>0; }catch(e){ return false; }
+        try { const s = window.hexwright.store; const hs = JSON.stringify(s.state?.hexsides || {}); return /"river"/.test(hs); }
+        catch(e) { return false; }
       });
     }
-    rec('assign a river hexside via inspector', assigned, `${selCount} edge selects`);
+    rec('assign a river hexside via inspector (trusted click)', assigned, `${chipCount} river chips`);
     await page.screenshot({path: VER+'/03-assigned.png'});
   }
 

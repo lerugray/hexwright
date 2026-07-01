@@ -77,13 +77,17 @@ export class ProjectStore {
 
   async loadPalette(urlOrObject) {
     if (urlOrObject && typeof urlOrObject === 'object' && !urlOrObject.then) {
-      this.palette = deepClone(urlOrObject);
-      return this.palette;
+      return this.setPalette(urlOrObject);
     }
     const url = urlOrObject || DEFAULT_PALETTE_URL;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to load palette: ${url}`);
-    this.palette = await res.json();
+    return this.setPalette(await res.json());
+  }
+
+  setPalette(configObject) {
+    this.palette = deepClone(configObject);
+    this.notify('palette');
     return this.palette;
   }
 
