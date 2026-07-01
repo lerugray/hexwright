@@ -37,6 +37,7 @@
       <button id="fit-view" type="button" title="Fit to view">Fit</button>
       <button id="undo" type="button" title="Undo last action">Undo</button>
       <button id="clear-select" type="button" title="Close inspector">Esc</button>
+      <button id="toggle-help" class="help-toggle" type="button" title="Help (?)" aria-haspopup="dialog" aria-expanded="false" aria-controls="help-overlay">?</button>
     </div>
 
     <div class="mode-group" role="group" aria-label="View and edit mode">
@@ -173,6 +174,87 @@
   </main>
 
   <div id="status" class="status" aria-live="polite"></div>
+
+  <div id="help-overlay" class="help-overlay" hidden>
+    <div class="help-modal panel" role="dialog" aria-modal="true" aria-labelledby="help-title">
+      <div class="help-modal-head">
+        <h2 id="help-title">Hexwright Help</h2>
+        <button id="close-help" type="button" class="help-close" aria-label="Close help">×</button>
+      </div>
+
+      <div class="help-modal-body">
+        <section class="help-section">
+          <h3>Getting loaded</h3>
+          <ul>
+            <li>Use <strong>Load GotA sample</strong> for a ready-to-edit example project.</li>
+            <li>Open with <code>?project=&lt;manifest-url&gt;</code> to boot directly into a manifest (for example <code>?project=samples/twu-project.json</code>).</li>
+            <li>Or load your own files with the top bar pickers: <strong>Map</strong>, <strong>Grid</strong>, <strong>Terrain</strong>, and <strong>Sides</strong>.</li>
+          </ul>
+        </section>
+
+        <section class="help-section">
+          <h3>View and opacity controls</h3>
+          <ul>
+            <li><strong>Map</strong>: scan + trace overlays.</li>
+            <li><strong>Classification</strong>: terrain/features/hexsides only (no scan photo).</li>
+            <li><strong>Both</strong>: scan and classification together; press <kbd>V</kbd> to cycle modes.</li>
+            <li><strong>Overlay → Terrain fill opacity</strong> controls fill strength in Both view.</li>
+            <li><strong>Traces → Opacity</strong> sets trace image transparency.</li>
+          </ul>
+        </section>
+
+        <section class="help-section">
+          <h3>Painting and alignment</h3>
+          <ul>
+            <li><strong>Edge paint</strong> (<kbd>E</kbd>): pick a feature chip, then click an edge to toggle it, drag to paint it on, hold <kbd>Alt</kbd> to erase. One drag stroke becomes one undo step.</li>
+            <li><strong>Brush</strong> (<kbd>B</kbd>): paint terrain onto hexes directly.</li>
+            <li><strong>Nudge map</strong> (<kbd>N</kbd>): drag the scan under the grid, or use arrow keys; hold <kbd>Shift</kbd> with arrows for 10-pixel steps. The map offset autosaves with the project.</li>
+          </ul>
+        </section>
+
+        <section class="help-section">
+          <h3>Inspector, history, and save safety</h3>
+          <ul>
+            <li>Click a hex to open the inspector and edit terrain, in-hex features, and edge features.</li>
+            <li>Use <strong>Undo</strong> (button or <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Z</kbd>) to step back edits.</li>
+            <li>Redo history is tracked internally, but this build does not expose a redo button or shortcut.</li>
+            <li>Sessions autosave per project in your browser storage and can be restored when you reopen the app or load a matching manifest.</li>
+          </ul>
+        </section>
+
+        <section class="help-section">
+          <h3>Checks and data pipelines</h3>
+          <ul>
+            <li><strong>Anomalies</strong> highlights unclassified hexes, orphan hexsides, and draft hexes.</li>
+            <li><strong>Import WMP draft</strong> loads parser terrain output as draft so you can refine and confirm it.</li>
+            <li><strong>Import TWU layer</strong> accepts one file at a time (rivers or rail).</li>
+            <li><strong>Export → TWU rivers+rail</strong> downloads both <code>rivers.json</code> and <code>rail.json</code>.</li>
+          </ul>
+        </section>
+
+        <section class="help-section">
+          <h3>Keyboard shortcuts</h3>
+          <table class="help-shortcuts-table">
+            <thead>
+              <tr><th>Shortcut</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><kbd>?</kbd></td><td>Open/close this help overlay</td></tr>
+              <tr><td><kbd>Esc</kbd></td><td>Close help (or close inspector when help is closed)</td></tr>
+              <tr><td><kbd>V</kbd></td><td>Cycle view mode: Map → Both → Classification</td></tr>
+              <tr><td><kbd>E</kbd></td><td>Toggle edge paint mode</td></tr>
+              <tr><td><kbd>B</kbd></td><td>Toggle terrain brush mode</td></tr>
+              <tr><td><kbd>N</kbd></td><td>Toggle nudge map mode</td></tr>
+              <tr><td><kbd>Arrow keys</kbd></td><td>Nudge map by 1 pixel (while nudge mode is on)</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>Arrow keys</kbd></td><td>Nudge map by 10 pixels (while nudge mode is on)</td></tr>
+              <tr><td><kbd>1</kbd>…<kbd>9</kbd>, <kbd>0</kbd></td><td>Quick-select terrain by palette position (0 = 10th entry)</td></tr>
+              <tr><td><kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Z</kbd></td><td>Undo</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="src/app.js"></script>
 </body>
