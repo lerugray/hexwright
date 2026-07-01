@@ -24,6 +24,93 @@ function loadImage(url) {
   });
 }
 
+const TWU_RIVERS_SHAPE = '{"hexsides":[["a","b"], ...]}';
+const TWU_RAIL_SHAPE = '{"links":[["a","b"], ...]} (also accepts {a,b} link entries)';
+
+function parseStrictPairArray(list, fieldName) {
+  if (!Array.isArray(list)) {
+    throw new Error(`Expected ${fieldName} shape ${TWU_RIVERS_SHAPE}.`);
+  }
+  return list.map((entry, idx) => {
+    if (!Array.isArray(entry) || entry.length !== 2) {
+      throw new Error(`${fieldName}[${idx}] must be a 2-element [a,b] array.`);
+    }
+    const a = String(entry[0] || '').trim();
+    const b = String(entry[1] || '').trim();
+    if (!a || !b || a === b) {
+      throw new Error(`${fieldName}[${idx}] must contain two distinct hex codes.`);
+    }
+    return [a, b];
+  });
+}
+
+function parseFlexiblePairArray(list, fieldName) {
+  if (!Array.isArray(list)) {
+    throw new Error(`Expected ${fieldName} shape ${TWU_RAIL_SHAPE}.`);
+  }
+  return list.map((entry, idx) => {
+    if (Array.isArray(entry)) {
+      if (entry.length !== 2) throw new Error(`${fieldName}[${idx}] must be [a,b] or {a,b}.`);
+      const a = String(entry[0] || '').trim();
+      const b = String(entry[1] || '').trim();
+      if (!a || !b || a === b) throw new Error(`${fieldName}[${idx}] must contain two distinct hex codes.`);
+      return [a, b];
+    }
+    if (!entry || typeof entry !== 'object') {
+      throw new Error(`${fieldName}[${idx}] must be [a,b] or {a,b}.`);
+    }
+    const a = String(entry.a || '').trim();
+    const b = String(entry.b || '').trim();
+    if (!a || !b || a === b) throw new Error(`${fieldName}[${idx}] must contain two distinct hex codes.`);
+    return [a, b];
+  });
+}
+
+function detectTwuLayer(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error(`Expected a TWU JSON object: rivers ${TWU_RIVERS_SHAPE} OR rail ${TWU_RAIL_SHAPE}.`);
+  }
+
+  const hasHexsides = Object.prototype.hasOwnProperty.call(payload, 'hexsides');
+  const hasLinks = Object.prototype.hasOwnProperty.call(payload, 'links');
+  const errors = [];
+
+  let riversValid = false;
+  let railValid = false;
+
+  if (hasHexsides) {
+    try {
+      parseStrictPairArray(payload.hexsides, 'hexsides');
+      riversValid = true;
+    } catch (err) {
+      errors.push(err.message);
+    }
+  }
+  if (hasLinks) {
+    try {
+      parseFlexiblePairArray(payload.links, 'links');
+      railValid = true;
+    } catch (err) {
+      errors.push(err.message);
+    }
+  }
+
+  if (riversValid && !railValid) return 'rivers';
+  if (railValid && !riversValid) return 'rail';
+  if (riversValid && railValid) {
+    throw new Error('File matches both rivers and rail shapes. Import one TWU layer per file.');
+  }
+
+  if (errors.length) {
+    throw new Error(`TWU import validation failed: ${errors[0]} Expected rivers ${TWU_RIVERS_SHAPE} OR rail ${TWU_RAIL_SHAPE}.`);
+  }
+  throw new Error(`TWU import validation failed: expected rivers ${TWU_RIVERS_SHAPE} OR rail ${TWU_RAIL_SHAPE}.`);
+}
+
+function twuCommentDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 const LEGACY_SESSION_KEY = 'hexwright:session';
 const SESSION_KEY_PREFIX = 'hexwright.session.';
 const MAX_SESSION_SLOTS = 6;
@@ -166,12 +253,16 @@ async function loadProjectFromManifest(manifestUrl) {
   const gridUrl = new URL(manifest.hexgrid, base).href;
   const terrainUrl = new URL(manifest.terrain, base).href;
   const sidesUrl = manifest.hexsides ? new URL(manifest.hexsides, base).href : null;
+  const paletteUrl = typeof manifest.palette === 'string'
+    ? new URL(manifest.palette, base).href
+    : null;
 
-  const [mapImg, grid, terrain, hexsides] = await Promise.all([
+  const [mapImg, grid, terrain, hexsides, palette] = await Promise.all([
     loadImage(mapUrl),
     fetch(gridUrl).then(r => r.json()),
     fetch(terrainUrl).then(r => r.json()),
-    sidesUrl ? fetch(sidesUrl).then(r => r.json()) : Promise.resolve(null)
+    sidesUrl ? fetch(sidesUrl).then(r => r.json()) : Promise.resolve(null),
+    paletteUrl ? fetch(paletteUrl).then(r => r.json()) : Promise.resolve(manifest.palette && typeof manifest.palette === 'object' ? manifest.palette : null)
   ]);
 
   const traces = [];
@@ -198,6 +289,7 @@ async function loadProjectFromManifest(manifestUrl) {
     grid,
     terrain,
     hexsides,
+    palette,
     traces
   };
 }
@@ -247,6 +339,7 @@ async function main() {
       restored.traces = project.traces || [];
       if (!restored.imageFull || !restored.imageFull[0]) restored.imageFull = project.imageFull;
       if (!restored.grid) restored.grid = project.grid;
+      if (project.palette) restored.palette = project.palette;
       await loadAndRender(restored);
       renderer.setViewMode('classification');
       ui.status(`Restored autosave for ${project.name}.`, 4500);
@@ -320,6 +413,42 @@ async function main() {
       const text = await readFile(file);
       const count = store.importTerrain(text, { provenance: 'draft' });
       ui.status(`Imported ${count || 0} hexes as WMP draft — refine + confirm (toggle Anomalies to see draft hexes)`, 4000);
+    },
+    importTwu: async (file) => {
+      if (!file) return;
+      try {
+        const text = await readFile(file);
+        const payload = JSON.parse(text);
+        const layer = detectTwuLayer(payload);
+        if (layer === 'rivers') {
+          const touched = store.importTwuRivers(payload, { provenance: 'draft' });
+          ui.status(`Imported TWU rivers (${touched} touched hexes, marked draft).`, 4500);
+        } else {
+          const touched = store.importTwuRail(payload, { provenance: 'draft' });
+          ui.status(`Imported TWU rail (${touched} touched hexes, marked draft).`, 4500);
+        }
+      } catch (err) {
+        ui.status(`TWU import failed: ${err.message}`, 7000);
+      }
+    },
+    exportTwu: async () => {
+      const rivers = store.exportTwuRiversObject();
+      const rail = store.exportTwuRailObject();
+      if (!rivers._comment) rivers._comment = `edited in Hexwright v2.1 ${twuCommentDate()}`;
+      if (!rail._comment) rail._comment = `edited in Hexwright v2.1 ${twuCommentDate()}`;
+
+      const downloadObject = (filename, obj) => {
+        const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      };
+
+      downloadObject('rivers.json', rivers);
+      downloadObject('rail.json', rail);
+      ui.status('Exported TWU rivers.json + rail.json', 3000);
     }
   });
 

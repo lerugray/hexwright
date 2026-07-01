@@ -1,0 +1,8 @@
+{
+  "_comment": "Synthetic TWU rivers fixture",
+  "hexsides": [
+    ["2312", "2412"],
+    ["2412", "2512"],
+    ["2512", "2612"]
+  ]
+}

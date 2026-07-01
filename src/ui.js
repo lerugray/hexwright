@@ -46,7 +46,8 @@ export class UI {
       'fit-view', 'undo', 'clear-select',
       'view-mode', 'toggle-brush', 'toggle-edge-paint', 'edge-paint-picker', 'export-overlay', 'toggle-anomaly', 'load-palette', 'anomaly-status',
       'import-sides', 'import-terrain', 'import-wmp', 'export-btn', 'export-popover',
-      'export-sides-file', 'export-sides-copy', 'export-terrain-file', 'export-terrain-copy',
+      'import-twu',
+      'export-sides-file', 'export-sides-copy', 'export-terrain-file', 'export-terrain-copy', 'export-twu',
       'inspector', 'inspector-close', 'inspector-hex', 'inspector-terrain',
       'hex-svg', 'hex-shape', 'hex-edges', 'edge-selects', 'inspector-features',
       'terrain-legend', 'hexside-legend', 'feature-legend', 'trace-controls', 'trace-opacity',
@@ -273,6 +274,9 @@ export class UI {
     this.els['export-sides-copy'].addEventListener('click', () => this._copy(this.store.exportHexsidesJson(), 'hexsides.json'));
     this.els['export-terrain-file'].addEventListener('click', () => this._download('terrain.json', this.store.exportTerrainJson()));
     this.els['export-terrain-copy'].addEventListener('click', () => this._copy(this.store.exportTerrainJson(), 'terrain.json'));
+    this.els['export-twu'].addEventListener('click', () => {
+      if (this.loadHandlers?.exportTwu) this.loadHandlers.exportTwu();
+    });
 
     this.els['inspector-terrain'].addEventListener('change', () => {
       const key = this.els['inspector-terrain'].value;
@@ -313,6 +317,7 @@ export class UI {
   }
 
   setLoadHandlers(handlers) {
+    this.loadHandlers = handlers || {};
     this.els['load-map'].addEventListener('change', (e) => handlers.map(e.target.files[0]));
     this.els['load-grid'].addEventListener('change', (e) => handlers.grid(e.target.files[0]));
     this.els['load-terrain'].addEventListener('change', (e) => handlers.terrain(e.target.files[0]));
@@ -321,6 +326,7 @@ export class UI {
     this.els['import-sides'].addEventListener('change', (e) => handlers.importSides(e.target.files[0]));
     this.els['import-terrain'].addEventListener('change', (e) => handlers.importTerrain(e.target.files[0]));
     this.els['import-wmp'].addEventListener('change', (e) => handlers.importWmp(e.target.files[0]));
+    this.els['import-twu'].addEventListener('change', (e) => handlers.importTwu(e.target.files[0]));
   }
 
   // ----------------- toolbar -----------------

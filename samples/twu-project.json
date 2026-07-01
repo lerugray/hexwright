@@ -1,0 +1,10 @@
+{
+  "name": "The Wargame Universe (template)",
+  "_comment": "Serve from the parent directory and keep twu-deluxe-digital as a sibling checkout. Update paths below to match your local TWU repo layout.",
+  "map": "../twu-deluxe-digital/data/board-web.jpg",
+  "imageFull": [3165, 2125],
+  "hexgrid": "../twu-deluxe-digital/data/hexgrid.json",
+  "terrain": "../twu-deluxe-digital/data/terrain.json",
+  "hexsides": "../twu-deluxe-digital/data/rivers.json",
+  "palette": "palettes/twu.json"
+}
