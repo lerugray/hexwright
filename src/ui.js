@@ -51,7 +51,7 @@ export class UI {
       'inspector', 'inspector-close', 'inspector-hex', 'inspector-terrain',
       'hex-svg', 'hex-shape', 'hex-edges', 'edge-selects', 'inspector-features',
       'terrain-legend', 'hexside-legend', 'feature-legend', 'trace-controls', 'trace-opacity',
-      'count-land', 'layer-counts', 'status'
+      'overlay-opacity', 'count-land', 'layer-counts', 'status'
     ];
     for (const id of ids) this.els[id] = document.getElementById(id);
   }
@@ -290,6 +290,13 @@ export class UI {
       for (let i = 0; i < this.store.state.traces.length; i++) {
         this.store.setTraceOpacity(i, op);
       }
+    });
+
+    // Terrain-fill (classification overlay) opacity — lets the scan show
+    // through in Both view for hand-tracing; hexsides/grid stay full-strength.
+    this.els['overlay-opacity'].addEventListener('input', (e) => {
+      this.renderer.overlayAlpha = parseFloat(e.target.value);
+      this.renderer.draw();
     });
 
     // View mode
