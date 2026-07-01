@@ -119,6 +119,53 @@ button.active {
   text-overflow: ellipsis;
 }
 
+.edge-paint-picker {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  max-width: 320px;
+  overflow-x: auto;
+  padding: 1px 0;
+}
+.edge-paint-picker.active {
+  display: inline-flex;
+}
+.edge-paint-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--chrome-2);
+  border-radius: 999px;
+  background: var(--desk);
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1;
+}
+.edge-paint-chip:hover {
+  border-color: var(--muted);
+}
+.edge-paint-chip.selected {
+  border-color: var(--accent);
+  background: #322214;
+}
+.edge-paint-chip-swatch {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.edge-paint-chip-swatch-dash {
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0 2px,
+    rgba(0, 0, 0, 0.2) 2px 3px
+  );
+}
+.edge-paint-chip-label {
+  white-space: nowrap;
+}
+
 button, .file-btn {
   appearance: none;
   border: 1px solid var(--chrome-2);

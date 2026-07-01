@@ -1,7 +1,7 @@
 import {
   TERRAIN_COLORS, HEXSIDE_COLORS,
   hexCenter, hexPolygon, sharedEdgeEndpoints, pointInPolygon,
-  worldToScreen, screenToWorld, edgeNeighbor, hexRadius
+  worldToScreen, screenToWorld, edgeNeighbor, hexRadius, nearestEdge
 } from './geometry.js';
 
 export class MapRenderer {
@@ -19,6 +19,15 @@ export class MapRenderer {
 
     this.brush = { active: false, terrainKey: null, onPaint: null, onShiftClick: null };
     this.brushLastHex = null;
+    this.edgePaint = {
+      active: false,
+      featureKey: null,
+      onToggle: null,
+      onSet: null,
+      onStrokeStart: null,
+      onStrokeEnd: null
+    };
+    this.edgePaintStroke = null;
 
     this.isDragging = false;
     this.dragStart = null;
@@ -85,6 +94,24 @@ export class MapRenderer {
     this.brush = { ...this.brush, ...config };
   }
 
+  setEdgePaint(config) {
+    this.edgePaint = { ...this.edgePaint, ...config };
+    if (!this.edgePaint.active) {
+      this.edgePaintStroke = null;
+      this.clearHighlight();
+    }
+  }
+
+  nearestEdgeAtScreen(pt) {
+    return nearestEdge(pt.x, pt.y, {
+      view: this.view,
+      grid: this.store.state.grid,
+      centers: this.store.centers,
+      hexAtScreen: (screenPt) => this.hexAtScreen(screenPt),
+      toleranceFactor: 0.35
+    });
+  }
+
   hexAtScreen(pt) {
     const world = screenToWorld(pt, this.view);
     return this._hexAt(world);
@@ -107,6 +134,23 @@ export class MapRenderer {
 
     wrap.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
+      if (this.edgePaint.active) {
+        this.isDragging = true;
+        this.clickMoved = false;
+        this.dragStart = { x: e.clientX, y: e.clientY };
+        this.edgePaintStroke = {
+          alt: !!e.altKey,
+          moved: false,
+          strokeOpened: false,
+          touched: new Set()
+        };
+        const pt = this._eventToScreen(e);
+        const hit = this.nearestEdgeAtScreen(pt);
+        if (hit) this.setHighlight(hit.hex, hit.edgeIndex, hit.neighbor);
+        else this.clearHighlight();
+        wrap.setPointerCapture(e.pointerId);
+        return;
+      }
       this.isDragging = true;
       this.clickMoved = false;
       this.dragStart = { x: e.clientX, y: e.clientY };
@@ -116,6 +160,35 @@ export class MapRenderer {
     });
 
     wrap.addEventListener('pointermove', (e) => {
+      if (this.edgePaint.active) {
+        const pt = this._eventToScreen(e);
+        const hit = this.nearestEdgeAtScreen(pt);
+        if (hit) this.setHighlight(hit.hex, hit.edgeIndex, hit.neighbor);
+        else this.clearHighlight();
+
+        if (!this.isDragging) return;
+
+        const session = this.edgePaintStroke;
+        if (!session) return;
+        const dx = e.clientX - this.dragStart.x;
+        const dy = e.clientY - this.dragStart.y;
+        if (!session.moved && Math.hypot(dx, dy) > 3) {
+          session.moved = true;
+          if (this.edgePaint.onStrokeStart) {
+            this.edgePaint.onStrokeStart();
+            session.strokeOpened = true;
+          }
+        }
+        if (session.moved && hit) {
+          if (!session.touched.has(hit.edgeKey)) {
+            session.touched.add(hit.edgeKey);
+            if (this.edgePaint.onSet) {
+              this.edgePaint.onSet(hit, { erase: session.alt });
+            }
+          }
+        }
+        return;
+      }
       if (!this.isDragging) {
         this._hoverAt(e);
         return;
@@ -141,6 +214,33 @@ export class MapRenderer {
       if (!this.isDragging) return;
       this.isDragging = false;
       wrap.releasePointerCapture(e.pointerId);
+      if (this.edgePaint.active) {
+        const pt = this._eventToScreen(e);
+        const hit = this.nearestEdgeAtScreen(pt);
+        if (hit) this.setHighlight(hit.hex, hit.edgeIndex, hit.neighbor);
+        else this.clearHighlight();
+        const session = this.edgePaintStroke;
+        this.edgePaintStroke = null;
+        if (session) {
+          if (session.moved) {
+            if (hit && !session.touched.has(hit.edgeKey)) {
+              if (this.edgePaint.onSet) {
+                this.edgePaint.onSet(hit, { erase: session.alt });
+              }
+            }
+            if (session.strokeOpened && this.edgePaint.onStrokeEnd) {
+              this.edgePaint.onStrokeEnd();
+            }
+          } else if (hit) {
+            if (session.alt) {
+              if (this.edgePaint.onSet) this.edgePaint.onSet(hit, { erase: true });
+            } else if (this.edgePaint.onToggle) {
+              this.edgePaint.onToggle(hit);
+            }
+          }
+        }
+        return;
+      }
       if (this.brush.active) {
         const pt = this._eventToScreen(e);
         const hex = this.hexAtScreen(pt);
@@ -161,6 +261,22 @@ export class MapRenderer {
 
     wrap.addEventListener('pointerleave', () => {
       this.isDragging = false;
+      if (this.edgePaint.active) {
+        const session = this.edgePaintStroke;
+        this.edgePaintStroke = null;
+        if (session && session.strokeOpened && this.edgePaint.onStrokeEnd) {
+          this.edgePaint.onStrokeEnd();
+        }
+      }
+    });
+
+    wrap.addEventListener('pointercancel', () => {
+      this.isDragging = false;
+      const session = this.edgePaintStroke;
+      this.edgePaintStroke = null;
+      if (session && session.strokeOpened && this.edgePaint.onStrokeEnd) {
+        this.edgePaint.onStrokeEnd();
+      }
     });
 
     wrap.addEventListener('wheel', (e) => {
@@ -191,6 +307,17 @@ export class MapRenderer {
 
   _hoverAt(e) {
     const pt = this._eventToScreen(e);
+    if (this.edgePaint.active) {
+      const hit = this.nearestEdgeAtScreen(pt);
+      if (hit) {
+        this.setHighlight(hit.hex, hit.edgeIndex, hit.neighbor);
+        this.canvas.title = `${hit.a}|${hit.b}`;
+      } else {
+        this.clearHighlight();
+        this.canvas.title = '';
+      }
+      return;
+    }
     const world = screenToWorld(pt, this.view);
     const hit = this._hexAt(world);
     if (hit) {

@@ -65,6 +65,31 @@ export function edgeMidpoint(code, edgeIndex, grid) {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
+const EVEN_DOWN_EDGE_OFFSETS = {
+  even: [[1, 1], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, 0]],
+  odd: [[1, 0], [0, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]
+};
+
+const EVEN_UP_EDGE_OFFSETS = {
+  even: [[1, 0], [0, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]],
+  odd: [[1, 1], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, 0]]
+};
+
+function edgeOffsetsForCode(code, grid) {
+  const { col } = parseCCRR(code);
+  const evenColOffset = grid?.even_col_y_offset ?? grid?.y_model?.even_col_down_offset ?? 0;
+  const scheme = evenColOffset >= 0 ? EVEN_DOWN_EDGE_OFFSETS : EVEN_UP_EDGE_OFFSETS;
+  return (col % 2 === 0) ? scheme.even : scheme.odd;
+}
+
+export function edgeNeighborCode(code, edgeIndex, grid) {
+  const { col, row } = parseCCRR(code);
+  const offsets = edgeOffsetsForCode(code, grid);
+  const pair = offsets[edgeIndex];
+  if (!pair) return null;
+  return formatCCRR(col + pair[0], row + pair[1]);
+}
+
 export function sharedEdgeEndpoints(aCode, bCode, grid) {
   const ca = hexCenter(aCode, grid);
   const cb = hexCenter(bCode, grid);
@@ -113,19 +138,9 @@ export function buildAdjacency(centers, threshold = ADJACENCY_THRESHOLD) {
 }
 
 export function edgeNeighbor(code, edgeIndex, centers, grid) {
-  const mid = edgeMidpoint(code, edgeIndex, grid);
-  let best = null;
-  let bestD = Infinity;
-  const threshold = (hexRadius(grid) * 1.8);
-  for (const [other, c] of Object.entries(centers)) {
-    if (other === code) continue;
-    const d = distance(mid, c);
-    if (d < bestD && d < threshold) {
-      bestD = d;
-      best = other;
-    }
-  }
-  return best;
+  const neighbor = edgeNeighborCode(code, edgeIndex, grid);
+  if (!neighbor) return null;
+  return centers && centers[neighbor] ? neighbor : null;
 }
 
 export function pointInPolygon(pt, poly) {
@@ -160,4 +175,78 @@ export function normalizePair(a, b) {
 
 export function pairsEqual(p1, p2) {
   return (p1.a === p2.a && p1.b === p2.b) || (p1.a === p2.b && p1.b === p2.a);
+}
+
+export function nearestEdge(px, py, opts = {}) {
+  const {
+    view,
+    grid,
+    centers,
+    hexAtScreen,
+    toleranceFactor = 0.35
+  } = opts;
+  if (!grid || !centers || typeof hexAtScreen !== 'function' || !view) return null;
+
+  let hex = hexAtScreen({ x: px, y: py });
+  if (!hex) {
+    // Border clicks can land exactly on polygon edges where point-in-polygon
+    // returns false; probe a tiny fixed screen-space ring to recover a host hex.
+    const probes = [
+      [-2, 0], [2, 0], [0, -2], [0, 2],
+      [-2, -2], [2, -2], [-2, 2], [2, 2]
+    ];
+    for (const [dx, dy] of probes) {
+      hex = hexAtScreen({ x: px + dx, y: py + dy });
+      if (hex) break;
+    }
+  }
+  if (!hex || !centers[hex]) return null;
+
+  const world = screenToWorld({ x: px, y: py }, view);
+  const tolerance = hexRadius(grid) * toleranceFactor;
+  const candidates = new Map();
+
+  const addHexCandidates = (code) => {
+    for (let edgeIndex = 0; edgeIndex < 6; edgeIndex++) {
+      const neighbor = edgeNeighborCode(code, edgeIndex, grid);
+      if (!neighbor || !centers[neighbor]) continue;
+      const pair = normalizePair(code, neighbor);
+      const edgeKey = pairKey(pair.a, pair.b);
+      if (candidates.has(edgeKey)) continue;
+      candidates.set(edgeKey, {
+        edgeKey,
+        a: pair.a,
+        b: pair.b,
+        hex: code,
+        neighbor,
+        edgeIndex
+      });
+    }
+  };
+
+  addHexCandidates(hex);
+
+  const poly = hexPolygon(hex, grid);
+  const nearVertex = poly.some(pt => distance(world, pt) <= tolerance * 1.15);
+  if (nearVertex) {
+    for (let edgeIndex = 0; edgeIndex < 6; edgeIndex++) {
+      const neighbor = edgeNeighborCode(hex, edgeIndex, grid);
+      if (!neighbor || !centers[neighbor]) continue;
+      addHexCandidates(neighbor);
+    }
+  }
+
+  let best = null;
+  let bestDistance = Infinity;
+  for (const cand of candidates.values()) {
+    const mid = edgeMidpoint(cand.hex, cand.edgeIndex, grid);
+    const d = distance(world, mid);
+    if (d < bestDistance) {
+      bestDistance = d;
+      best = cand;
+    }
+  }
+
+  if (!best || bestDistance > tolerance) return null;
+  return { ...best, distance: bestDistance, tolerance };
 }

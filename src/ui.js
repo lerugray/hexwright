@@ -29,11 +29,14 @@ export class UI {
     this.brushTerrain = 'clear';
     this.lastBrushHex = null;
     this.lastBrushScreen = null;
+    this.edgePaintActive = false;
+    this.edgePaintFeature = null;
     this.anomalyActive = false;
 
     this.buildInspectorEdges();
     this.bindGlobal();
     this.bindControls();
+    this._setupEdgePaint();
     this.updateUI();
   }
 
@@ -41,7 +44,7 @@ export class UI {
     const ids = [
       'load-map', 'load-grid', 'load-terrain', 'load-sides', 'load-sample',
       'fit-view', 'undo', 'clear-select',
-      'view-mode', 'toggle-brush', 'export-overlay', 'toggle-anomaly', 'load-palette', 'anomaly-status',
+      'view-mode', 'toggle-brush', 'toggle-edge-paint', 'edge-paint-picker', 'export-overlay', 'toggle-anomaly', 'load-palette', 'anomaly-status',
       'import-sides', 'import-terrain', 'import-wmp', 'export-btn', 'export-popover',
       'export-sides-file', 'export-sides-copy', 'export-terrain-file', 'export-terrain-copy',
       'inspector', 'inspector-close', 'inspector-hex', 'inspector-terrain',
@@ -89,6 +92,7 @@ export class UI {
 
     this._rebuildEdgeControls();
     this._rebuildFeatureControls();
+    this._rebuildEdgePaintPicker();
   }
 
   _rebuildEdgeControls() {
@@ -181,6 +185,41 @@ export class UI {
     }
   }
 
+  _rebuildEdgePaintPicker() {
+    const container = this.els['edge-paint-picker'];
+    if (!container) return;
+    container.innerHTML = '';
+    const palette = this.store.getPalette();
+    const features = palette?.hexsideFeatures || [];
+    if (!features.length) return;
+    if (!this.edgePaintFeature || !features.some(f => f.key === this.edgePaintFeature)) {
+      this.edgePaintFeature = features[0].key;
+    }
+    for (const f of features) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'edge-paint-chip';
+      chip.dataset.feature = f.key;
+      chip.title = f.label || f.key;
+      chip.setAttribute('aria-label', f.label || f.key);
+
+      const swatch = document.createElement('span');
+      swatch.className = 'edge-paint-chip-swatch';
+      swatch.style.background = f.color || '#888';
+      if (f.dash) swatch.classList.add('edge-paint-chip-swatch-dash');
+      chip.appendChild(swatch);
+
+      const text = document.createElement('span');
+      text.className = 'edge-paint-chip-label';
+      text.textContent = f.label || f.key;
+      chip.appendChild(text);
+
+      chip.addEventListener('click', () => this.setEdgePaintFeature(f.key));
+      container.appendChild(chip);
+    }
+    this._reflectEdgePaint();
+  }
+
   bindGlobal() {
     document.addEventListener('keydown', (e) => {
       const typing = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT';
@@ -188,6 +227,7 @@ export class UI {
 
       if (e.key === 'Escape') this.closeInspector();
       if (e.key.toLowerCase() === 'b') this.toggleBrush();
+      if (e.key.toLowerCase() === 'e') this.toggleEdgePaint();
       if (e.key.toLowerCase() === 'v') this.cycleViewMode();
       if (/^[0-9]$/.test(e.key)) {
         const idx = e.key === '0' ? 9 : parseInt(e.key, 10) - 1;
@@ -257,6 +297,7 @@ export class UI {
 
     // Brush
     this.els['toggle-brush'].addEventListener('click', () => this.toggleBrush());
+    this.els['toggle-edge-paint'].addEventListener('click', () => this.toggleEdgePaint());
 
     // Export overlay PNG
     this.els['export-overlay'].addEventListener('click', () => {
@@ -308,8 +349,13 @@ export class UI {
 
   toggleBrush() {
     this.brushActive = !this.brushActive;
+    if (this.brushActive && this.edgePaintActive) {
+      this.edgePaintActive = false;
+      this._setupEdgePaint();
+    }
     this._setupBrush();
     this._reflectBrush();
+    this._reflectEdgePaint();
   }
 
   setBrushTerrain(key) {
@@ -338,6 +384,54 @@ export class UI {
     const t = palette?.terrain?.find(x => x.key === this.brushTerrain);
     btn.title = `Brush mode (b) — ${t ? t.label : this.brushTerrain}`;
     btn.textContent = `Brush${t ? ': ' + t.label : ''}`;
+  }
+
+  toggleEdgePaint() {
+    this.edgePaintActive = !this.edgePaintActive;
+    if (this.edgePaintActive && this.brushActive) {
+      this.brushActive = false;
+      this._setupBrush();
+    }
+    this._setupEdgePaint();
+    this._reflectBrush();
+    this._reflectEdgePaint();
+  }
+
+  setEdgePaintFeature(key) {
+    this.edgePaintFeature = key;
+    this._setupEdgePaint();
+    this._reflectEdgePaint();
+  }
+
+  _setupEdgePaint() {
+    this.renderer.setEdgePaint({
+      active: this.edgePaintActive,
+      featureKey: this.edgePaintFeature,
+      onStrokeStart: () => this.store.beginStroke(),
+      onStrokeEnd: () => this.store.endStroke(),
+      onToggle: (hit) => {
+        if (!this.edgePaintFeature) return;
+        this.store.toggleHexsideFeature(hit.a, hit.b, this.edgePaintFeature);
+      },
+      onSet: (hit, opts = {}) => {
+        if (!this.edgePaintFeature) return;
+        const erase = !!opts.erase;
+        this.store.setHexsideFeature(hit.a, hit.b, this.edgePaintFeature, !erase);
+      }
+    });
+  }
+
+  _reflectEdgePaint() {
+    const btn = this.els['toggle-edge-paint'];
+    const picker = this.els['edge-paint-picker'];
+    const palette = this.store.getPalette();
+    const feature = (palette?.hexsideFeatures || []).find(f => f.key === this.edgePaintFeature);
+    btn.classList.toggle('active', this.edgePaintActive);
+    btn.title = `Edge paint mode (e)${feature ? ` — ${feature.label || feature.key}` : ''}`;
+    picker.classList.toggle('active', this.edgePaintActive);
+    picker.querySelectorAll('.edge-paint-chip').forEach((chip) => {
+      chip.classList.toggle('selected', chip.dataset.feature === this.edgePaintFeature);
+    });
   }
 
   _selectTerrainByIndex(idx) {
@@ -568,11 +662,13 @@ export class UI {
       this._lastPalette = palette;
       this._rebuildEdgeControls();
       this._rebuildFeatureControls();
+      this._rebuildEdgePaintPicker();
       this.els['inspector-terrain'].dataset.ready = '';
       this.els['terrain-legend'].dataset.ready = '';
       this.els['hexside-legend'].dataset.ready = '';
       this.els['feature-legend'].dataset.ready = '';
       this.els['trace-controls'].dataset.ready = '';
+      this._setupEdgePaint();
       if (this.inspectorHex) this._refreshInspector();
     }
 
@@ -584,6 +680,7 @@ export class UI {
     this.els['undo'].disabled = !this.store.canUndo();
     this._reflectViewMode();
     this._reflectBrush();
+    this._reflectEdgePaint();
 
     if (this.inspectorHex && !paletteChanged) {
       this._refreshInspector();
