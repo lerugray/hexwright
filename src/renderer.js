@@ -1,5 +1,5 @@
 import {
-  TERRAIN_COLORS, HEXSIDE_COLORS, EDITABLE_LAYERS,
+  TERRAIN_COLORS, HEXSIDE_COLORS,
   hexCenter, hexPolygon, sharedEdgeEndpoints, pointInPolygon,
   worldToScreen, screenToWorld, edgeNeighbor
 } from './geometry.js';
@@ -230,6 +230,18 @@ export class MapRenderer {
     }
   }
 
+  _terrainColor(type) {
+    const palette = this.store.getPalette();
+    if (palette && palette.terrain) {
+      const t = palette.terrain.find(x => x.key === type);
+      if (t) {
+        const c = t.color;
+        return { fill: `${c}40`, line: `${c}73` };
+      }
+    }
+    return TERRAIN_COLORS[type] || TERRAIN_COLORS.clear;
+  }
+
   _drawHexFills(s) {
     const ctx = this.ctx;
     const grid = this.store.state.grid;
@@ -240,7 +252,7 @@ export class MapRenderer {
     ctx.lineWidth = 1.2 / s;
     for (const code of Object.keys(this.store.centers)) {
       const type = terrain[code];
-      const colors = TERRAIN_COLORS[type] || TERRAIN_COLORS.clear;
+      const colors = this._terrainColor(type);
       const poly = hexPolygon(code, grid);
       ctx.beginPath();
       ctx.moveTo(poly[0].x, poly[0].y);
@@ -273,32 +285,53 @@ export class MapRenderer {
     ctx.restore();
   }
 
+  _hexsideStyle(featureKey) {
+    const palette = this.store.getPalette();
+    if (palette && palette.hexsideFeatures) {
+      const f = palette.hexsideFeatures.find(x => x.key === featureKey);
+      if (f) {
+        return {
+          stroke: f.color,
+          width: f.key === 'rail' ? 3.0 : 3.5,
+          dash: f.dash ? [6, 5] : []
+        };
+      }
+    }
+    return HEXSIDE_COLORS[featureKey] || { stroke: '#888', width: 3.0, dash: [] };
+  }
+
   _drawHexsides(s) {
     const ctx = this.ctx;
     const grid = this.store.state.grid;
-    const seen = new Set();
     ctx.save();
     ctx.translate(this.view.panX, this.view.panY);
     ctx.scale(s, s);
-    for (const layer of EDITABLE_LAYERS) {
-      const list = this.store.state.hexsides[layer] || [];
-      const style = HEXSIDE_COLORS[layer];
-      if (!style) continue;
-      ctx.beginPath();
-      ctx.strokeStyle = style.stroke;
-      ctx.lineWidth = style.width / s;
-      ctx.setLineDash(style.dash.map(v => v / s));
-      for (const pair of list) {
-        const key = pair.a < pair.b ? `${pair.a}|${pair.b}` : `${pair.b}|${pair.a}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const ep = sharedEdgeEndpoints(pair.a, pair.b, grid);
-        if (!ep) continue;
-        ctx.moveTo(ep.a.x, ep.a.y);
-        ctx.lineTo(ep.b.x, ep.b.y);
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
+    const spacing = 3.5 / s;
+    for (const [edgeKey, features] of Object.entries(this.store.state.hexsides || {})) {
+      if (!features || !features.length) continue;
+      const [a, b] = edgeKey.split('|');
+      if (!a || !b) continue;
+      const ep = sharedEdgeEndpoints(a, b, grid);
+      if (!ep) continue;
+      const dx = ep.b.x - ep.a.x;
+      const dy = ep.b.y - ep.a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = -dy / len;
+      const uy = dx / len;
+      const n = features.length;
+      const offsetBase = -((n - 1) * spacing) / 2;
+      features.forEach((featureKey, idx) => {
+        const style = this._hexsideStyle(featureKey);
+        const off = offsetBase + idx * spacing;
+        ctx.beginPath();
+        ctx.strokeStyle = style.stroke;
+        ctx.lineWidth = style.width / s;
+        ctx.setLineDash(style.dash.map(v => v / s));
+        ctx.moveTo(ep.a.x + ux * off, ep.a.y + uy * off);
+        ctx.lineTo(ep.b.x + ux * off, ep.b.y + uy * off);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
     }
     ctx.restore();
   }

@@ -176,8 +176,10 @@ export class UI {
   _fillTerrainSelect() {
     const sel = this.els['inspector-terrain'];
     if (sel.dataset.ready) return;
-    sel.innerHTML = Object.keys(TERRAIN_COLORS).map(t =>
-      `<option value="${t}">${t}</option>`
+    const palette = this.store.getPalette();
+    const items = palette && palette.terrain ? palette.terrain : Object.keys(TERRAIN_COLORS).map(k => ({ key: k, label: k }));
+    sel.innerHTML = items.map(t =>
+      `<option value="${t.key}">${t.label || t.key}</option>`
     ).join('');
     sel.dataset.ready = '1';
   }
@@ -238,12 +240,18 @@ export class UI {
     if (!this.inspectorHex) return;
     const centers = this.store.centers;
     const grid = this.store.state.grid;
+    const palette = this.store.getPalette();
     for (let i = 0; i < 6; i++) {
       const nb = edgeNeighbor(this.inspectorHex, i, centers, grid);
       const layer = nb ? this.store.getEdgeLayer(this.inspectorHex, nb) : '';
-      const style = layer && HEXSIDE_COLORS[layer];
-      if (style) {
-        this.edgeLines[i].style.stroke = style.stroke;
+      let color = '';
+      if (layer) {
+        const feature = palette && palette.hexsideFeatures && palette.hexsideFeatures.find(f => f.key === layer || f.exportLayer === layer);
+        if (feature) color = feature.color;
+        else if (HEXSIDE_COLORS[layer]) color = HEXSIDE_COLORS[layer].stroke;
+      }
+      if (color) {
+        this.edgeLines[i].style.stroke = color;
         this.edgeLines[i].style.strokeWidth = '8';
       } else {
         this.edgeLines[i].style.stroke = '';
@@ -276,24 +284,39 @@ export class UI {
   _updateLegend() {
     const ul = this.els['terrain-legend'];
     if (ul.dataset.ready) return;
-    ul.innerHTML = Object.entries(TERRAIN_COLORS).map(([type, c]) =>
-      `<li><span class="legend-swatch" style="background:${c.fill};border-color:${c.line}"></span>${type}</li>`
-    ).join('');
+    const palette = this.store.getPalette();
+    if (palette && palette.terrain) {
+      ul.innerHTML = palette.terrain.map(t =>
+        `<li><span class="legend-swatch" style="background:${t.color};border-color:${t.color}"></span>${t.label || t.key}</li>`
+      ).join('');
+    } else {
+      ul.innerHTML = Object.entries(TERRAIN_COLORS).map(([type, c]) =>
+        `<li><span class="legend-swatch" style="background:${c.fill};border-color:${c.line}"></span>${type}</li>`
+      ).join('');
+    }
     ul.dataset.ready = '1';
   }
 
   _updateTraceControls() {
     const container = this.els['trace-controls'];
     if (container.dataset.ready) return;
-    container.innerHTML = this.store.state.traces.map((t, i) => `
+    const palette = this.store.getPalette();
+    container.innerHTML = this.store.state.traces.map((t, i) => {
+      let color = '#888';
+      if (palette && palette.hexsideFeatures) {
+        const f = palette.hexsideFeatures.find(x => x.key === t.layer || x.exportLayer === t.layer);
+        if (f) color = f.color;
+      }
+      if (color === '#888' && HEXSIDE_COLORS[t.layer]) color = HEXSIDE_COLORS[t.layer].stroke;
+      return `
       <div class="trace-row">
         <label>
           <input type="checkbox" data-trace="${i}" ${t.on ? 'checked' : ''} />
-          <span class="layer-dot" style="background:${HEXSIDE_COLORS[t.layer]?.stroke || '#888'}"></span>
+          <span class="layer-dot" style="background:${color}"></span>
           ${t.name}
         </label>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
     container.querySelectorAll('input[data-trace]').forEach(ch => {
       ch.addEventListener('change', (e) => {
         this.store.setTraceOn(Number(e.target.dataset.trace), e.target.checked);
@@ -306,12 +329,20 @@ export class UI {
     const counts = this.store.getCounts();
     this.els['count-land'].textContent = counts.land;
     const lc = this.els['layer-counts'];
-    lc.innerHTML = EDITABLE_LAYERS.map(l => `
+    const palette = this.store.getPalette();
+    lc.innerHTML = EDITABLE_LAYERS.map(l => {
+      let color = '#888';
+      if (palette && palette.hexsideFeatures) {
+        const f = palette.hexsideFeatures.find(x => x.exportLayer === l || x.key === l);
+        if (f) color = f.color;
+      }
+      if (color === '#888' && HEXSIDE_COLORS[l]) color = HEXSIDE_COLORS[l].stroke;
+      return `
       <div class="layer-count">
-        <span><span class="layer-dot" style="background:${HEXSIDE_COLORS[l]?.stroke || '#888'}"></span>${LAYER_LABELS[l] || l}</span>
+        <span><span class="layer-dot" style="background:${color}"></span>${LAYER_LABELS[l] || l}</span>
         <span class="mono">${counts.layers[l] || 0}</span>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
   }
 
   status(msg, timeout = 0) {

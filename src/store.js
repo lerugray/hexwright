@@ -1,28 +1,41 @@
 import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency } from './geometry.js';
 
 const MAX_UNDO = 64;
+const DEFAULT_PALETTE_URL = 'palettes/gota.json';
+
+// Legacy v1 grouped layers (all possible) so migration/export preserve any shape.
+const V1_EXPORT_LAYERS = ['rivers', 'streams', 'roads', 'rails', 'mountains', 'cliffs',
+  'escarpments', 'walls', 'bridges', 'impassible'];
 
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
 }
 
-function emptyHexsides() {
-  const out = {};
-  for (const layer of EDITABLE_LAYERS) out[layer] = [];
-  return out;
+function pairKey(a, b) {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
-function buildEdgeIndex(hexsides, centers, grid) {
-  const idx = new Map();
-  for (const layer of EDITABLE_LAYERS) {
-    const list = hexsides[layer] || [];
-    for (const pair of list) {
-      const { a, b } = pair;
-      const key = a < b ? `${a}|${b}` : `${b}|${a}`;
-      idx.set(key, layer);
-    }
-  }
-  return idx;
+function isV1Project(project) {
+  // v1 has no schemaVersion; v2 stores a top-level schemaVersion.
+  return project && !project.schemaVersion;
+}
+
+function normalizeTerrainKey(value, aliases) {
+  if (!value || typeof value !== 'string') return null;
+  const key = value.trim().toLowerCase();
+  if (aliases && aliases[key]) return aliases[key];
+  return key;
+}
+
+function normalizeHexsideKey(value, aliases) {
+  if (!value || typeof value !== 'string') return null;
+  const key = value.trim().toLowerCase();
+  if (aliases && aliases[key]) return aliases[key];
+  return key;
+}
+
+function emptyHexsidesState() {
+  return {};
 }
 
 export class ProjectStore {
@@ -32,20 +45,25 @@ export class ProjectStore {
     this.redoStack = [];
     this.centers = null;
     this.adj = null;
-    this.edgeIndex = null;
+    this.edgeIndex = null; // edgeKey -> featureKey[]
     this.listeners = [];
+    this.palette = null;
+    this.palettePromise = null;
   }
 
   makeEmpty() {
     return {
       name: '',
-      mapImage: null,       // HTMLImageElement (downscaled display map)
+      mapImage: null,
       imageFull: [0, 0],
       grid: null,
       terrain: { terrain: {} },
-      hexsides: emptyHexsides(),
-      traces: [],           // { name, img: HTMLImageElement, layer, on, opacity }
-      loadedHexsides: null  // original imported file for preserving extra layers
+      hexFeatures: {},
+      hexsides: emptyHexsidesState(),
+      provenance: {},
+      traces: [],
+      loadedHexsides: null,
+      schemaVersion: 2
     };
   }
 
@@ -55,26 +73,128 @@ export class ProjectStore {
     for (const cb of this.listeners) cb(reason);
   }
 
-  setProject(patch) {
-    this.pushUndo();
-    Object.assign(this.state, patch);
+  getPalette() { return this.palette; }
+
+  async loadPalette(urlOrObject) {
+    if (urlOrObject && typeof urlOrObject === 'object' && !urlOrObject.then) {
+      this.palette = deepClone(urlOrObject);
+      return this.palette;
+    }
+    const url = urlOrObject || DEFAULT_PALETTE_URL;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to load palette: ${url}`);
+    this.palette = await res.json();
+    return this.palette;
+  }
+
+  ensurePalette() {
+    if (this.palette) return Promise.resolve(this.palette);
+    if (this.palettePromise) return this.palettePromise;
+    this.palettePromise = this.loadPalette(DEFAULT_PALETTE_URL)
+      .catch(err => {
+        console.error('Default palette failed:', err);
+        return null;
+      });
+    return this.palettePromise;
+  }
+
+  // ----------------- project loading / migration -----------------
+
+  async loadProject(project) {
+    if (project && project.palette && typeof project.palette === 'object') {
+      await this.loadPalette(project.palette);
+    } else {
+      await this.ensurePalette();
+    }
+    this.undoStack = [];
+    this.redoStack = [];
+
+    const palette = this.palette || {};
+    const terrAliases = palette.terrainAliases || {};
+    const sideAliases = palette.hexsideAliases || {};
+
+    const migrated = this.migrateToV2(project, terrAliases, sideAliases);
+
+    this.state = {
+      name: project.name || '',
+      mapImage: project.mapImage || null,
+      imageFull: project.imageFull || [0, 0],
+      grid: project.grid || null,
+      terrain: { terrain: deepClone(migrated.terrain || {}) },
+      hexFeatures: deepClone(migrated.hexFeatures || {}),
+      hexsides: deepClone(migrated.hexsides || emptyHexsidesState()),
+      provenance: deepClone(migrated.provenance || {}),
+      traces: project.traces || [],
+      loadedHexsides: project.hexsides ? deepClone(project.hexsides) : null,
+      schemaVersion: 2
+    };
+
     this.rebuildIndex();
     this.notify('project');
   }
 
-  loadProject({ name, mapImage, imageFull, grid, terrain, hexsides, traces }) {
-    this.undoStack = [];
-    this.redoStack = [];
-    this.state = {
-      name: name || '',
-      mapImage,
-      imageFull: imageFull || [0, 0],
-      grid,
-      terrain: terrain || { terrain: {} },
-      hexsides: deepClone(hexsides || emptyHexsides()),
-      traces: traces || [],
-      loadedHexsides: hexsides ? deepClone(hexsides) : null
-    };
+  migrateToV2(project, terrAliases, sideAliases) {
+    if (!project) return {};
+    const terrain = {};
+    const hexFeatures = {};
+    const hexsides = {};
+    const provenance = {};
+
+    const sourceTerrain = project.terrain && project.terrain.terrain
+      ? project.terrain.terrain
+      : (project.terrain || {});
+    for (const code of Object.keys(sourceTerrain)) {
+      const key = normalizeTerrainKey(sourceTerrain[code], terrAliases);
+      if (key) terrain[code] = key;
+    }
+
+    if (isV1Project(project)) {
+      // v1 hexsides are grouped export-layer lists; migrate into per-edge arrays.
+      for (const layer of V1_EXPORT_LAYERS) {
+        const list = project.hexsides && project.hexsides[layer];
+        if (!Array.isArray(list)) continue;
+        for (const pair of list) {
+          const a = pair.a, b = pair.b;
+          if (!a || !b) continue;
+          const key = pairKey(a, b);
+          const featureKey = this._toFeatureKey(layer);
+          if (!featureKey) continue;
+          const arr = hexsides[key] || (hexsides[key] = []);
+          if (!arr.includes(featureKey)) arr.push(featureKey);
+        }
+      }
+    } else {
+      // Already v2: copy per-edge arrays, aliasing feature keys.
+      const sourceHexsides = project.hexsides || {};
+      for (const key of Object.keys(sourceHexsides)) {
+        const arr = sourceHexsides[key];
+        if (!Array.isArray(arr)) continue;
+        const normalized = [];
+        for (const f of arr) {
+          const k = this._toFeatureKey(f);
+          if (k && !normalized.includes(k)) normalized.push(k);
+        }
+        if (normalized.length) hexsides[key] = normalized;
+      }
+      const sourceFeatures = project.hexFeatures || {};
+      for (const code of Object.keys(sourceFeatures)) {
+        const arr = sourceFeatures[code];
+        if (Array.isArray(arr)) hexFeatures[code] = deepClone(arr);
+      }
+      const sourceProv = project.provenance || {};
+      for (const code of Object.keys(sourceProv)) {
+        if (sourceProv[code] === 'draft' || sourceProv[code] === 'confirmed') {
+          provenance[code] = sourceProv[code];
+        }
+      }
+    }
+
+    return { terrain, hexFeatures, hexsides, provenance };
+  }
+
+  setProject(patch) {
+    this.pushUndo();
+    Object.assign(this.state, patch);
     this.rebuildIndex();
     this.notify('project');
   }
@@ -88,13 +208,25 @@ export class ProjectStore {
     }
     this.centers = buildLandIndex(this.state.terrain, this.state.grid);
     this.adj = buildAdjacency(this.centers);
-    this.edgeIndex = buildEdgeIndex(this.state.hexsides, this.centers, this.state.grid);
+    this.edgeIndex = this.buildEdgeIndex(this.state.hexsides);
   }
+
+  buildEdgeIndex(hexsides) {
+    const idx = new Map();
+    for (const [key, arr] of Object.entries(hexsides || {})) {
+      if (arr && arr.length) idx.set(key, [...arr]);
+    }
+    return idx;
+  }
+
+  // ----------------- undo / redo -----------------
 
   pushUndo() {
     const snap = {
       terrain: deepClone(this.state.terrain),
-      hexsides: deepClone(this.state.hexsides)
+      hexFeatures: deepClone(this.state.hexFeatures),
+      hexsides: deepClone(this.state.hexsides),
+      provenance: deepClone(this.state.provenance)
     };
     this.undoStack.push(snap);
     if (this.undoStack.length > MAX_UNDO) this.undoStack.shift();
@@ -102,90 +234,254 @@ export class ProjectStore {
   }
 
   canUndo() { return this.undoStack.length > 0; }
+  canRedo() { return this.redoStack.length > 0; }
 
   undo() {
     if (!this.canUndo()) return false;
     const snap = this.undoStack.pop();
     this.redoStack.push({
       terrain: deepClone(this.state.terrain),
-      hexsides: deepClone(this.state.hexsides)
+      hexFeatures: deepClone(this.state.hexFeatures),
+      hexsides: deepClone(this.state.hexsides),
+      provenance: deepClone(this.state.provenance)
     });
-    this.state.terrain = snap.terrain;
-    this.state.hexsides = snap.hexsides;
+    this.applySnap(snap);
     this.rebuildIndex();
     this.notify('undo');
     return true;
   }
 
-  setTerrainType(code, type) {
-    if (!this.state.terrain.terrain || this.state.terrain.terrain[code] === type) return;
+  redo() {
+    if (!this.canRedo()) return false;
+    const snap = this.redoStack.pop();
+    this.undoStack.push({
+      terrain: deepClone(this.state.terrain),
+      hexFeatures: deepClone(this.state.hexFeatures),
+      hexsides: deepClone(this.state.hexsides),
+      provenance: deepClone(this.state.provenance)
+    });
+    this.applySnap(snap);
+    this.rebuildIndex();
+    this.notify('redo');
+    return true;
+  }
+
+  applySnap(snap) {
+    this.state.terrain = snap.terrain;
+    this.state.hexFeatures = snap.hexFeatures;
+    this.state.hexsides = snap.hexsides;
+    this.state.provenance = snap.provenance;
+  }
+
+  // ----------------- terrain -----------------
+
+  setTerrain(code, key) {
+    const current = this.state.terrain.terrain[code];
+    if (current === key) return;
     this.pushUndo();
-    this.state.terrain.terrain[code] = type;
+    this.state.terrain.terrain[code] = key;
+    this.state.provenance[code] = 'confirmed';
+    this.centers = buildLandIndex(this.state.terrain, this.state.grid);
+    this.adj = buildAdjacency(this.centers);
     this.notify('terrain');
   }
 
-  setEdgeLayer(code, edgeIndex, layer, neighbor) {
-    const pair = normalizePair(code, neighbor);
-    const key = `${pair.a}|${pair.b}`;
-    const current = this.edgeIndex.get(key) || null;
-    if (current === layer) return; // '' means none
-    this.pushUndo();
+  // Legacy alias kept for ui.js/renderer.js until multi-select lands.
+  setTerrainType(code, type) {
+    this.setTerrain(code, type);
+  }
 
-    // remove from any editable layer
-    for (const l of EDITABLE_LAYERS) {
-      const list = this.state.hexsides[l] || (this.state.hexsides[l] = []);
-      this.state.hexsides[l] = list.filter(p => !(p.a === pair.a && p.b === pair.b));
+  importTerrain(input, opts = {}) {
+    const data = typeof input === 'string' ? JSON.parse(input) : input;
+    const palette = this.palette || {};
+    const aliases = palette.terrainAliases || {};
+    const source = data.terrain || data;
+    if (!source || typeof source !== 'object') return;
+
+    this.pushUndo();
+    let count = 0;
+    for (const code of Object.keys(source)) {
+      const key = normalizeTerrainKey(source[code], aliases);
+      if (!key) continue;
+      this.state.terrain.terrain[code] = key;
+      if (opts.provenance === 'draft') this.state.provenance[code] = 'draft';
+      count++;
     }
-    // add if assigned
-    if (layer && EDITABLE_LAYERS.includes(layer)) {
-      this.state.hexsides[layer].push(pair);
-      this.state.hexsides[layer].sort((p1, p2) =>
-        (p1.a < p2.a ? -1 : p1.a > p2.a ? 1 : p1.b < p2.b ? -1 : 1)
-      );
+    this.centers = buildLandIndex(this.state.terrain, this.state.grid);
+    this.adj = buildAdjacency(this.centers);
+    this.notify('terrain');
+    return count;
+  }
+
+  // ----------------- hex features -----------------
+
+  getHexFeatures(code) {
+    return this.state.hexFeatures[code] ? [...this.state.hexFeatures[code]] : [];
+  }
+
+  setHexFeatures(code, keysArray) {
+    const next = Array.isArray(keysArray) ? keysArray.slice() : [];
+    const current = this.state.hexFeatures[code] || [];
+    if (current.length === next.length && next.every((k, i) => current[i] === k)) return;
+    this.pushUndo();
+    if (next.length) this.state.hexFeatures[code] = next;
+    else delete this.state.hexFeatures[code];
+    this.notify('hexFeatures');
+  }
+
+  toggleHexFeature(code, key) {
+    const arr = this.getHexFeatures(code);
+    const i = arr.indexOf(key);
+    if (i >= 0) arr.splice(i, 1);
+    else arr.push(key);
+    this.setHexFeatures(code, arr);
+  }
+
+  // ----------------- hexsides (per-edge arrays) -----------------
+
+  _toCanonicalHexside(value) {
+    return this._toFeatureKey(value);
+  }
+
+  _toFeatureKey(value) {
+    if (!value || typeof value !== 'string') return '';
+    const palette = this.palette || {};
+    const aliases = palette.hexsideAliases || {};
+    const lower = value.trim().toLowerCase();
+    if (aliases[lower]) return aliases[lower];
+    for (const f of palette.hexsideFeatures || []) {
+      if (f.key === lower) return f.key;
+      if (f.exportLayer && f.exportLayer.toLowerCase() === lower) return f.key;
     }
+    return lower;
+  }
+
+  _toExportLayer(featureKey) {
+    if (!featureKey) return '';
+    const palette = this.palette || {};
+    for (const f of palette.hexsideFeatures || []) {
+      if (f.key === featureKey) return f.exportLayer || f.key;
+    }
+    return featureKey;
+  }
+
+  edgeFeatures(a, b) {
+    const key = pairKey(a, b);
+    return this.edgeIndex.get(key) || [];
+  }
+
+  getEdgeLayer(code, neighbor) {
+    // Backward-compatible single-layer read for the current UI.
+    const features = this.edgeFeatures(code, neighbor);
+    return features.length ? this._toExportLayer(features[0]) : null;
+  }
+
+  setEdgeLayer(code, edgeIndex, layer, neighbor) {
+    // Backward-compatible single-layer write for the current UI.
+    const pair = normalizePair(code, neighbor);
+    const key = pairKey(pair.a, pair.b);
+    const canonical = layer ? this._toCanonicalHexside(layer) : '';
+    const current = this.edgeFeatures(pair.a, pair.b);
+    if (current.length === 1 && current[0] === canonical) return;
+    this.pushUndo();
+    if (canonical) this.state.hexsides[key] = [canonical];
+    else delete this.state.hexsides[key];
     this.rebuildIndex();
     this.notify('hexsides');
   }
 
-  getEdgeLayer(code, neighbor) {
-    const pair = normalizePair(code, neighbor);
-    return this.edgeIndex.get(`${pair.a}|${pair.b}`) || null;
+  toggleHexsideFeature(a, b, featureKey) {
+    const pair = normalizePair(a, b);
+    const key = pairKey(pair.a, pair.b);
+    const current = this.edgeFeatures(pair.a, pair.b);
+    const arr = current.slice();
+    const i = arr.indexOf(featureKey);
+    if (i >= 0) arr.splice(i, 1);
+    else arr.push(featureKey);
+    const unchanged = arr.length === current.length &&
+      arr.every((k, idx) => current[idx] === k);
+    if (unchanged) return;
+    this.pushUndo();
+    if (arr.length === 0) delete this.state.hexsides[key];
+    else this.state.hexsides[key] = arr;
+    this.rebuildIndex();
+    this.notify('hexsides');
   }
 
-  importHexsides(json) {
-    const data = typeof json === 'string' ? JSON.parse(json) : json;
+  importHexsides(input) {
+    const data = typeof input === 'string' ? JSON.parse(input) : input;
     this.pushUndo();
-    // merge: replace editable layers, preserve other keys/layers
-    const merged = deepClone(this.state.loadedHexsides || {});
-    for (const layer of EDITABLE_LAYERS) {
-      if (Array.isArray(data[layer])) merged[layer] = deepClone(data[layer]);
-      else if (!merged[layer]) merged[layer] = [];
+
+    // Merge grouped v1 layers into per-edge arrays.
+    for (const layer of V1_EXPORT_LAYERS) {
+      const list = data[layer];
+      if (!Array.isArray(list)) continue;
+      for (const pair of list) {
+        const a = pair.a, b = pair.b;
+        if (!a || !b) continue;
+        const key = pairKey(a, b);
+        const featureKey = this._toFeatureKey(layer);
+        if (!featureKey) continue;
+        const arr = this.state.hexsides[key] || (this.state.hexsides[key] = []);
+        if (!arr.includes(featureKey)) arr.push(featureKey);
+      }
     }
-    // ensure all loaded extras are kept
+
+    // Preserve untouched non-editable keys verbatim.
+    const mergedExtras = deepClone(this.state.loadedHexsides || {});
     for (const key of Object.keys(data)) {
-      if (!EDITABLE_LAYERS.includes(key)) merged[key] = deepClone(data[key]);
+      if (!V1_EXPORT_LAYERS.includes(key)) mergedExtras[key] = deepClone(data[key]);
     }
-    this.state.hexsides = merged;
-    this.state.loadedHexsides = deepClone(merged);
+    this.state.loadedHexsides = mergedExtras;
+
     this.rebuildIndex();
     this.notify('import');
   }
 
-  importTerrain(json) {
-    const data = typeof json === 'string' ? JSON.parse(json) : json;
-    this.pushUndo();
-    const terr = data.terrain || data;
-    this.state.terrain = { terrain: deepClone(terr) };
-    this.rebuildIndex();
-    this.notify('terrain');
-  }
+  // ----------------- export -----------------
 
   exportHexsidesObject() {
-    // preserve original loaded structure, replacing editable layers
-    const base = deepClone(this.state.loadedHexsides || {});
-    for (const layer of EDITABLE_LAYERS) {
-      base[layer] = deepClone(this.state.hexsides[layer] || []);
+    // Preserve any untouched keys (version, counts, theaters, boundaries),
+    // but drop internal edge keys since we regenerate grouped layers.
+    const base = {};
+    for (const [k, v] of Object.entries(this.state.loadedHexsides || {})) {
+      if (!k.includes('|')) base[k] = deepClone(v);
     }
+
+    // Clear all editable export layers we will regenerate.
+    for (const layer of V1_EXPORT_LAYERS) {
+      base[layer] = [];
+    }
+
+    const palette = this.palette || {};
+    const features = palette.hexsideFeatures || [];
+    const exportLayerFor = new Map();
+    for (const f of features) {
+      if (f.exportLayer) exportLayerFor.set(f.key, f.exportLayer);
+    }
+
+    for (const [edgeKey, arr] of Object.entries(this.state.hexsides || {})) {
+      const [a, b] = edgeKey.split('|');
+      if (!a || !b) continue;
+      const seen = new Set();
+      for (const featureKey of (arr || [])) {
+        const layer = exportLayerFor.get(featureKey);
+        if (!layer || seen.has(layer)) continue;
+        seen.add(layer);
+        if (!base[layer]) base[layer] = [];
+        base[layer].push({ a, b });
+      }
+    }
+
+    // Sort each layer for deterministic output.
+    for (const layer of V1_EXPORT_LAYERS) {
+      if (Array.isArray(base[layer])) {
+        base[layer].sort((p1, p2) =>
+          (p1.a < p2.a ? -1 : p1.a > p2.a ? 1 : p1.b < p2.b ? -1 : 1)
+        );
+      }
+    }
+
     return base;
   }
 
@@ -201,14 +497,35 @@ export class ProjectStore {
     return JSON.stringify(this.exportTerrainObject(), null, 2);
   }
 
+  exportProjectObject() {
+    return {
+      schemaVersion: 2,
+      name: this.state.name,
+      mapImage: null, // not serializable
+      imageFull: deepClone(this.state.imageFull),
+      grid: deepClone(this.state.grid),
+      terrain: this.exportTerrainObject(),
+      hexFeatures: deepClone(this.state.hexFeatures),
+      hexsides: deepClone(this.state.hexsides),
+      provenance: deepClone(this.state.provenance),
+      palette: this.palette?.name || 'gota'
+    };
+  }
+
+  // ----------------- read helpers -----------------
+
   getCounts() {
     const land = Object.keys(this.state.terrain.terrain || {}).length;
     const layers = {};
+    for (const layer of EDITABLE_LAYERS) layers[layer] = 0;
+    const obj = this.exportHexsidesObject();
     for (const layer of EDITABLE_LAYERS) {
-      layers[layer] = (this.state.hexsides[layer] || []).length;
+      layers[layer] = (obj[layer] || []).length;
     }
     return { land, layers };
   }
+
+  // ----------------- trace controls -----------------
 
   setTraceOpacity(index, opacity) {
     const t = this.state.traces[index];

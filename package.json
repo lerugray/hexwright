@@ -1,0 +1,14 @@
+{
+  "name": "hexwright",
+  "version": "2.0.0",
+  "description": "Engine-agnostic hex-map terrain/feature editor (Canvas2D, zero-build).",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 8000",
+    "test": "node verify/smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.60.0"
+  }
+}
