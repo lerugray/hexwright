@@ -170,6 +170,35 @@ async function main() {
     }
   });
 
+  // Session autosave: debounced-persist the working project to localStorage on
+  // every change (data + grid; the base-map bitmap is not serialized), and restore
+  // it on the next visit so an accidental reload never loses hand-assignment work.
+  const SESSION_KEY = 'hexwright:session';
+  try {
+    const saved = localStorage.getItem(SESSION_KEY);
+    if (saved) {
+      const proj = JSON.parse(saved);
+      const land = proj && proj.terrain ? Object.keys(proj.terrain.terrain || proj.terrain || {}).length : 0;
+      if (land > 0) {
+        proj.mapImage = null;
+        await loadAndRender(proj);
+        renderer.setViewMode('classification');
+        ui.status('Restored your last session (data + grid). Load the base map to see it under the grid, or Load GotA sample to start fresh.', 6000);
+      }
+    }
+  } catch (_) { /* ignore a corrupt autosave */ }
+
+  let _autosaveTimer = null;
+  store.onChange(() => {
+    clearTimeout(_autosaveTimer);
+    _autosaveTimer = setTimeout(() => {
+      try {
+        const land = Object.keys(store.state.terrain.terrain || {}).length;
+        if (land > 0) localStorage.setItem(SESSION_KEY, JSON.stringify(store.exportProjectObject()));
+      } catch (_) { /* quota or serialization issue — skip this autosave */ }
+    }, 800);
+  });
+
   // Expose minimal API for console debugging
   window.hexwright = { store, renderer, ui, geo };
 }
