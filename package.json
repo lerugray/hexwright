@@ -1,9 +1,24 @@
 {
   "name": "hexwright",
   "version": "2.0.0",
-  "description": "Engine-agnostic hex-map terrain/feature editor (Canvas2D, zero-build).",
-  "private": true,
+  "description": "Engine-agnostic hex-map terrain/feature editor — zero-build, Canvas2D. Assign hex terrain, in-hex features, and multi-feature hexsides; export the canonical hexgrid/terrain/hexsides JSON your game consumes.",
+  "license": "MIT",
+  "author": "Ray Weiss",
   "type": "module",
+  "homepage": "https://github.com/lerugray/hexwright",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lerugray/hexwright.git"
+  },
+  "keywords": [
+    "hex",
+    "hexmap",
+    "wargame",
+    "map-editor",
+    "terrain",
+    "canvas",
+    "zero-build"
+  ],
   "scripts": {
     "serve": "python3 -m http.server 8000",
     "test": "node verify/smoke.mjs"
