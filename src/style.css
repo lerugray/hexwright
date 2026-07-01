@@ -574,3 +574,15 @@ button:disabled, .file-btn:disabled {
 .feature-chip input[type="checkbox"],
 .edge-chip input[type="checkbox"] { pointer-events: none; }
 .feature-chip, .edge-chip { cursor: pointer; }
+
+/* v2: distinguish crossing hexside features (road/rail/bridge) from edge features
+   (river/ridge/...) in the inspector — grouped by a divider, crossings dashed. */
+.edge-chip-divider {
+  width: 1px;
+  align-self: stretch;
+  min-height: 12px;
+  margin: 0 2px;
+  background: var(--chrome-2);
+  opacity: 0.75;
+}
+.edge-chip--crossing { border-style: dashed; }

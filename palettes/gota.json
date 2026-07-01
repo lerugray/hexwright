@@ -19,16 +19,16 @@
     {"key": "resource",  "label": "Resource",  "glyph": "◈"}
   ],
   "hexsideFeatures": [
-    {"key": "river",      "label": "River",       "color": "#2878ff", "exportLayer": "rivers"},
-    {"key": "stream",     "label": "Stream",      "color": "#6fb0e8", "exportLayer": "streams"},
-    {"key": "road",       "label": "Road",        "color": "#c9a06a", "exportLayer": "roads"},
-    {"key": "rail",       "label": "Rail",        "color": "#8a8f98", "dash": true, "exportLayer": "rails"},
-    {"key": "ridge",      "label": "Ridge/Mtn",   "color": "#be8228", "exportLayer": "mountains"},
-    {"key": "cliff",      "label": "Cliff",       "color": "#7a5a2a", "exportLayer": "cliffs"},
-    {"key": "escarpment", "label": "Escarpment",  "color": "#9a6a3a", "exportLayer": "escarpments"},
-    {"key": "wall",       "label": "Wall",        "color": "#b0b0b0", "exportLayer": "walls"},
-    {"key": "bridge",     "label": "Bridge",      "color": "#e0c060", "exportLayer": "bridges"},
-    {"key": "impassable", "label": "Impassable",  "color": "#dc2828", "exportLayer": "impassible"}
+    {"key": "river",      "label": "River",       "color": "#2878ff", "kind": "edge",     "exportLayer": "rivers"},
+    {"key": "stream",     "label": "Stream",      "color": "#6fb0e8", "kind": "edge",     "exportLayer": "streams"},
+    {"key": "ridge",      "label": "Ridge/Mtn",   "color": "#be8228", "kind": "edge",     "exportLayer": "mountains"},
+    {"key": "cliff",      "label": "Cliff",       "color": "#7a5a2a", "kind": "edge",     "exportLayer": "cliffs"},
+    {"key": "escarpment", "label": "Escarpment",  "color": "#9a6a3a", "kind": "edge",     "exportLayer": "escarpments"},
+    {"key": "wall",       "label": "Wall",        "color": "#b0b0b0", "kind": "edge",     "exportLayer": "walls"},
+    {"key": "impassable", "label": "Impassable",  "color": "#dc2828", "kind": "edge",     "exportLayer": "impassible"},
+    {"key": "road",       "label": "Road",        "color": "#c9a06a", "kind": "crossing", "exportLayer": "roads"},
+    {"key": "rail",       "label": "Rail",        "color": "#8a8f98", "kind": "crossing", "dash": true, "exportLayer": "rails"},
+    {"key": "bridge",     "label": "Bridge",      "color": "#e0c060", "kind": "crossing", "exportLayer": "bridges"}
   ],
   "terrainAliases": {"forest": "woods", "lake": "water"},
   "hexsideAliases": {"mountains": "ridge", "impassible": "impassable"}

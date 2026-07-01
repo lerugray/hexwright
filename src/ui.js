@@ -118,12 +118,22 @@ export class UI {
 
       const chips = document.createElement('div');
       chips.className = 'edge-chips';
+      let prevKind = null;
       for (const f of features) {
+        const kind = f.kind === 'crossing' ? 'crossing' : 'edge';
+        if (prevKind !== null && kind !== prevKind) {
+          const divider = document.createElement('span');
+          divider.className = 'edge-chip-divider';
+          divider.title = 'crossings (road / rail / bridge)';
+          chips.appendChild(divider);
+        }
+        prevKind = kind;
         const chip = document.createElement('div');
-        chip.className = 'edge-chip';
-        chip.title = f.label || f.key;
+        chip.className = 'edge-chip' + (kind === 'crossing' ? ' edge-chip--crossing' : '');
+        chip.title = (f.label || f.key) + (kind === 'crossing' ? ' (crosses this hexside)' : '');
         chip.dataset.edge = i;
         chip.dataset.feature = f.key;
+        chip.dataset.kind = kind;
         const chk = document.createElement('input');
         chk.type = 'checkbox';
         chk.tabIndex = -1;

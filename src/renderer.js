@@ -387,6 +387,11 @@ export class MapRenderer {
   _drawHexsides(ctx, view) {
     const s = view.baseScale * view.zoom;
     const grid = this.store.state.grid;
+    const palette = this.store.getPalette();
+    const isCrossing = (key) => {
+      const f = palette && palette.hexsideFeatures ? palette.hexsideFeatures.find(x => x.key === key) : null;
+      return !!(f && f.kind === 'crossing');
+    };
     ctx.save();
     ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
@@ -400,13 +405,17 @@ export class MapRenderer {
       const dx = ep.b.x - ep.a.x;
       const dy = ep.b.y - ep.a.y;
       const len = Math.hypot(dx, dy) || 1;
-      const ux = -dy / len;
+      const ux = -dy / len;  // perpendicular unit
       const uy = dx / len;
-      const n = features.length;
-      const offsetBase = -((n - 1) * spacing) / 2;
-      features.forEach((featureKey, idx) => {
+      const tx = dx / len;   // along-edge unit
+      const ty = dy / len;
+
+      // Edge features (river/ridge/cliff/...) run ALONG the hexside — parallel offset lines.
+      const edgeFeats = features.filter(k => !isCrossing(k));
+      const offBaseE = -((edgeFeats.length - 1) * spacing) / 2;
+      edgeFeats.forEach((featureKey, idx) => {
         const style = this._hexsideStyle(featureKey);
-        const off = offsetBase + idx * spacing;
+        const off = offBaseE + idx * spacing;
         ctx.beginPath();
         ctx.strokeStyle = style.stroke;
         ctx.lineWidth = style.width / s;
@@ -416,6 +425,31 @@ export class MapRenderer {
         ctx.stroke();
         ctx.setLineDash([]);
       });
+
+      // Crossing features (road/rail/bridge) CROSS the hexside — short perpendicular
+      // rungs at the edge midpoint, offset along the edge from each other.
+      const crossFeats = features.filter(isCrossing);
+      if (crossFeats.length) {
+        const mx = (ep.a.x + ep.b.x) / 2;
+        const my = (ep.a.y + ep.b.y) / 2;
+        const rung = Math.min(len * 0.30, 11 / s);
+        const cSpacing = 4.5 / s;
+        const offBaseC = -((crossFeats.length - 1) * cSpacing) / 2;
+        crossFeats.forEach((featureKey, idx) => {
+          const style = this._hexsideStyle(featureKey);
+          const along = offBaseC + idx * cSpacing;
+          const cx = mx + tx * along;
+          const cy = my + ty * along;
+          ctx.beginPath();
+          ctx.strokeStyle = style.stroke;
+          ctx.lineWidth = (style.width + 0.6) / s;
+          ctx.setLineDash(style.dash.map(v => v / s));
+          ctx.moveTo(cx - ux * rung, cy - uy * rung);
+          ctx.lineTo(cx + ux * rung, cy + uy * rung);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        });
+      }
     }
     ctx.restore();
   }
