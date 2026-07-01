@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
 
-const DIR = '/Users/rayweiss/Desktop/Dev Work/hexwright';
+const DIR = process.cwd();
 const VER = DIR + '/verify';
 const PORT = 8019;
 const results = [];

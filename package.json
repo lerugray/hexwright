@@ -21,7 +21,7 @@
   ],
   "scripts": {
     "serve": "python3 -m http.server 8000",
-    "test": "node verify/smoke.mjs"
+    "test": "node verify/smoke.mjs && node verify/func-check.mjs && node verify/ui-check.mjs && node verify/wmp-check.mjs && node verify/autosave-check.mjs"
   },
   "devDependencies": {
     "playwright": "1.60.0"
