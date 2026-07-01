@@ -51,7 +51,7 @@ export class UI {
       'inspector', 'inspector-close', 'inspector-hex', 'inspector-terrain',
       'hex-svg', 'hex-shape', 'hex-edges', 'edge-selects', 'inspector-features',
       'terrain-legend', 'hexside-legend', 'feature-legend', 'trace-controls', 'trace-opacity',
-      'overlay-opacity', 'count-land', 'layer-counts', 'status'
+      'overlay-opacity', 'toggle-nudge', 'count-land', 'layer-counts', 'status'
     ];
     for (const id of ids) this.els[id] = document.getElementById(id);
   }
@@ -229,6 +229,17 @@ export class UI {
       if (e.key === 'Escape') this.closeInspector();
       if (e.key.toLowerCase() === 'b') this.toggleBrush();
       if (e.key.toLowerCase() === 'e') this.toggleEdgePaint();
+      if (e.key.toLowerCase() === 'n') this.toggleNudge();
+      if (this.nudgeActive && e.key.startsWith('Arrow')) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1; // world (full-image) pixels
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+        this.store.nudgeMapOffset(dx, dy);
+        this.renderer.draw();
+        const off = this.store.state.mapOffset || [0, 0];
+        this.status(`Map offset: ${Math.round(off[0])}, ${Math.round(off[1])} px`, 2500);
+      }
       if (e.key.toLowerCase() === 'v') this.cycleViewMode();
       if (/^[0-9]$/.test(e.key)) {
         const idx = e.key === '0' ? 9 : parseInt(e.key, 10) - 1;
@@ -313,6 +324,7 @@ export class UI {
     // Brush
     this.els['toggle-brush'].addEventListener('click', () => this.toggleBrush());
     this.els['toggle-edge-paint'].addEventListener('click', () => this.toggleEdgePaint());
+    this.els['toggle-nudge'].addEventListener('click', () => this.toggleNudge());
 
     // Export overlay PNG
     this.els['export-overlay'].addEventListener('click', () => {
@@ -409,9 +421,32 @@ export class UI {
       this.brushActive = false;
       this._setupBrush();
     }
+    if (this.edgePaintActive && this.nudgeActive) {
+      this.nudgeActive = false;
+      this.renderer.setNudgeMode(false);
+      this._reflectNudge();
+    }
     this._setupEdgePaint();
     this._reflectBrush();
     this._reflectEdgePaint();
+  }
+
+  toggleNudge() {
+    this.nudgeActive = !this.nudgeActive;
+    if (this.nudgeActive) {
+      if (this.edgePaintActive) { this.edgePaintActive = false; this._setupEdgePaint(); this._reflectEdgePaint(); }
+      if (this.brushActive) { this.brushActive = false; this._setupBrush(); this._reflectBrush(); }
+      // The whole point is aligning scan to grid — make sure both are visible.
+      if (this.renderer.viewMode !== 'both') this.setViewMode('both');
+      this.status('Nudge map: drag the scan under the grid, or arrow keys (shift = ×10). Offset autosaves with the project.', 6000);
+    }
+    this.renderer.setNudgeMode(this.nudgeActive);
+    this._reflectNudge();
+  }
+
+  _reflectNudge() {
+    const btn = this.els['toggle-nudge'];
+    if (btn) btn.classList.toggle('active', !!this.nudgeActive);
   }
 
   setEdgePaintFeature(key) {

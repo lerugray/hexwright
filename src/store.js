@@ -100,6 +100,7 @@ export class ProjectStore {
       provenance: {},
       traces: [],
       loadedHexsides: null,
+      mapOffset: [0, 0],
       schemaVersion: 2
     };
   }
@@ -170,6 +171,9 @@ export class ProjectStore {
       provenance: deepClone(migrated.provenance || {}),
       traces: project.traces || [],
       loadedHexsides: project.hexsides ? deepClone(project.hexsides) : null,
+      mapOffset: Array.isArray(project.mapOffset)
+        ? [Number(project.mapOffset[0]) || 0, Number(project.mapOffset[1]) || 0]
+        : [0, 0],
       schemaVersion: 2
     };
 
@@ -701,6 +705,7 @@ export class ProjectStore {
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance),
+      mapOffset: deepClone(this.state.mapOffset || [0, 0]),
       palette: this.palette?.name || 'gota'
     };
   }
@@ -719,6 +724,24 @@ export class ProjectStore {
   }
 
   // ----------------- trace controls -----------------
+
+  // ----------------- map nudge (scan alignment) -----------------
+  // World-pixel offset applied to the base map + traces at draw time so the
+  // printed grid can be aligned to the calibrated digital grid by eye. The
+  // grid/hex data stays canonical; only the imagery shifts. Persisted with
+  // the project (autosave + export).
+
+  setMapOffset(x, y) {
+    const off = this.state.mapOffset || [0, 0];
+    if (off[0] === x && off[1] === y) return;
+    this.state.mapOffset = [x, y];
+    this.notify('mapOffset');
+  }
+
+  nudgeMapOffset(dx, dy) {
+    const off = this.state.mapOffset || [0, 0];
+    this.setMapOffset(off[0] + dx, off[1] + dy);
+  }
 
   setTraceOpacity(index, opacity) {
     const t = this.state.traces[index];
