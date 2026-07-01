@@ -24,6 +24,138 @@ function loadImage(url) {
   });
 }
 
+const LEGACY_SESSION_KEY = 'hexwright:session';
+const SESSION_KEY_PREFIX = 'hexwright.session.';
+const MAX_SESSION_SLOTS = 6;
+
+function slugProjectName(name) {
+  const base = String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return base || 'untitled';
+}
+
+function sessionKeyForName(name) {
+  return `${SESSION_KEY_PREFIX}${slugProjectName(name)}`;
+}
+
+function countLandHexes(project) {
+  if (!project || !project.terrain) return 0;
+  const terrain = project.terrain.terrain || project.terrain || {};
+  return Object.keys(terrain).length;
+}
+
+function parseSessionRecord(raw) {
+  if (!raw) return null;
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== 'object') return null;
+
+  let project = parsed;
+  let savedAt = 0;
+  if (parsed.project && typeof parsed.project === 'object') {
+    project = parsed.project;
+    savedAt = Number(parsed.savedAt) || 0;
+  } else if (Number.isFinite(Number(parsed.savedAt))) {
+    savedAt = Number(parsed.savedAt) || 0;
+  }
+  if (!project || typeof project !== 'object') return null;
+
+  return {
+    project,
+    savedAt,
+    land: countLandHexes(project)
+  };
+}
+
+function encodeSessionRecord(project, savedAt = Date.now()) {
+  return JSON.stringify({ savedAt, project });
+}
+
+function listSessionSlots() {
+  const slots = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key || !key.startsWith(SESSION_KEY_PREFIX)) continue;
+    try {
+      const record = parseSessionRecord(localStorage.getItem(key));
+      if (!record) continue;
+      slots.push({ key, ...record });
+    } catch (_) { /* ignore a corrupt slot */ }
+  }
+  slots.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+  return slots;
+}
+
+function getSessionSlotForName(name) {
+  const key = sessionKeyForName(name);
+  try {
+    const record = parseSessionRecord(localStorage.getItem(key));
+    return record ? { key, ...record } : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function getNewestSessionSlot() {
+  const slots = listSessionSlots();
+  return slots.length ? slots[0] : null;
+}
+
+function askToRestore(slot, kind = 'boot') {
+  if (!slot || !slot.project) return false;
+  const name = slot.project.name || 'untitled';
+  const when = slot.savedAt
+    ? new Date(slot.savedAt).toLocaleString()
+    : 'unknown time';
+  const message = kind === 'project'
+    ? `Restore autosaved session for "${name}" (${when})?`
+    : `Restore your most recent autosaved session "${name}" (${when})?`;
+  try {
+    return window.confirm(message);
+  } catch (_) {
+    // In non-interactive contexts, default to restore.
+    return true;
+  }
+}
+
+function pruneSessionSlots() {
+  const slots = listSessionSlots();
+  for (let i = MAX_SESSION_SLOTS; i < slots.length; i++) {
+    localStorage.removeItem(slots[i].key);
+  }
+}
+
+function migrateLegacySessionOnce() {
+  const legacyRaw = localStorage.getItem(LEGACY_SESSION_KEY);
+  if (!legacyRaw) return;
+
+  try {
+    const legacy = parseSessionRecord(legacyRaw);
+    if (!legacy || legacy.land <= 0) return;
+
+    const targetKey = sessionKeyForName(legacy.project.name);
+    const existingRaw = localStorage.getItem(targetKey);
+    let shouldWrite = true;
+    if (existingRaw) {
+      const existing = parseSessionRecord(existingRaw);
+      if (existing && (existing.savedAt || 0) > (legacy.savedAt || 0)) {
+        shouldWrite = false;
+      }
+    }
+    if (shouldWrite) {
+      localStorage.setItem(targetKey, encodeSessionRecord(legacy.project, legacy.savedAt || Date.now()));
+    }
+  } catch (_) {
+    /* ignore corrupt legacy payload */
+  } finally {
+    // Remove legacy key after first migration attempt.
+    localStorage.removeItem(LEGACY_SESSION_KEY);
+    pruneSessionSlots();
+  }
+}
+
 async function loadProjectFromManifest(manifestUrl) {
   const manifestRes = await fetch(manifestUrl);
   if (!manifestRes.ok) throw new Error(`Failed to fetch manifest: ${manifestUrl}`);
@@ -147,6 +279,18 @@ async function main() {
       ui.status('Loading GotA sample...');
       try {
         const project = await loadProjectFromManifest('samples/gota-project.json');
+        const slot = getSessionSlotForName(project.name);
+        if (slot && slot.land > 0 && askToRestore(slot, 'project')) {
+          const restored = slot.project;
+          restored.mapImage = project.mapImage;
+          restored.traces = project.traces || [];
+          if (!restored.imageFull || !restored.imageFull[0]) restored.imageFull = project.imageFull;
+          if (!restored.grid) restored.grid = project.grid;
+          await loadAndRender(restored);
+          renderer.setViewMode('classification');
+          ui.status(`Restored autosave for ${project.name}.`, 4500);
+          return;
+        }
         await loadAndRender(project);
       } catch (err) {
         console.error(err);
@@ -173,18 +317,15 @@ async function main() {
   // Session autosave: debounced-persist the working project to localStorage on
   // every change (data + grid; the base-map bitmap is not serialized), and restore
   // it on the next visit so an accidental reload never loses hand-assignment work.
-  const SESSION_KEY = 'hexwright:session';
   try {
-    const saved = localStorage.getItem(SESSION_KEY);
-    if (saved) {
-      const proj = JSON.parse(saved);
-      const land = proj && proj.terrain ? Object.keys(proj.terrain.terrain || proj.terrain || {}).length : 0;
-      if (land > 0) {
-        proj.mapImage = null;
-        await loadAndRender(proj);
-        renderer.setViewMode('classification');
-        ui.status('Restored your last session (data + grid). Load the base map to see it under the grid, or Load GotA sample to start fresh.', 6000);
-      }
+    migrateLegacySessionOnce();
+    const newest = getNewestSessionSlot();
+    if (newest && newest.land > 0 && askToRestore(newest, 'boot')) {
+      const proj = newest.project;
+      proj.mapImage = null;
+      await loadAndRender(proj);
+      renderer.setViewMode('classification');
+      ui.status(`Restored your last session for ${proj.name || 'untitled'} (data + grid). Load the base map to see it under the grid, or Load GotA sample to start fresh.`, 6000);
     }
   } catch (_) { /* ignore a corrupt autosave */ }
 
@@ -194,7 +335,14 @@ async function main() {
     _autosaveTimer = setTimeout(() => {
       try {
         const land = Object.keys(store.state.terrain.terrain || {}).length;
-        if (land > 0) localStorage.setItem(SESSION_KEY, JSON.stringify(store.exportProjectObject()));
+        if (land > 0) {
+          const project = store.exportProjectObject();
+          localStorage.setItem(
+            sessionKeyForName(project.name),
+            encodeSessionRecord(project)
+          );
+          pruneSessionSlots();
+        }
       } catch (_) { /* quota or serialization issue — skip this autosave */ }
     }, 800);
   });
