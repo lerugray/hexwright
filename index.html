@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hexwright — hex wargame map editor</title>
+  <link rel="stylesheet" href="src/style.css" />
+</head>
+<body>
+  <header id="topbar" class="topbar">
+    <div class="brand">
+      <span class="brand-mark">⚒</span>
+      <h1>Hexwright</h1>
+    </div>
+
+    <div class="load-group" role="group" aria-label="Project load">
+      <label class="file-btn">
+        <span>Map</span>
+        <input type="file" id="load-map" accept="image/*" hidden />
+      </label>
+      <label class="file-btn">
+        <span>Grid</span>
+        <input type="file" id="load-grid" accept=".json,application/json" hidden />
+      </label>
+      <label class="file-btn">
+        <span>Terrain</span>
+        <input type="file" id="load-terrain" accept=".json,application/json" hidden />
+      </label>
+      <label class="file-btn">
+        <span>Sides</span>
+        <input type="file" id="load-sides" accept=".json,application/json" hidden />
+      </label>
+      <button id="load-sample" type="button">Load GotA sample</button>
+    </div>
+
+    <div class="tool-group" role="group" aria-label="Canvas tools">
+      <button id="fit-view" type="button" title="Fit to view">Fit</button>
+      <button id="undo" type="button" title="Undo last action">Undo</button>
+      <button id="clear-select" type="button" title="Close inspector">Esc</button>
+    </div>
+
+    <div class="io-group" role="group" aria-label="Import / Export">
+      <label class="file-btn" title="Import hexsides.json">
+        <span>Import sides</span>
+        <input type="file" id="import-sides" accept=".json,application/json" hidden />
+      </label>
+      <label class="file-btn" title="Import terrain.json">
+        <span>Import terrain</span>
+        <input type="file" id="import-terrain" accept=".json,application/json" hidden />
+      </label>
+      <div class="export-menu">
+        <button id="export-btn" type="button">Export ▾</button>
+        <div class="export-popover" id="export-popover">
+          <button id="export-sides-file" type="button">hexsides.json</button>
+          <button id="export-sides-copy" type="button">Copy hexsides</button>
+          <button id="export-terrain-file" type="button">terrain.json</button>
+          <button id="export-terrain-copy" type="button">Copy terrain</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <div id="canvas-wrap" class="canvas-wrap">
+      <canvas id="map-canvas" role="img" aria-label="Map canvas"></canvas>
+
+      <div id="inspector" class="inspector" role="dialog" aria-modal="false" aria-labelledby="inspector-title" hidden>
+        <div class="inspector-head">
+          <div class="inspector-title">
+            <span id="inspector-hex" class="mono">----</span>
+            <select id="inspector-terrain" aria-label="Hex terrain"></select>
+          </div>
+          <button id="inspector-close" type="button" aria-label="Close inspector">×</button>
+        </div>
+        <div class="inspector-body">
+          <div class="hex-illustration" id="hex-illustration" aria-label="Hex edge editor">
+            <svg id="hex-svg" viewBox="-120 -110 240 220" aria-hidden="true">
+              <polygon id="hex-shape" points="" fill="rgba(255,122,26,0.12)" stroke="#ff7a1a" stroke-width="3" />
+              <g id="hex-edges"></g>
+              <circle cx="0" cy="0" r="4" fill="#ff7a1a" />
+            </svg>
+            <div id="edge-selects" class="edge-selects"></div>
+          </div>
+          <p class="inspector-hint">Select an edge to assign its shared hexside layer.</p>
+        </div>
+      </div>
+    </div>
+
+    <aside class="sidebar">
+      <section class="panel">
+        <h2>Legend</h2>
+        <ul id="terrain-legend" class="legend-list"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>Traces</h2>
+        <div id="trace-controls" class="trace-list"></div>
+        <label class="slider-row">
+          <span>Opacity</span>
+          <input id="trace-opacity" type="range" min="0" max="1" step="0.05" value="0.5" aria-label="Trace opacity" />
+        </label>
+      </section>
+
+      <section class="panel counts-panel">
+        <h2>Counts</h2>
+        <div class="count-row">
+          <span>Land hexes</span>
+          <span id="count-land" class="mono">0</span>
+        </div>
+        <div id="layer-counts" class="layer-counts"></div>
+      </section>
+
+      <section class="panel help-panel">
+        <h2>Shortcuts</h2>
+        <ul class="shortcuts">
+          <li><kbd>Drag</kbd> pan</li>
+          <li><kbd>Wheel</kbd> zoom</li>
+          <li><kbd>Click</kbd> inspect</li>
+          <li><kbd>Esc</kbd> close</li>
+          <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</li>
+        </ul>
+      </section>
+    </aside>
+  </main>
+
+  <div id="status" class="status" aria-live="polite"></div>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
