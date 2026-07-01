@@ -419,22 +419,28 @@ export class MapRenderer {
   _drawBaseMap(ctx, view) {
     const s = view.baseScale * view.zoom;
     const img = this.store.state.mapImage;
+    // Stretch to the WORLD extent (imageFull — the grid's calibration space),
+    // never the image's natural size: a downscaled raster drawn at natural size
+    // renders smaller than the grid by exactly natural/imageFull (the ~4x
+    // map-vs-grid mismatch hit 2026-07-01).
+    const [fw, fh] = this.store.state.imageFull || [];
     ctx.save();
     ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
-    ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
+    ctx.drawImage(img, 0, 0, fw || img.naturalWidth, fh || img.naturalHeight);
     ctx.restore();
   }
 
   _drawTraces(ctx, view) {
     const s = view.baseScale * view.zoom;
+    const [fw, fh] = this.store.state.imageFull || [];
     for (const trace of this.store.state.traces) {
       if (!trace.on || !trace.img) continue;
       ctx.save();
       ctx.globalAlpha = trace.opacity;
       ctx.translate(view.panX, view.panY);
       ctx.scale(s, s);
-      ctx.drawImage(trace.img, 0, 0, trace.img.naturalWidth, trace.img.naturalHeight);
+      ctx.drawImage(trace.img, 0, 0, fw || trace.img.naturalWidth, fh || trace.img.naturalHeight);
       ctx.restore();
     }
   }
@@ -828,12 +834,16 @@ export class MapRenderer {
   exportOverlayPNG(opts = {}) {
     const state = this.store.state;
     const img = state.mapImage;
-    const width = img && img.naturalWidth
-      ? img.naturalWidth
-      : (state.imageFull && state.imageFull[0] ? state.imageFull[0] : 1);
-    const height = img && img.naturalHeight
-      ? img.naturalHeight
-      : (state.imageFull && state.imageFull[1] ? state.imageFull[1] : 1);
+    // Canvas must be sized in the grid's calibration space (imageFull) — hexes
+    // are drawn at full-image coords below (baseScale 1), so sizing to a
+    // downscaled map's natural dims would push the overlay 1/baseScale off-canvas.
+    // imageFull-sized output is also what aligns 1:1 with the ORIGINAL scan.
+    const width = state.imageFull && state.imageFull[0]
+      ? state.imageFull[0]
+      : (img && img.naturalWidth ? img.naturalWidth : 1);
+    const height = state.imageFull && state.imageFull[1]
+      ? state.imageFull[1]
+      : (img && img.naturalHeight ? img.naturalHeight : 1);
 
     const oc = document.createElement('canvas');
     oc.width = width;
