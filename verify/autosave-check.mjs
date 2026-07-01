@@ -1,31 +1,187 @@
-// v2 test: session autosave + restore-across-reload (data + grid, classification view).
+// v2.1 chunk B test: per-project autosave slots + legacy migration + newest boot restore.
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
 const DIR=process.cwd(); const PORT=8027;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const srv=spawn('python3',['-m','http.server',String(PORT)],{cwd:DIR,stdio:'ignore'});
 await sleep(1300);
-const b=await chromium.launch(); const page=await b.newPage({viewport:{width:1600,height:1000}});
-const errors=[]; page.on('pageerror',e=>errors.push(String(e))); page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
-await page.goto(`http://localhost:${PORT}/`,{waitUntil:'load'});
-await page.click('#load-sample');
-await page.waitForFunction(()=>{const el=document.getElementById('count-land');return el&&/[1-9]/.test(el.textContent);},{timeout:25000});
-// make an edit + let the 800ms debounce fire
-await page.evaluate(()=>{const s=window.hexwright.store; s.setHexFeatures(Object.keys(s.state.terrain.terrain)[0],['city']);});
-await sleep(1100);
-const saved = await page.evaluate(()=>{ const s=localStorage.getItem('hexwright:session'); if(!s) return null; const p=JSON.parse(s); return {land:Object.keys(p.terrain.terrain||{}).length, hasGrid:!!p.grid, hasFeat:Object.keys(p.hexFeatures||{}).length}; });
-// reload (same context keeps localStorage) -> should auto-restore
-await page.reload({waitUntil:'load'});
-await sleep(2200);
-const restored = await page.evaluate(()=>{ const s=window.hexwright.store.state; return {land:Object.keys(s.terrain.terrain||{}).length, feat:Object.keys(s.hexFeatures||{}).length, viewMode:window.hexwright.renderer.viewMode, status:(document.getElementById('status')?.textContent||'').slice(0,40)}; });
-console.log('SAVED:', JSON.stringify(saved));
-console.log('RESTORED:', JSON.stringify(restored));
+const b=await chromium.launch();
 const results=[]; const rec=(n,ok,note='')=>{results.push(ok);console.log(`${ok?'PASS':'FAIL'}  ${n}${note?'  — '+note:''}`);};
-rec('autosave persisted sample (land + grid)', saved && saved.land===4176 && saved.hasGrid, JSON.stringify(saved));
-rec('autosave persisted the edit (hexFeatures)', saved && saved.hasFeat>=1, 'feat='+(saved&&saved.hasFeat));
-rec('restored land hexes after reload', restored.land===4176, 'land='+restored.land);
-rec('restored the edit', restored.feat>=1, 'feat='+restored.feat);
-rec('restore switches to classification view', restored.viewMode==='classification', restored.viewMode);
-rec('status announces restore', /restor/i.test(restored.status), restored.status);
-rec('no console/page errors', errors.length===0, errors.slice(0,2).join(' | '));
+const slug=(name)=>String(name||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'untitled';
+const now=Date.now();
+
+async function makePage(context, errors) {
+  const page = await context.newPage({viewport:{width:1600,height:1000}});
+  page.on('pageerror',e=>errors.push(String(e)));
+  page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+  page.on('dialog', d=>d.accept().catch(()=>{}));
+  return page;
+}
+
+// Case 1: two projects autosave to separate per-project slots + reload restore.
+{
+  const errors = [];
+  const ctx = await b.newContext();
+  const page = await makePage(ctx, errors);
+  await page.goto(`http://localhost:${PORT}/`,{waitUntil:'load'});
+  await page.click('#load-sample');
+  await page.waitForFunction(()=>{const el=document.getElementById('count-land');return el&&/[1-9]/.test(el.textContent);},{timeout:25000});
+  await page.evaluate(()=>{const s=window.hexwright.store; s.setHexFeatures(Object.keys(s.state.terrain.terrain)[0],['city']);});
+  await sleep(1100);
+
+  const perProject = await page.evaluate(()=>{
+    const s = window.hexwright.store;
+    const projectName = s.state.name;
+    const slug = String(projectName||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || 'untitled';
+    const gotaKey = `hexwright.session.${slug}`;
+    const gotaRaw = localStorage.getItem(gotaKey);
+    const gota = gotaRaw ? JSON.parse(gotaRaw) : null;
+
+    const beta = {
+      schemaVersion: 2,
+      name: 'TWU Test Board',
+      mapImage: null,
+      imageFull: s.state.imageFull,
+      grid: s.state.grid,
+      terrain: { terrain: { '0000': 'sea', '0001': 'coast' } },
+      hexFeatures: {},
+      hexsides: {},
+      provenance: {}
+    };
+    return window.hexwright.store.loadProject(beta).then(()=>{
+      const betaSlug = 'twu-test-board';
+      const betaKey = `hexwright.session.${betaSlug}`;
+      return new Promise((resolve)=>{
+        setTimeout(()=>{
+          const betaRaw = localStorage.getItem(betaKey);
+          const betaSaved = betaRaw ? JSON.parse(betaRaw) : null;
+          resolve({
+            gotaKey,
+            betaKey,
+            hasLegacy: !!localStorage.getItem('hexwright:session'),
+            gotaSaved: !!gota,
+            gotaLand: gota && gota.project ? Object.keys(gota.project.terrain.terrain||{}).length : 0,
+            gotaFeat: gota && gota.project ? Object.keys(gota.project.hexFeatures||{}).length : 0,
+            betaSaved: !!betaSaved,
+            betaName: betaSaved && betaSaved.project ? betaSaved.project.name : '',
+            keys: Object.keys(localStorage).filter(k=>k.startsWith('hexwright.session.')).sort()
+          });
+        }, 1100);
+      });
+    });
+  });
+
+  await page.reload({waitUntil:'load'});
+  await sleep(2200);
+  const restored = await page.evaluate(()=>{ const s=window.hexwright.store.state; return {name:s.name, land:Object.keys(s.terrain.terrain||{}).length, viewMode:window.hexwright.renderer.viewMode}; });
+
+  rec('autosave writes GotA slot key', perProject.gotaSaved && perProject.gotaKey===`hexwright.session.${slug('Guns of the Americas')}`, perProject.gotaKey);
+  rec('autosave writes second project slot key', perProject.betaSaved && perProject.betaKey===`hexwright.session.${slug('TWU Test Board')}`, perProject.betaKey);
+  rec('slots carry project-specific payloads', perProject.gotaLand===4176 && perProject.gotaFeat>=1 && perProject.betaName==='TWU Test Board', JSON.stringify({gotaLand:perProject.gotaLand, gotaFeat:perProject.gotaFeat, betaName:perProject.betaName}));
+  rec('legacy single key not used for new saves', !perProject.hasLegacy, perProject.keys.join(','));
+  rec('reload restores newest slot', restored.name==='TWU Test Board' && restored.land===2, JSON.stringify(restored));
+  rec('reload restore keeps classification view', restored.viewMode==='classification', restored.viewMode);
+  rec('case 1 has no console/page errors', errors.length===0, errors.slice(0,2).join(' | '));
+  await ctx.close();
+}
+
+// Case 2: legacy single-key session migrates once then key removed.
+{
+  const errors = [];
+  const ctx = await b.newContext();
+  await ctx.addInitScript(()=>{
+    const legacy = {
+      schemaVersion: 2,
+      name: 'Legacy One',
+      mapImage: null,
+      imageFull: [100, 100],
+      grid: null,
+      terrain: { terrain: { '1111': 'sea' } },
+      hexFeatures: {},
+      hexsides: {},
+      provenance: {}
+    };
+    localStorage.setItem('hexwright:session', JSON.stringify(legacy));
+  });
+  const page = await makePage(ctx, errors);
+  await page.goto(`http://localhost:${PORT}/`,{waitUntil:'load'});
+  await sleep(900);
+
+  const migrated = await page.evaluate(()=>{
+    const key = 'hexwright.session.legacy-one';
+    const raw = localStorage.getItem(key);
+    const payload = raw ? JSON.parse(raw) : null;
+    return {
+      hasLegacy: !!localStorage.getItem('hexwright:session'),
+      hasSlot: !!payload,
+      slotName: payload && payload.project ? payload.project.name : '',
+      slotLand: payload && payload.project ? Object.keys(payload.project.terrain.terrain||{}).length : 0
+    };
+  });
+
+  await page.reload({waitUntil:'load'});
+  await sleep(500);
+  const afterReload = await page.evaluate(()=>{
+    return {
+      hasLegacy: !!localStorage.getItem('hexwright:session'),
+      slotCount: Object.keys(localStorage).filter(k=>k.startsWith('hexwright.session.legacy-one')).length
+    };
+  });
+
+  rec('legacy key removed after migration', !migrated.hasLegacy, JSON.stringify(migrated));
+  rec('legacy payload migrated to project slot', migrated.hasSlot && migrated.slotName==='Legacy One' && migrated.slotLand===1, JSON.stringify(migrated));
+  rec('migration runs once (no legacy key on reload)', !afterReload.hasLegacy && afterReload.slotCount===1, JSON.stringify(afterReload));
+  rec('case 2 has no console/page errors', errors.length===0, errors.slice(0,2).join(' | '));
+  await ctx.close();
+}
+
+// Case 3: boot restore picks newest slot by savedAt.
+{
+  const errors = [];
+  const older = {
+    savedAt: now - 60_000,
+    project: {
+      schemaVersion: 2,
+      name: 'Older Slot',
+      mapImage: null,
+      imageFull: [100, 100],
+      grid: null,
+      terrain: { terrain: { '1000': 'sea' } },
+      hexFeatures: {},
+      hexsides: {},
+      provenance: {}
+    }
+  };
+  const newer = {
+    savedAt: now,
+    project: {
+      schemaVersion: 2,
+      name: 'Newest Slot',
+      mapImage: null,
+      imageFull: [100, 100],
+      grid: null,
+      terrain: { terrain: { '2000': 'sea', '2001': 'coast', '2002': 'coast' } },
+      hexFeatures: {},
+      hexsides: {},
+      provenance: {}
+    }
+  };
+  const ctx = await b.newContext();
+  await ctx.addInitScript(({older,newer})=>{
+    localStorage.setItem('hexwright.session.older-slot', JSON.stringify(older));
+    localStorage.setItem('hexwright.session.newest-slot', JSON.stringify(newer));
+  }, { older, newer });
+  const page = await makePage(ctx, errors);
+  await page.goto(`http://localhost:${PORT}/`,{waitUntil:'load'});
+  await sleep(1200);
+  const bootRestored = await page.evaluate(()=>{
+    const s=window.hexwright.store.state;
+    return {name:s.name, land:Object.keys(s.terrain.terrain||{}).length, viewMode:window.hexwright.renderer.viewMode};
+  });
+  rec('boot restore chooses newest saved slot', bootRestored.name==='Newest Slot' && bootRestored.land===3, JSON.stringify(bootRestored));
+  rec('boot restore stays in classification view', bootRestored.viewMode==='classification', bootRestored.viewMode);
+  rec('case 3 has no console/page errors', errors.length===0, errors.slice(0,2).join(' | '));
+  await ctx.close();
+}
+
 await b.close(); srv.kill(); const fails=results.filter(x=>!x).length; console.log(`\n=== ${results.length-fails}/${results.length} passed ===`); process.exit(fails?1:0);
