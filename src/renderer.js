@@ -1,7 +1,7 @@
 import {
   TERRAIN_COLORS, HEXSIDE_COLORS,
   hexCenter, hexPolygon, sharedEdgeEndpoints, pointInPolygon,
-  worldToScreen, screenToWorld, edgeNeighbor
+  worldToScreen, screenToWorld, edgeNeighbor, hexRadius
 } from './geometry.js';
 
 export class MapRenderer {
@@ -13,6 +13,9 @@ export class MapRenderer {
     this.view = { baseScale: 1, zoom: 1, panX: 0, panY: 0 };
     this.selectedHex = null;
     this.highlighted = { hex: null, edge: null, neighbor: null };
+
+    this.viewMode = 'both';          // 'map' | 'classification' | 'both'
+    this.anomalyMode = false;
 
     this.isDragging = false;
     this.dragStart = null;
@@ -61,6 +64,17 @@ export class MapRenderer {
     this.view.zoom = Math.max(0.02, zoom);
     this.view.panX = (this.width - imgW * this.view.zoom) / 2;
     this.view.panY = (this.height - imgH * this.view.zoom) / 2;
+    this.draw();
+  }
+
+  setViewMode(mode) {
+    if (!['map', 'classification', 'both'].includes(mode)) return;
+    this.viewMode = mode;
+    this.draw();
+  }
+
+  setAnomalyMode(on) {
+    this.anomalyMode = !!on;
     this.draw();
   }
 
@@ -184,10 +198,11 @@ export class MapRenderer {
   draw() {
     const ctx = this.ctx;
     const { width, height } = this;
-    ctx.clearRect(0, 0, width, height);
-
     const state = this.store.state;
     const img = state.mapImage;
+
+    ctx.clearRect(0, 0, width, height);
+
     if (!img) {
       ctx.fillStyle = '#0b0c0e';
       ctx.fillRect(0, 0, width, height);
@@ -197,62 +212,84 @@ export class MapRenderer {
       return;
     }
 
-    // base map
-    const s = this.view.baseScale * this.view.zoom;
-    ctx.save();
-    ctx.translate(this.view.panX, this.view.panY);
-    ctx.scale(s, s);
-    ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
-    ctx.restore();
+    // Map mode: base map + traces only.
+    // Classification mode: parchment background, no map/traces.
+    // Both: current behavior (map + traces + classification overlay).
+    if (this.viewMode !== 'classification') {
+      this._drawBaseMap(ctx, this.view);
+      this._drawTraces(ctx, this.view);
+    } else {
+      ctx.fillStyle = '#eaddcf';
+      ctx.fillRect(0, 0, width, height);
+    }
 
-    // traces
-    this._drawTraces(s);
+    if (this.viewMode !== 'map' && state.grid && this.store.centers) {
+      const fillMode = this.viewMode === 'classification' ? 'full' : 'overlay';
+      this._drawHexFills(ctx, this.view, fillMode);
+      this._drawHexsides(ctx, this.view);
+      this._drawFeatureGlyphs(ctx, this.view);
+    }
 
     if (state.grid && this.store.centers) {
-      this._drawHexFills(s);
-      this._drawHexsides(s);
-      this._drawGrid(s);
-      this._drawSelection(s);
-      this._drawHighlights(s);
+      this._drawGrid(ctx, this.view);
+    }
+
+    this._drawSelection(ctx, this.view);
+    this._drawHighlights(ctx, this.view);
+
+    if (this.anomalyMode) {
+      this._drawAnomalies(ctx, this.view);
     }
   }
 
-  _drawTraces(s) {
-    const ctx = this.ctx;
+  _drawBaseMap(ctx, view) {
+    const s = view.baseScale * view.zoom;
+    const img = this.store.state.mapImage;
+    ctx.save();
+    ctx.translate(view.panX, view.panY);
+    ctx.scale(s, s);
+    ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
+    ctx.restore();
+  }
+
+  _drawTraces(ctx, view) {
+    const s = view.baseScale * view.zoom;
     for (const trace of this.store.state.traces) {
       if (!trace.on || !trace.img) continue;
       ctx.save();
       ctx.globalAlpha = trace.opacity;
-      ctx.translate(this.view.panX, this.view.panY);
+      ctx.translate(view.panX, view.panY);
       ctx.scale(s, s);
       ctx.drawImage(trace.img, 0, 0, trace.img.naturalWidth, trace.img.naturalHeight);
       ctx.restore();
     }
   }
 
-  _terrainColor(type) {
+  _terrainColor(type, mode = 'overlay') {
     const palette = this.store.getPalette();
     if (palette && palette.terrain) {
       const t = palette.terrain.find(x => x.key === type);
       if (t) {
         const c = t.color;
-        return { fill: `${c}40`, line: `${c}73` };
+        return mode === 'full'
+          ? { fill: c, line: c }
+          : { fill: `${c}40`, line: `${c}73` };
       }
     }
     return TERRAIN_COLORS[type] || TERRAIN_COLORS.clear;
   }
 
-  _drawHexFills(s) {
-    const ctx = this.ctx;
+  _drawHexFills(ctx, view, mode = 'overlay') {
+    const s = view.baseScale * view.zoom;
     const grid = this.store.state.grid;
     const terrain = this.store.state.terrain.terrain;
     ctx.save();
-    ctx.translate(this.view.panX, this.view.panY);
+    ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
     ctx.lineWidth = 1.2 / s;
     for (const code of Object.keys(this.store.centers)) {
       const type = terrain[code];
-      const colors = this._terrainColor(type);
+      const colors = this._terrainColor(type, mode);
       const poly = hexPolygon(code, grid);
       ctx.beginPath();
       ctx.moveTo(poly[0].x, poly[0].y);
@@ -266,11 +303,11 @@ export class MapRenderer {
     ctx.restore();
   }
 
-  _drawGrid(s) {
-    const ctx = this.ctx;
+  _drawGrid(ctx, view) {
+    const s = view.baseScale * view.zoom;
     const grid = this.store.state.grid;
     ctx.save();
-    ctx.translate(this.view.panX, this.view.panY);
+    ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
     ctx.strokeStyle = 'rgba(255,255,255,0.22)';
     ctx.lineWidth = 0.6 / s;
@@ -300,11 +337,11 @@ export class MapRenderer {
     return HEXSIDE_COLORS[featureKey] || { stroke: '#888', width: 3.0, dash: [] };
   }
 
-  _drawHexsides(s) {
-    const ctx = this.ctx;
+  _drawHexsides(ctx, view) {
+    const s = view.baseScale * view.zoom;
     const grid = this.store.state.grid;
     ctx.save();
-    ctx.translate(this.view.panX, this.view.panY);
+    ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
     const spacing = 3.5 / s;
     for (const [edgeKey, features] of Object.entries(this.store.state.hexsides || {})) {
@@ -336,13 +373,57 @@ export class MapRenderer {
     ctx.restore();
   }
 
-  _drawSelection(s) {
+  _drawFeatureGlyphs(ctx, view) {
+    const s = view.baseScale * view.zoom;
+    const grid = this.store.state.grid;
+    const palette = this.store.getPalette();
+    if (!palette || !palette.hexFeatures) return;
+    ctx.save();
+    ctx.translate(view.panX, view.panY);
+    ctx.scale(s, s);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#1a1a1a';
+
+    for (const [code, keys] of Object.entries(this.store.state.hexFeatures || {})) {
+      if (!Array.isArray(keys) || !keys.length) continue;
+      const center = hexCenter(code, grid);
+      const r = hexRadius(grid);
+      const fontPx = Math.max(10, Math.min(26, r * 0.65 * s));
+      const step = fontPx / s;
+      ctx.font = `${fontPx}px serif`;
+
+      const glyphs = [];
+      for (const key of keys) {
+        const f = palette.hexFeatures.find(x => x.key === key);
+        if (f && f.glyph) glyphs.push(f.glyph);
+      }
+      if (!glyphs.length) continue;
+
+      if (glyphs.length <= 3) {
+        const n = glyphs.length;
+        const startX = -(n - 1) * step * 0.5;
+        glyphs.forEach((g, i) => {
+          ctx.fillText(g, center.x + startX + i * step, center.y);
+        });
+      } else {
+        const n = glyphs.length;
+        const startY = -(n - 1) * step * 0.5;
+        glyphs.forEach((g, i) => {
+          ctx.fillText(g, center.x, center.y + startY + i * step);
+        });
+      }
+    }
+    ctx.restore();
+  }
+
+  _drawSelection(ctx, view) {
     if (!this.selectedHex) return;
-    const ctx = this.ctx;
+    const s = view.baseScale * view.zoom;
     const grid = this.store.state.grid;
     const poly = hexPolygon(this.selectedHex, grid);
     ctx.save();
-    ctx.translate(this.view.panX, this.view.panY);
+    ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
     ctx.beginPath();
     ctx.moveTo(poly[0].x, poly[0].y);
@@ -354,10 +435,10 @@ export class MapRenderer {
     ctx.restore();
   }
 
-  _drawHighlights(s) {
+  _drawHighlights(ctx, view) {
     const { hex, edge, neighbor } = this.highlighted;
     if (!hex || edge == null) return;
-    const ctx = this.ctx;
+    const s = view.baseScale * view.zoom;
     const grid = this.store.state.grid;
 
     // highlight edge on map
@@ -366,7 +447,7 @@ export class MapRenderer {
     const ep = sharedEdgeEndpoints(hex, nb, grid);
     if (ep) {
       ctx.save();
-      ctx.translate(this.view.panX, this.view.panY);
+      ctx.translate(view.panX, view.panY);
       ctx.scale(s, s);
       ctx.beginPath();
       ctx.moveTo(ep.a.x, ep.a.y);
@@ -382,7 +463,7 @@ export class MapRenderer {
     if (nb && this.store.centers[nb]) {
       const poly = hexPolygon(nb, grid);
       ctx.save();
-      ctx.translate(this.view.panX, this.view.panY);
+      ctx.translate(view.panX, view.panY);
       ctx.scale(s, s);
       ctx.beginPath();
       ctx.moveTo(poly[0].x, poly[0].y);
@@ -395,6 +476,189 @@ export class MapRenderer {
       ctx.stroke();
       ctx.restore();
     }
+  }
+
+  // ----------------- anomaly overlay -----------------
+
+  computeAnomalies() {
+    const state = this.store.state;
+    const terrain = state.terrain && state.terrain.terrain ? state.terrain.terrain : {};
+    const centers = this.store.centers || {};
+    const land = new Set(Object.keys(centers));
+
+    const unclassified = [];
+    for (const code of land) {
+      if (!terrain[code]) unclassified.push(code);
+    }
+
+    const orphanHexsides = [];
+    for (const [edgeKey, features] of Object.entries(state.hexsides || {})) {
+      if (!features || !features.length) continue;
+      const [a, b] = edgeKey.split('|');
+      if (!a || !b) continue;
+      if (!terrain[a] || !terrain[b]) {
+        orphanHexsides.push({ edgeKey, features: [...features] });
+      }
+    }
+
+    const draft = [];
+    for (const [code, prov] of Object.entries(state.provenance || {})) {
+      if (prov === 'draft' && land.has(code)) draft.push(code);
+    }
+
+    return {
+      unclassified: unclassified.length,
+      orphanHexsides: orphanHexsides.length,
+      draft: draft.length,
+      unclassifiedCodes: unclassified,
+      orphanHexsidesDetails: orphanHexsides,
+      draftCodes: draft
+    };
+  }
+
+  _drawAnomalies(ctx, view) {
+    const grid = this.store.state.grid;
+    if (!grid || !this.store.centers) return;
+    const a = this.computeAnomalies();
+    const s = view.baseScale * view.zoom;
+
+    // Unclassified land hexes: red hatched outline
+    for (const code of a.unclassifiedCodes) {
+      this._drawHatchedHex(ctx, view, code, '#d02020', false);
+      const poly = hexPolygon(code, grid);
+      ctx.save();
+      ctx.translate(view.panX, view.panY);
+      ctx.scale(s, s);
+      ctx.beginPath();
+      ctx.moveTo(poly[0].x, poly[0].y);
+      for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+      ctx.closePath();
+      ctx.strokeStyle = '#d02020';
+      ctx.lineWidth = 2 / s;
+      ctx.setLineDash([]);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Draft provenance: warm cross-hatch fill
+    for (const code of a.draftCodes) {
+      this._drawHatchedHex(ctx, view, code, '#c07020', true);
+    }
+
+    // Orphan hexsides: red X along the edge
+    ctx.save();
+    ctx.translate(view.panX, view.panY);
+    ctx.scale(s, s);
+    ctx.strokeStyle = '#ff2050';
+    ctx.lineWidth = 2.5 / s;
+    ctx.setLineDash([]);
+    for (const { edgeKey } of a.orphanHexsidesDetails) {
+      const [aCode, bCode] = edgeKey.split('|');
+      const ep = sharedEdgeEndpoints(aCode, bCode, grid);
+      if (!ep) continue;
+      const mid = { x: (ep.a.x + ep.b.x) / 2, y: (ep.a.y + ep.b.y) / 2 };
+      const dx = ep.b.x - ep.a.x;
+      const dy = ep.b.y - ep.a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len;
+      const uy = dy / len;
+      const h = 8 / s;
+      ctx.beginPath();
+      ctx.moveTo(mid.x - ux * h - uy * h, mid.y - uy * h + ux * h);
+      ctx.lineTo(mid.x + ux * h + uy * h, mid.y + uy * h - ux * h);
+      ctx.moveTo(mid.x + ux * h - uy * h, mid.y + uy * h + ux * h);
+      ctx.lineTo(mid.x - ux * h + uy * h, mid.y - uy * h - ux * h);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  _drawHatchedHex(ctx, view, code, color, cross) {
+    const s = view.baseScale * view.zoom;
+    const grid = this.store.state.grid;
+    const poly = hexPolygon(code, grid);
+
+    ctx.save();
+    ctx.translate(view.panX, view.panY);
+    ctx.scale(s, s);
+    ctx.beginPath();
+    ctx.moveTo(poly[0].x, poly[0].y);
+    for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+    ctx.closePath();
+    ctx.clip();
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1 / s;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of poly) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+    const step = 7 / s;
+    const pad = step;
+
+    ctx.beginPath();
+    for (let v = minX + minY - pad; v <= maxX + maxY + pad; v += step) {
+      ctx.moveTo(v - minY, minY);
+      ctx.lineTo(v - maxY, maxY);
+    }
+    if (cross) {
+      for (let v = minX - maxY - pad; v <= maxX - minY + pad; v += step) {
+        ctx.moveTo(v + minY, minY);
+        ctx.lineTo(v + maxY, maxY);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ----------------- classification PNG export -----------------
+
+  exportOverlayPNG(opts = {}) {
+    const state = this.store.state;
+    const img = state.mapImage;
+    const width = img && img.naturalWidth
+      ? img.naturalWidth
+      : (state.imageFull && state.imageFull[0] ? state.imageFull[0] : 1);
+    const height = img && img.naturalHeight
+      ? img.naturalHeight
+      : (state.imageFull && state.imageFull[1] ? state.imageFull[1] : 1);
+
+    const oc = document.createElement('canvas');
+    oc.width = width;
+    oc.height = height;
+    const octx = oc.getContext('2d');
+
+    const view = { baseScale: 1, zoom: 1, panX: 0, panY: 0 };
+
+    if (opts.background === 'parchment') {
+      octx.fillStyle = '#eaddcf';
+      octx.fillRect(0, 0, width, height);
+    }
+
+    if (state.grid && this.store.centers) {
+      this._drawHexFills(octx, view, 'full');
+      this._drawHexsides(octx, view);
+      this._drawFeatureGlyphs(octx, view);
+      this._drawGrid(octx, view);
+    }
+
+    const dataUrl = oc.toDataURL('image/png');
+
+    if (opts.download !== false) {
+      const name = (state.name || 'map').replace(/[^a-z0-9\-_]/gi, '_');
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `${name}-classification.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+
+    return dataUrl;
   }
 
   setHighlight(hex, edge, neighbor) {
