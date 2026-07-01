@@ -17,6 +17,9 @@ export class MapRenderer {
     this.viewMode = 'both';          // 'map' | 'classification' | 'both'
     this.anomalyMode = false;
 
+    this.brush = { active: false, terrainKey: null, onPaint: null, onShiftClick: null };
+    this.brushLastHex = null;
+
     this.isDragging = false;
     this.dragStart = null;
     this.panStart = null;
@@ -78,6 +81,27 @@ export class MapRenderer {
     this.draw();
   }
 
+  setBrush(config) {
+    this.brush = { ...this.brush, ...config };
+  }
+
+  hexAtScreen(pt) {
+    const world = screenToWorld(pt, this.view);
+    return this._hexAt(world);
+  }
+
+  hexAtWorld(pt) {
+    return this._hexAt(pt);
+  }
+
+  worldToScreen(pt) {
+    return worldToScreen(pt, this.view);
+  }
+
+  screenToWorld(pt) {
+    return screenToWorld(pt, this.view);
+  }
+
   _bindPointer() {
     const wrap = this.canvas.parentElement;
 
@@ -87,12 +111,22 @@ export class MapRenderer {
       this.clickMoved = false;
       this.dragStart = { x: e.clientX, y: e.clientY };
       this.panStart = { x: this.view.panX, y: this.view.panY };
+      this.brushLastHex = null;
       wrap.setPointerCapture(e.pointerId);
     });
 
     wrap.addEventListener('pointermove', (e) => {
       if (!this.isDragging) {
         this._hoverAt(e);
+        return;
+      }
+      if (this.brush.active) {
+        const pt = this._eventToScreen(e);
+        const hex = this.hexAtScreen(pt);
+        if (hex && hex !== this.brushLastHex) {
+          this.brushLastHex = hex;
+          if (this.brush.onPaint) this.brush.onPaint(hex);
+        }
         return;
       }
       const dx = e.clientX - this.dragStart.x;
@@ -107,6 +141,19 @@ export class MapRenderer {
       if (!this.isDragging) return;
       this.isDragging = false;
       wrap.releasePointerCapture(e.pointerId);
+      if (this.brush.active) {
+        const pt = this._eventToScreen(e);
+        const hex = this.hexAtScreen(pt);
+        if (hex) {
+          if (e.shiftKey && this.brush.onShiftClick) {
+            this.brush.onShiftClick(hex);
+          } else if (this.brush.onPaint) {
+            this.brush.onPaint(hex);
+          }
+        }
+        this.brushLastHex = null;
+        return;
+      }
       if (!this.clickMoved) {
         this._clickAt(e);
       }

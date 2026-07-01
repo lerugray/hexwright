@@ -39,6 +39,22 @@
       <button id="clear-select" type="button" title="Close inspector">Esc</button>
     </div>
 
+    <div class="mode-group" role="group" aria-label="View and edit mode">
+      <div class="seg" id="view-mode" role="radiogroup" aria-label="View mode">
+        <button type="button" data-mode="map" aria-checked="false">Map</button>
+        <button type="button" data-mode="classification" aria-checked="false">Class</button>
+        <button type="button" data-mode="both" class="active" aria-checked="true">Both</button>
+      </div>
+      <button id="toggle-brush" type="button" title="Brush mode (b)">Brush</button>
+      <button id="export-overlay" type="button" title="Export classification PNG">PNG</button>
+      <button id="toggle-anomaly" type="button" title="Anomaly check">Anomalies</button>
+      <label class="file-btn" title="Load palette JSON">
+        <span>Palette</span>
+        <input type="file" id="load-palette" accept=".json,application/json" hidden />
+      </label>
+      <span id="anomaly-status" class="anomaly-status" aria-live="polite"></span>
+    </div>
+
     <div class="io-group" role="group" aria-label="Import / Export">
       <label class="file-btn" title="Import hexsides.json">
         <span>Import sides</span>
@@ -81,15 +97,27 @@
             </svg>
             <div id="edge-selects" class="edge-selects"></div>
           </div>
-          <p class="inspector-hint">Select an edge to assign its shared hexside layer.</p>
+          <div class="inspector-features" id="inspector-features"></div>
+          <p class="inspector-hint">Select an edge to assign its shared hexside layers. Toggle in-hex features below.</p>
         </div>
       </div>
     </div>
 
     <aside class="sidebar">
-      <section class="panel">
+      <section class="panel legend-panel">
         <h2>Legend</h2>
-        <ul id="terrain-legend" class="legend-list"></ul>
+        <div class="legend-section">
+          <h3>Terrain</h3>
+          <ul id="terrain-legend" class="legend-list"></ul>
+        </div>
+        <div class="legend-section">
+          <h3>Hexsides</h3>
+          <ul id="hexside-legend" class="legend-list"></ul>
+        </div>
+        <div class="legend-section">
+          <h3>Features</h3>
+          <ul id="feature-legend" class="legend-list"></ul>
+        </div>
       </section>
 
       <section class="panel">
