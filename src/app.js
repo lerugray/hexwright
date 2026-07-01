@@ -236,6 +236,25 @@ async function main() {
   const renderer = new MapRenderer(canvas, store);
   const ui = new UI(store, renderer);
 
+  // Load a project manifest, offering the matching autosave slot first —
+  // shared by the sample button and the ?project=<url> boot parameter.
+  async function loadManifestWithRestore(manifestUrl) {
+    const project = await loadProjectFromManifest(manifestUrl);
+    const slot = getSessionSlotForName(project.name);
+    if (slot && slot.land > 0 && askToRestore(slot, 'project')) {
+      const restored = slot.project;
+      restored.mapImage = project.mapImage;
+      restored.traces = project.traces || [];
+      if (!restored.imageFull || !restored.imageFull[0]) restored.imageFull = project.imageFull;
+      if (!restored.grid) restored.grid = project.grid;
+      await loadAndRender(restored);
+      renderer.setViewMode('classification');
+      ui.status(`Restored autosave for ${project.name}.`, 4500);
+      return;
+    }
+    await loadAndRender(project);
+  }
+
   async function loadAndRender(project) {
     store.loadProject(project);
     // Let the flex layout settle so the canvas has real dimensions before we
@@ -253,7 +272,10 @@ async function main() {
       ui.status('Loading map image...');
       const dataUrl = await readFile(file, 'dataurl');
       const img = await loadImage(dataUrl);
-      store.setProject({ mapImage: img, imageFull: [img.naturalWidth, img.naturalHeight] });
+      // Preserve the grid's calibration space if a grid is loaded — swapping in
+      // a different-resolution raster must not re-anchor world coordinates.
+      const gridFull = store.state.grid && store.state.grid.image_full;
+      store.setProject({ mapImage: img, imageFull: gridFull || [img.naturalWidth, img.naturalHeight] });
       renderer.setBaseScale();
       renderer.fitView();
     },
@@ -278,20 +300,7 @@ async function main() {
     sample: async () => {
       ui.status('Loading GotA sample...');
       try {
-        const project = await loadProjectFromManifest('samples/gota-project.json');
-        const slot = getSessionSlotForName(project.name);
-        if (slot && slot.land > 0 && askToRestore(slot, 'project')) {
-          const restored = slot.project;
-          restored.mapImage = project.mapImage;
-          restored.traces = project.traces || [];
-          if (!restored.imageFull || !restored.imageFull[0]) restored.imageFull = project.imageFull;
-          if (!restored.grid) restored.grid = project.grid;
-          await loadAndRender(restored);
-          renderer.setViewMode('classification');
-          ui.status(`Restored autosave for ${project.name}.`, 4500);
-          return;
-        }
-        await loadAndRender(project);
+        await loadManifestWithRestore('samples/gota-project.json');
       } catch (err) {
         console.error(err);
         ui.status(`Sample load failed: ${err.message}`, 5000);
@@ -317,7 +326,20 @@ async function main() {
   // Session autosave: debounced-persist the working project to localStorage on
   // every change (data + grid; the base-map bitmap is not serialized), and restore
   // it on the next visit so an accidental reload never loses hand-assignment work.
-  try {
+  // ?project=<manifest-url> boots straight into a project (used by the
+  // double-click launcher for the full-res local GotA manifest). Falls back
+  // to the normal newest-slot restore prompt when absent or failing.
+  const bootManifest = new URLSearchParams(window.location.search).get('project');
+  if (bootManifest) {
+    try {
+      migrateLegacySessionOnce();
+      ui.status(`Loading ${bootManifest}...`);
+      await loadManifestWithRestore(bootManifest);
+    } catch (err) {
+      console.error(err);
+      ui.status(`Project load failed: ${err.message} — use Load GotA sample or the file pickers.`, 7000);
+    }
+  } else try {
     migrateLegacySessionOnce();
     const newest = getNewestSessionSlot();
     if (newest && newest.land > 0 && askToRestore(newest, 'boot')) {
