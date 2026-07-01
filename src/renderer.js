@@ -16,6 +16,8 @@ export class MapRenderer {
 
     this.viewMode = 'both';          // 'map' | 'classification' | 'both'
     this.overlayAlpha = 1;           // Both-view terrain-fill opacity (UI slider)
+    this.nudgeMode = false;          // drag/arrow-key the scan under the grid
+    this.nudgeDrag = null;
     this.anomalyMode = false;
 
     this.brush = { active: false, terrainKey: null, onPaint: null, onShiftClick: null };
@@ -95,6 +97,12 @@ export class MapRenderer {
     this.brush = { ...this.brush, ...config };
   }
 
+  setNudgeMode(on) {
+    this.nudgeMode = !!on;
+    if (!this.nudgeMode) this.nudgeDrag = null;
+    this.canvas.parentElement.style.cursor = this.nudgeMode ? 'move' : '';
+  }
+
   setEdgePaint(config) {
     this.edgePaint = { ...this.edgePaint, ...config };
     if (!this.edgePaint.active) {
@@ -135,6 +143,13 @@ export class MapRenderer {
 
     wrap.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
+      if (this.nudgeMode) {
+        this.isDragging = true;
+        const off = this.store.state.mapOffset || [0, 0];
+        this.nudgeDrag = { x: e.clientX, y: e.clientY, off: [off[0], off[1]] };
+        wrap.setPointerCapture(e.pointerId);
+        return;
+      }
       if (this.edgePaint.active) {
         this.isDragging = true;
         this.clickMoved = false;
@@ -161,6 +176,15 @@ export class MapRenderer {
     });
 
     wrap.addEventListener('pointermove', (e) => {
+      if (this.nudgeMode) {
+        if (!this.isDragging || !this.nudgeDrag) return;
+        const s = this.view.baseScale * this.view.zoom;
+        const nx = this.nudgeDrag.off[0] + (e.clientX - this.nudgeDrag.x) / s;
+        const ny = this.nudgeDrag.off[1] + (e.clientY - this.nudgeDrag.y) / s;
+        this.store.setMapOffset(nx, ny);
+        this.draw();
+        return;
+      }
       if (this.edgePaint.active) {
         const pt = this._eventToScreen(e);
         const hit = this.nearestEdgeAtScreen(pt);
@@ -215,6 +239,10 @@ export class MapRenderer {
       if (!this.isDragging) return;
       this.isDragging = false;
       wrap.releasePointerCapture(e.pointerId);
+      if (this.nudgeMode) {
+        this.nudgeDrag = null;
+        return;
+      }
       if (this.edgePaint.active) {
         const pt = this._eventToScreen(e);
         const hit = this.nearestEdgeAtScreen(pt);
@@ -434,8 +462,9 @@ export class MapRenderer {
     // renders smaller than the grid by exactly natural/imageFull (the ~4x
     // map-vs-grid mismatch hit 2026-07-01).
     const [fw, fh] = this.store.state.imageFull || [];
+    const off = this.store.state.mapOffset || [0, 0];
     ctx.save();
-    ctx.translate(view.panX, view.panY);
+    ctx.translate(view.panX + off[0] * s, view.panY + off[1] * s);
     ctx.scale(s, s);
     ctx.drawImage(img, 0, 0, fw || img.naturalWidth, fh || img.naturalHeight);
     ctx.restore();
@@ -444,11 +473,13 @@ export class MapRenderer {
   _drawTraces(ctx, view) {
     const s = view.baseScale * view.zoom;
     const [fw, fh] = this.store.state.imageFull || [];
+    const off = this.store.state.mapOffset || [0, 0];
     for (const trace of this.store.state.traces) {
       if (!trace.on || !trace.img) continue;
       ctx.save();
       ctx.globalAlpha = trace.opacity;
-      ctx.translate(view.panX, view.panY);
+      // Traces are registered to the scan raster — they nudge WITH the map.
+      ctx.translate(view.panX + off[0] * s, view.panY + off[1] * s);
       ctx.scale(s, s);
       ctx.drawImage(trace.img, 0, 0, fw || trace.img.naturalWidth, fh || trace.img.naturalHeight);
       ctx.restore();
@@ -499,8 +530,10 @@ export class MapRenderer {
     ctx.save();
     ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
-    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-    ctx.lineWidth = 0.6 / s;
+    // Near-black for contrast over parchment scans (was white @22% — invisible
+    // on light maps; Ray 2026-07-01).
+    ctx.strokeStyle = 'rgba(10,10,10,0.65)';
+    ctx.lineWidth = 0.9 / s;
     for (const code of Object.keys(this.store.centers)) {
       const poly = hexPolygon(code, grid);
       ctx.beginPath();
