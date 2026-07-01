@@ -80,6 +80,20 @@ The sample loader needs the local server for `fetch`; the file pickers work eith
 - **Session autosave** — your work persists to `localStorage` on every change and restores on the next
   visit, so an accidental reload never loses hand-assignment work.
 
+- **Overlay opacity slider** — fade the terrain-fill wash in Both view so the scan stays
+  traceable underneath; hexsides, grid, and traces keep full strength. Dragging it from any
+  view switches you to Both (it never silently no-ops).
+- **Nudge map alignment** (`n`) — drag the scan under the fixed digital grid, or arrow keys
+  for 1-px steps (Shift = ×10). The offset autosaves with the project: align once, aligned
+  forever. The pragmatic answer to calibration drift — move the imagery, keep the hex data
+  canonical.
+- **In-app help** (`?`) — full guide + shortcut table from the toolbar.
+- **Double-click launcher** (`Launch Hexwright.command`, macOS) — starts the local server
+  (from the PARENT folder, so gitignored `local/` manifests can reference sibling-repo
+  full-resolution maps that must not enter this public repo) and opens the editor; boots
+  straight into `local/gota-fullres.json` when present via the `?project=<manifest>` URL
+  parameter.
+
 ## Edge paint quick use
 
 Turn on **Edge paint** (`e`), pick a hexside feature chip, then paint directly on map edges.
