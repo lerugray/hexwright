@@ -1,0 +1,35 @@
+{
+  "name": "GotA default",
+  "terrain": [
+    {"key": "clear",  "label": "Clear",  "color": "#c8b88a"},
+    {"key": "woods",  "label": "Woods",  "color": "#5c7a4a"},
+    {"key": "rough",  "label": "Rough",  "color": "#a98a5c"},
+    {"key": "swamp",  "label": "Swamp",  "color": "#6b7a5a"},
+    {"key": "water",  "label": "Water",  "color": "#3f78b4"},
+    {"key": "desert", "label": "Desert", "color": "#d8c88a"},
+    {"key": "urban",  "label": "Urban",  "color": "#9a9a9a"}
+  ],
+  "hexFeatures": [
+    {"key": "city",      "label": "City",      "glyph": "◉"},
+    {"key": "town",      "label": "Town",      "glyph": "○"},
+    {"key": "fort",      "label": "Fort",      "glyph": "✦"},
+    {"key": "port",      "label": "Port",      "glyph": "⚓"},
+    {"key": "airfield",  "label": "Airfield",  "glyph": "✈"},
+    {"key": "objective", "label": "Objective", "glyph": "★"},
+    {"key": "resource",  "label": "Resource",  "glyph": "◈"}
+  ],
+  "hexsideFeatures": [
+    {"key": "river",      "label": "River",       "color": "#2878ff", "exportLayer": "rivers"},
+    {"key": "stream",     "label": "Stream",      "color": "#6fb0e8", "exportLayer": "streams"},
+    {"key": "road",       "label": "Road",        "color": "#c9a06a", "exportLayer": "roads"},
+    {"key": "rail",       "label": "Rail",        "color": "#8a8f98", "dash": true, "exportLayer": "rails"},
+    {"key": "ridge",      "label": "Ridge/Mtn",   "color": "#be8228", "exportLayer": "mountains"},
+    {"key": "cliff",      "label": "Cliff",       "color": "#7a5a2a", "exportLayer": "cliffs"},
+    {"key": "escarpment", "label": "Escarpment",  "color": "#9a6a3a", "exportLayer": "escarpments"},
+    {"key": "wall",       "label": "Wall",        "color": "#b0b0b0", "exportLayer": "walls"},
+    {"key": "bridge",     "label": "Bridge",      "color": "#e0c060", "exportLayer": "bridges"},
+    {"key": "impassable", "label": "Impassable",  "color": "#dc2828", "exportLayer": "impassible"}
+  ],
+  "terrainAliases": {"forest": "woods", "lake": "water"},
+  "hexsideAliases": {"mountains": "ridge", "impassible": "impassable"}
+}
