@@ -15,6 +15,40 @@ function pairKey(a, b) {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
+function sortPairArrays(pairs) {
+  pairs.sort((p1, p2) => (p1[0] < p2[0] ? -1 : p1[0] > p2[0] ? 1 : p1[1] < p2[1] ? -1 : p1[1] > p2[1] ? 1 : 0));
+  return pairs;
+}
+
+function todayStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function parseTwuPairArrayEntry(entry, label, index) {
+  if (!Array.isArray(entry) || entry.length !== 2) {
+    throw new Error(`${label} index ${index} must be a 2-element [a,b] array.`);
+  }
+  const a = String(entry[0] || '').trim();
+  const b = String(entry[1] || '').trim();
+  if (!a || !b || a === b) {
+    throw new Error(`${label} index ${index} must provide two distinct hex codes.`);
+  }
+  return normalizePair(a, b);
+}
+
+function parseTwuPairFlexibleEntry(entry, label, index) {
+  if (Array.isArray(entry)) return parseTwuPairArrayEntry(entry, label, index);
+  if (!entry || typeof entry !== 'object') {
+    throw new Error(`${label} index ${index} must be [a,b] or {a,b}.`);
+  }
+  const a = String(entry.a || '').trim();
+  const b = String(entry.b || '').trim();
+  if (!a || !b || a === b) {
+    throw new Error(`${label} index ${index} must provide two distinct hex codes.`);
+  }
+  return normalizePair(a, b);
+}
+
 function isV1Project(project) {
   // v1 has no schemaVersion; v2 stores a top-level schemaVersion.
   return project && !project.schemaVersion;
@@ -460,6 +494,72 @@ export class ProjectStore {
     return true;
   }
 
+  _importHexsidePairs(featureKey, pairs, opts = {}) {
+    const canonicalFeature = this._toFeatureKey(featureKey);
+    if (!canonicalFeature) throw new Error(`Unknown hexside feature: ${featureKey}`);
+    let changed = false;
+    const touched = new Set();
+    const landTouched = new Set();
+    const terrain = this.state.terrain?.terrain || {};
+    const markDraft = opts.provenance === 'draft';
+
+    const ensureUndo = () => {
+      if (!changed) {
+        this.pushUndo();
+        changed = true;
+      }
+    };
+
+    for (const pair of pairs) {
+      const normalized = normalizePair(String(pair.a || '').trim(), String(pair.b || '').trim());
+      if (!normalized.a || !normalized.b || normalized.a === normalized.b) continue;
+      touched.add(normalized.a);
+      touched.add(normalized.b);
+      if (Object.prototype.hasOwnProperty.call(terrain, normalized.a)) landTouched.add(normalized.a);
+      if (Object.prototype.hasOwnProperty.call(terrain, normalized.b)) landTouched.add(normalized.b);
+      const key = pairKey(normalized.a, normalized.b);
+      const current = this.state.hexsides[key] || [];
+      if (current.includes(canonicalFeature)) continue;
+      ensureUndo();
+      this.state.hexsides[key] = [...current, canonicalFeature];
+    }
+
+    if (markDraft) {
+      for (const code of touched) {
+        if (!Object.prototype.hasOwnProperty.call(terrain, code)) continue;
+        if (this.state.provenance[code] === 'draft') continue;
+        ensureUndo();
+        this.state.provenance[code] = 'draft';
+      }
+    }
+
+    if (changed) {
+      this.rebuildIndex();
+      this.notify('hexsides');
+    }
+    return markDraft ? landTouched.size : touched.size;
+  }
+
+  importTwuRivers(input, opts = {}) {
+    const data = typeof input === 'string' ? JSON.parse(input) : input;
+    const raw = data?.hexsides;
+    if (!Array.isArray(raw)) {
+      throw new Error('Expected rivers payload shape: {"hexsides":[["a","b"], ...]}.');
+    }
+    const pairs = raw.map((entry, idx) => parseTwuPairArrayEntry(entry, 'hexsides', idx));
+    return this._importHexsidePairs('river', pairs, { provenance: opts.provenance || 'draft' });
+  }
+
+  importTwuRail(input, opts = {}) {
+    const data = typeof input === 'string' ? JSON.parse(input) : input;
+    const raw = data?.links;
+    if (!Array.isArray(raw)) {
+      throw new Error('Expected rail payload shape: {"links":[["a","b"], ...]} (also accepts {a,b} entries).');
+    }
+    const pairs = raw.map((entry, idx) => parseTwuPairFlexibleEntry(entry, 'links', idx));
+    return this._importHexsidePairs('rail', pairs, { provenance: opts.provenance || 'draft' });
+  }
+
   importHexsides(input) {
     const data = typeof input === 'string' ? JSON.parse(input) : input;
     this.pushUndo();
@@ -539,6 +639,47 @@ export class ProjectStore {
 
   exportHexsidesJson() {
     return JSON.stringify(this.exportHexsidesObject(), null, 2);
+  }
+
+  _exportPairsForFeature(featureKey) {
+    const canonical = this._toFeatureKey(featureKey);
+    const pairs = [];
+    for (const [edgeKey, features] of Object.entries(this.state.hexsides || {})) {
+      if (!Array.isArray(features) || !features.includes(canonical)) continue;
+      const [a, b] = edgeKey.split('|');
+      if (!a || !b) continue;
+      pairs.push([a, b]);
+    }
+    return sortPairArrays(pairs);
+  }
+
+  exportTwuRiversObject() {
+    return {
+      _comment: `edited in Hexwright v2.1 ${todayStamp()}`,
+      hexsides: this._exportPairsForFeature('river')
+    };
+  }
+
+  exportTwuRailObject() {
+    const links = this._exportPairsForFeature('rail');
+    const endpoints = new Set();
+    for (const [a, b] of links) {
+      endpoints.add(a);
+      endpoints.add(b);
+    }
+    return {
+      _comment: `edited in Hexwright v2.1 ${todayStamp()}`,
+      links,
+      hexes: [...endpoints].sort()
+    };
+  }
+
+  exportTwuRiversJson() {
+    return JSON.stringify(this.exportTwuRiversObject(), null, 2);
+  }
+
+  exportTwuRailJson() {
+    return JSON.stringify(this.exportTwuRailObject(), null, 2);
   }
 
   exportTerrainObject() {

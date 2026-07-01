@@ -22,9 +22,11 @@ and export the canonical `hexgrid` / `terrain` / `hexsides` JSON your game reads
 - [Why](#why)
 - [Quick start](#quick-start)
 - [Features](#features)
+- [Edge paint quick use](#edge-paint-quick-use)
 - [Data model](#data-model)
-- [Make it your own game](#make-it-your-own-game)
+- [Bring your own game](#bring-your-own-game)
 - [WMP pipeline](#wmp-pipeline-auto-guess-then-refine)
+- [TWU pipeline (rivers + rail)](#twu-pipeline-rivers--rail)
 - [Testing](#testing)
 - [License](#license)
 
@@ -73,10 +75,31 @@ The sample loader needs the local server for `fetch`; the file pickers work eith
 - **Configurable palette** — terrain, features, hexside features, kinds, and colors live in a JSON
   config; any game supplies its own vocabulary. The bundled default is GotA's (`palettes/gota.json`).
 - **WMP draft import** — ingest a wargame-map-parser classification as a low-confidence draft to refine.
-- **Reference trace overlays** with opacity control, brush drag-assign, keyboard shortcuts
-  (`1`-`0` terrain, `b` brush, `v` view mode, `Esc` close), undo/redo, and a palette-driven legend.
+- **TWU on-ramp** — import TWU `rivers.json` (`hexsides` pair-arrays) and `rail.json` (`links` pair-arrays or `{a,b}` objects) with strict validation and loud errors, then export TWU-exact files (`rivers.json` + `rail.json` with `hexes` endpoint union).
+- **Reference trace overlays** with opacity control, brush drag-assign, edge-paint drag-assign, undo/redo, and a palette-driven legend.
 - **Session autosave** — your work persists to `localStorage` on every change and restores on the next
   visit, so an accidental reload never loses hand-assignment work.
+
+## Edge paint quick use
+
+Turn on **Edge paint** (`e`), pick a hexside feature chip, then paint directly on map edges.
+
+- **Click** toggles the active feature on the nearest valid shared edge.
+- **Drag** paints (set-on) across edges; one drag stroke is one undo entry.
+- **Alt+click / Alt+drag** erases the active feature from hit edges.
+- Edge paint takes pointer priority while enabled; turn it off and normal pan/inspect behavior returns.
+
+| Shortcut | Action |
+| --- | --- |
+| `Drag` | Pan |
+| `Wheel` | Zoom |
+| `Click` | Inspect hex |
+| `e` | Toggle edge paint mode |
+| `b` | Toggle brush mode |
+| `v` | Cycle view mode |
+| `1`-`0` | Quick terrain select |
+| `Esc` | Close inspector |
+| `Ctrl/Cmd + Z` | Undo |
 
 ## Data model
 
@@ -92,13 +115,31 @@ A project is flat-top even-q, addressed by CCRR hex codes (`"0803"` = column 08,
 
 Internally hexsides are per-edge feature arrays; the grouped shape is the export contract.
 
-## Make it your own game
+## Bring your own game
 
-Terrain, in-hex features, hexside features, and colors are defined by a palette config. Copy
-`palettes/gota.json`, change the vocabulary and colors, and load it with the **Palette** button.
-Each hexside feature has a `kind` (`edge` or `crossing`) that drives how it draws, an `exportLayer`
-that sets its grouped-export key, and `terrainAliases` / `hexsideAliases` normalize inbound names
-(e.g. `forest` -> `woods`).
+Hexwright is data-contract driven. To onboard a new game you provide a grid JSON, a palette JSON, and a project manifest.
+
+- **Grid contract (`hexgrid`)**: include the flat-top even-q calibration fields Hexwright reads (`x_model.x_intercept_col0`, `x_model.col_pitch_x`, `y_model.y_intercept_row0`, `y_model.row_pitch_y`, `y_model.even_col_down_offset`, or equivalent legacy aliases) plus `image_full` when available.
+- **Palette contract**: define `terrain`, `hexFeatures`, and `hexsideFeatures` in JSON. Each hexside feature needs `key`, `kind` (`edge` or `crossing`), color, and optional `exportLayer`/aliases.
+- **Manifest contract**: `name`, `map`, `hexgrid`, `terrain`, optional `hexsides`, optional `traces`, optional `imageFull`, optional `palette`.
+
+Manifest example:
+
+```json
+{
+  "name": "My Game",
+  "map": "assets/board-web.jpg",
+  "imageFull": [5000, 3200],
+  "hexgrid": "data/hexgrid.json",
+  "terrain": "data/terrain.json",
+  "hexsides": "data/hexsides.json",
+  "palette": "palettes/my-game.json"
+}
+```
+
+Load a manifest directly at boot with `?project=<manifest-url>`, for example:
+
+- [http://localhost:8000/hexwright/?project=samples/twu-project.json](http://localhost:8000/hexwright/?project=samples/twu-project.json)
 
 ## WMP pipeline (auto-guess, then refine)
 
@@ -112,6 +153,33 @@ python -m parser.export_hexwright wmp-terrain.json -o gota-terrain.hexwright.jso
 In Hexwright, **Import WMP draft** loads that file, marks every imported hex as an unconfirmed *draft*
 (visible in the Anomaly overlay), and you refine + confirm from there. The full loop:
 scan -> WMP rough classify -> Hexwright hand-refine -> canonical export.
+
+## TWU pipeline (rivers + rail)
+
+TWU on-ramp scope is intentionally narrow: rivers + rail only (no fortress import/export path).
+
+1. Keep `hexwright` and `twu-deluxe-digital` as sibling checkouts.
+2. Start the server from the parent directory so sibling paths resolve:
+
+   ```
+   cd ..
+   python3 -m http.server 8000
+   ```
+
+3. Open Hexwright with the TWU template manifest:
+
+   ```
+   http://localhost:8000/hexwright/?project=samples/twu-project.json
+   ```
+
+4. Update `samples/twu-project.json` paths to match your local TWU repo layout.
+5. Use **Import TWU layer** for each source file (`rivers.json`, then `rail.json`).
+6. Refine by hand with edge paint.
+7. Use **Export -> TWU rivers+rail** to write:
+   - `rivers.json`: `_comment` + `hexsides: [["a","b"], ...]`
+   - `rail.json`: `_comment` + `links: [["a","b"], ...]` + `hexes` endpoint union
+
+Validation is strict and loud: wrong-shaped TWU files fail import with an explicit status error and no data changes.
 
 ## Testing
 

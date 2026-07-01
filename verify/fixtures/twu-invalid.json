@@ -1,0 +1,6 @@
+{
+  "_comment": "Invalid TWU shape fixture",
+  "hexsides": [
+    { "a": "2312", "b": "2412" }
+  ]
+}
