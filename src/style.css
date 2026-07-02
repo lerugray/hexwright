@@ -223,7 +223,9 @@ label.file-btn:focus-within {
   border: 1px solid var(--hx-hairline, var(--chrome));
   border-radius: var(--rad-m, 10px);
   box-shadow: var(--shadow-panel, 0 4px 18px rgba(0, 0, 0, 0.45));
-  overflow: hidden;
+  max-height: calc(100vh - var(--strip-h, 40px) - 2 * var(--sp-3, 12px));
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .brush-card .head {
@@ -306,7 +308,9 @@ label.file-btn:focus-within {
   border: 1px solid var(--hx-hairline, var(--chrome));
   border-radius: var(--rad-m, 10px);
   box-shadow: var(--shadow-panel, 0 4px 18px rgba(0, 0, 0, 0.45));
-  overflow: hidden;
+  max-height: calc(100vh - var(--strip-h, 40px) - 2 * var(--sp-3, 12px));
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 #layers-panel .head {
@@ -533,6 +537,48 @@ button.active {
   padding: 10px;
 }
 
+/* Scrollable chrome surfaces: slim, hairline-toned scrollbars so overflow
+   reads as intentional instrument chrome, not a browser default. */
+#layers-panel,
+#hex-editor,
+.brush-card,
+.help-sheet {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hx-hairline, var(--chrome-2)) transparent;
+}
+
+#layers-panel::-webkit-scrollbar,
+#hex-editor::-webkit-scrollbar,
+.brush-card::-webkit-scrollbar,
+.help-sheet::-webkit-scrollbar {
+  width: 10px;
+}
+
+#layers-panel::-webkit-scrollbar-thumb,
+#hex-editor::-webkit-scrollbar-thumb,
+.brush-card::-webkit-scrollbar-thumb,
+.help-sheet::-webkit-scrollbar-thumb {
+  background: var(--hx-hairline, var(--chrome-2));
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+#layers-panel::-webkit-scrollbar-thumb:hover,
+#hex-editor::-webkit-scrollbar-thumb:hover,
+.brush-card::-webkit-scrollbar-thumb:hover,
+.help-sheet::-webkit-scrollbar-thumb:hover {
+  background: var(--hx-text-dim, var(--muted));
+  background-clip: content-box;
+}
+
+#layers-panel::-webkit-scrollbar-track,
+#hex-editor::-webkit-scrollbar-track,
+.brush-card::-webkit-scrollbar-track,
+.help-sheet::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 #layers-panel .slider-row {
   display: flex;
   flex-direction: column;
@@ -732,7 +778,9 @@ button.active {
   z-index: 70;
   background: var(--hx-bg-canvas, var(--desk));
   display: grid;
-  place-items: center;
+  place-items: safe center;
+  overflow-y: auto;
+  padding: var(--sp-4, 16px) 0;
 }
 
 .start-screen[hidden] {
@@ -929,7 +977,9 @@ button.active {
   border: 1px solid var(--hx-hairline, var(--chrome));
   border-radius: var(--rad-m, 10px);
   box-shadow: var(--shadow-panel, 0 4px 18px rgba(0, 0, 0, 0.45));
-  overflow: hidden;
+  max-height: calc(100vh - var(--strip-h, 40px) - 2 * var(--sp-3, 12px));
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 #hex-editor[hidden] {
