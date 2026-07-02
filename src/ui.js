@@ -23,9 +23,10 @@ export class UI {
     this.gatherElements();
 
     this._lastPalette = null;
-    this.edgeGroups = [];
-    this.edgePoints = [];
-    this.edgeSelectGroups = [];
+    this.hexedEdgeGroups = [];
+    this.hexedEdgePts = [];
+    this.hexedEdgeLabels = [];
+    this.hexedSelectedEdge = null;
 
     this.mode = 'inspect';
     this.brushActive = false;
@@ -39,7 +40,7 @@ export class UI {
     this.helpOpen = false;
     this.projectSub = '';
 
-    this.buildInspectorEdges();
+    this.buildHexEditor();
     this.bindGlobal();
     this.bindControls();
     this._setupBrush();
@@ -64,141 +65,196 @@ export class UI {
       'import-sides', 'import-terrain', 'import-wmp', 'file-btn', 'file-popover', 'export-btn', 'export-popover',
       'import-twu',
       'export-sides-file', 'export-sides-copy', 'export-terrain-file', 'export-terrain-copy', 'export-twu',
-      'inspector', 'inspector-close', 'inspector-hex', 'inspector-terrain',
-      'hex-svg', 'hex-shape', 'hex-edges', 'edge-selects', 'inspector-features',
+      'hex-editor', 'hexed-close', 'hexed-title', 'hexed-terrain-current', 'hexed-terrain-grid',
+      'hexed-feat-count', 'hexed-featrow', 'hexed-edges-meta', 'hexed-svg', 'hexed-fill',
+      'hexed-edges', 'hexed-edge-labels', 'hexed-center-code', 'hexed-on-edge-label',
+      'hexed-edchips', 'hexed-inkgrid',
       'count-land', 'layer-counts', 'status',
       'help-overlay', 'close-help'
     ];
     for (const id of ids) this.els[id] = document.getElementById(id);
   }
 
-  buildInspectorEdges() {
-    const g = this.els['hex-edges'];
-    const selects = this.els['edge-selects'];
-    const r = 90; // illustration radius
+  buildHexEditor() {
+    this._buildHexEditorDiagram();
+    this._rebuildHexEditorPalette();
+  }
+
+  _hexEditorVertices() {
+    const cx = 108;
+    const cy = 100;
+    const r = 58;
     const pts = [];
     for (let i = 0; i < 6; i++) {
       const a = (Math.PI / 3) * i;
-      pts.push({ x: r * Math.cos(a), y: r * Math.sin(a) });
+      pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
     }
-    const pointsAttr = pts.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
-    this.els['hex-shape'].setAttribute('points', pointsAttr);
+    return { cx, cy, r, pts };
+  }
+
+  _buildHexEditorDiagram() {
+    const svgNs = 'http://www.w3.org/2000/svg';
+    const edgesG = this.els['hexed-edges'];
+    const labelsG = this.els['hexed-edge-labels'];
+    edgesG.innerHTML = '';
+    labelsG.innerHTML = '';
+    this.hexedEdgeGroups = [];
+    this.hexedEdgePts = [];
+    this.hexedEdgeLabels = [];
+
+    const { cx, cy, pts } = this._hexEditorVertices();
+    this.els['hexed-fill'].setAttribute('points', pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
 
     for (let i = 0; i < 6; i++) {
       const a = pts[i];
       const b = pts[(i + 1) % 6];
-      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      group.setAttribute('data-edge', i);
-      g.appendChild(group);
+      const d = `M${a.x.toFixed(1)} ${a.y.toFixed(1)} L${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+      this.hexedEdgePts.push({ a, b });
 
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', a.x);
-      line.setAttribute('y1', a.y);
-      line.setAttribute('x2', b.x);
-      line.setAttribute('y2', b.y);
-      line.setAttribute('class', 'hex-edge');
-      line.setAttribute('data-edge', i);
-      line.addEventListener('mouseenter', () => this._highlightEdge(i));
-      line.addEventListener('mouseleave', () => this._unhighlightEdge());
-      line.addEventListener('click', () => this._focusEdgeSelect(i));
-      group.appendChild(line);
+      const group = document.createElementNS(svgNs, 'g');
+      group.setAttribute('data-edge', String(i));
 
-      this.edgeGroups.push(group);
-      this.edgePoints.push({ a, b });
+      const hit = document.createElementNS(svgNs, 'path');
+      hit.setAttribute('class', 'edge-seg edge-hit');
+      hit.setAttribute('d', d);
+      hit.setAttribute('data-edge', String(i));
+      hit.setAttribute('stroke', '#4a4e57');
+      hit.setAttribute('stroke-width', '10');
+      hit.setAttribute('stroke-linecap', 'round');
+      hit.setAttribute('fill', 'none');
+      hit.addEventListener('click', () => this._selectHexEditorEdge(i));
+      hit.addEventListener('mouseenter', () => this._highlightHexEditorEdge(i));
+      hit.addEventListener('mouseleave', () => this._unhighlightHexEditorEdge());
+      group.appendChild(hit);
+
+      const inks = document.createElementNS(svgNs, 'g');
+      inks.setAttribute('class', 'edge-inks');
+      group.appendChild(inks);
+
+      const sel = document.createElementNS(svgNs, 'path');
+      sel.setAttribute('class', 'edge-sel-overlay');
+      sel.setAttribute('d', d);
+      sel.setAttribute('stroke', 'var(--hx-accent)');
+      sel.setAttribute('stroke-width', '16');
+      sel.setAttribute('stroke-linecap', 'round');
+      sel.setAttribute('fill', 'none');
+      sel.setAttribute('opacity', '0');
+      sel.setAttribute('pointer-events', 'none');
+      group.appendChild(sel);
+
+      edgesG.appendChild(group);
+      this.hexedEdgeGroups.push(group);
+
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const dx = mid.x - cx;
+      const dy = mid.y - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      const label = document.createElementNS(svgNs, 'text');
+      label.setAttribute('class', 'edge-label');
+      label.setAttribute('data-edge', String(i));
+      label.setAttribute('x', String(mid.x + (dx / len) * 18));
+      label.setAttribute('y', String(mid.y + (dy / len) * 18 + 3));
+      label.setAttribute('text-anchor', 'middle');
+      label.textContent = EDGE_NAMES[i];
+      labelsG.appendChild(label);
+      this.hexedEdgeLabels.push(label);
     }
-
-    this._rebuildEdgeControls();
-    this._rebuildFeatureControls();
   }
 
-  _rebuildEdgeControls() {
-    const selects = this.els['edge-selects'];
-    selects.innerHTML = '';
-    this.edgeSelectGroups = [];
+  _rebuildHexEditorPalette() {
+    const palette = this.store.getPalette();
+    const terrain = palette?.terrain || [];
+    const hexFeatures = palette?.hexFeatures || [];
+    const hexsideFeatures = palette?.hexsideFeatures || [];
+
+    this.els['hexed-terrain-grid'].innerHTML = terrain.map(t => `
+      <button type="button" class="terr" data-terrain="${t.key}">
+        <span class="tswatch" style="background:${t.color || '#888'}"></span>
+        <span>${t.label || t.key}</span>
+      </button>
+    `).join('');
+
+    this.els['hexed-featrow'].innerHTML = hexFeatures.map(f => `
+      <button type="button" class="feat" data-feature="${f.key}">
+        <span class="fdot"></span>
+        ${f.glyph ? `<span class="hx-data">${f.glyph}</span>` : ''}
+        <span>${f.label || f.key}</span>
+      </button>
+    `).join('');
+
+    this.els['hexed-inkgrid'].innerHTML = hexsideFeatures.map(f => `
+      <button type="button" class="inkmini" data-feature="${f.key}">
+        <span class="swatch" style="background:${this._hexsideFeatureColor(f)}"></span>
+        <span>${f.label || f.key}</span>
+      </button>
+    `).join('');
+  }
+
+  _selectHexEditorEdge(i) {
+    if (!this.inspectorHex) return;
+    const nb = edgeNeighbor(this.inspectorHex, i, this.store.centers, this.store.state.grid);
+    if (!nb) return;
+    this.hexedSelectedEdge = i;
+    this._highlightHexEditorEdge(i);
+
+    const code = this.inspectorHex;
+    let marked = 0;
+    for (let j = 0; j < 6; j++) {
+      const n = edgeNeighbor(code, j, this.store.centers, this.store.state.grid);
+      if (n && this.store.edgeFeatures(code, n).length) marked++;
+    }
+    this.els['hexed-edges-meta'].textContent = `${marked} of 6 marked · ${EDGE_NAMES[i]} selected`;
+    this.hexedEdgeLabels.forEach((label, idx) => label.classList.toggle('sel', idx === i));
+
+    this._refreshHexEditorEdgePanel();
+    this._paintHexEditorDiagram();
+  }
+
+  _highlightHexEditorEdge(i) {
+    if (!this.inspectorHex) return;
+    const nb = edgeNeighbor(this.inspectorHex, i, this.store.centers, this.store.state.grid);
+    if (nb) this.renderer.setHighlight(this.inspectorHex, i, nb);
+    else this.renderer.clearHighlight();
+  }
+
+  _unhighlightHexEditorEdge() {
+    if (this.hexedSelectedEdge !== null && this.inspectorHex) {
+      this._highlightHexEditorEdge(this.hexedSelectedEdge);
+      return;
+    }
+    this.renderer.clearHighlight();
+  }
+
+  _refreshHexEditorEdgePanel() {
+    const i = this.hexedSelectedEdge;
+    const label = this.els['hexed-on-edge-label'];
+    const chips = this.els['hexed-edchips'];
+    const grid = this.els['hexed-inkgrid'];
+
+    if (i === null || !this.inspectorHex) {
+      label.textContent = 'On edge —';
+      chips.innerHTML = '';
+      grid.querySelectorAll('.inkmini').forEach(el => el.classList.remove('applied'));
+      return;
+    }
+
+    const code = this.inspectorHex;
+    const nb = edgeNeighbor(code, i, this.store.centers, this.store.state.grid);
+    label.textContent = nb ? `On edge ${EDGE_NAMES[i]}` : 'On edge —';
     const palette = this.store.getPalette();
     const features = palette?.hexsideFeatures || [];
+    const current = nb ? this.store.edgeFeatures(code, nb) : [];
 
-    for (let i = 0; i < 6; i++) {
-      const a = { x: 90 * Math.cos((Math.PI / 3) * i), y: 90 * Math.sin((Math.PI / 3) * i) };
-      const b = { x: 90 * Math.cos((Math.PI / 3) * ((i + 1) % 6)), y: 90 * Math.sin((Math.PI / 3) * ((i + 1) % 6)) };
-      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    chips.innerHTML = current.map(key => {
+      const f = features.find(x => x.key === key);
+      const color = this._hexsideFeatureColor(f);
+      const name = f?.label || key;
+      return `<span class="edgechip" data-feature="${key}"><span class="dot" style="background:${color}"></span>${name}<span class="x" data-remove="${key}">×</span></span>`;
+    }).join('');
 
-      const edgeDiv = document.createElement('div');
-      edgeDiv.className = 'edge-features';
-      edgeDiv.dataset.edge = i;
-      edgeDiv.style.left = `${120 + mid.x}px`;
-      edgeDiv.style.top = `${110 + mid.y}px`;
-      edgeDiv.setAttribute('role', 'group');
-      edgeDiv.setAttribute('aria-label', `Edge ${EDGE_NAMES[i]}`);
-
-      const label = document.createElement('span');
-      label.className = 'edge-label';
-      label.textContent = EDGE_NAMES[i];
-      edgeDiv.appendChild(label);
-
-      const chips = document.createElement('div');
-      chips.className = 'edge-chips';
-      let prevKind = null;
-      for (const f of features) {
-        const kind = f.kind === 'crossing' ? 'crossing' : 'edge';
-        if (prevKind !== null && kind !== prevKind) {
-          const divider = document.createElement('span');
-          divider.className = 'edge-chip-divider';
-          divider.title = 'crossings (road / rail / bridge)';
-          chips.appendChild(divider);
-        }
-        prevKind = kind;
-        const chip = document.createElement('div');
-        chip.className = 'edge-chip' + (kind === 'crossing' ? ' edge-chip--crossing' : '');
-        chip.title = (f.label || f.key) + (kind === 'crossing' ? ' (crosses this hexside)' : '');
-        chip.dataset.edge = i;
-        chip.dataset.feature = f.key;
-        chip.dataset.kind = kind;
-        const chk = document.createElement('input');
-        chk.type = 'checkbox';
-        chk.tabIndex = -1;
-        chk.dataset.edge = i;
-        chk.dataset.feature = f.key;
-        chk.style.accentColor = f.color;
-        chip.appendChild(chk);
-        chip.addEventListener('click', () => { if (chk.disabled) return; this._toggleEdgeFeature(i, f.key); });
-        chips.appendChild(chip);
-      }
-      edgeDiv.appendChild(chips);
-
-      edgeDiv.addEventListener('mouseenter', () => this._highlightEdge(i));
-      edgeDiv.addEventListener('mouseleave', () => this._unhighlightEdge());
-
-      selects.appendChild(edgeDiv);
-      this.edgeSelectGroups.push(edgeDiv);
-    }
-  }
-
-  _rebuildFeatureControls() {
-    const container = this.els['inspector-features'];
-    container.innerHTML = '';
-    const palette = this.store.getPalette();
-    const features = palette?.hexFeatures || [];
-    for (const f of features) {
-      const chip = document.createElement('div');
-      chip.className = 'feature-chip';
-      chip.dataset.feature = f.key;
-      const chk = document.createElement('input');
-      chk.type = 'checkbox';
-      chk.tabIndex = -1;
-      chk.dataset.feature = f.key;
-      const glyph = document.createElement('span');
-      glyph.className = 'feature-glyph';
-      glyph.textContent = f.glyph || '◆';
-      const name = document.createElement('span');
-      name.className = 'feature-label';
-      name.textContent = f.label || f.key;
-      chip.appendChild(chk);
-      chip.appendChild(glyph);
-      chip.appendChild(name);
-      chip.addEventListener('click', () => this._toggleHexFeature(f.key));
-      container.appendChild(chip);
-    }
+    grid.querySelectorAll('.inkmini').forEach(el => {
+      el.classList.toggle('applied', current.includes(el.dataset.feature));
+    });
   }
 
   bindGlobal() {
@@ -280,19 +336,43 @@ export class UI {
     this.els['fit-view'].addEventListener('click', () => this.renderer.fitView());
     this.els['undo'].addEventListener('click', () => this.store.undo());
     this.els['clear-select'].addEventListener('click', () => this.closeInspector());
-    this.els['inspector-close'].addEventListener('click', () => this.closeInspector());
+    this.els['hexed-close'].addEventListener('click', () => this.closeInspector());
     this.els['toggle-help'].addEventListener('click', () => this.toggleHelp());
     this.els['close-help'].addEventListener('click', () => this.toggleHelp(false));
     this.els['help-overlay'].addEventListener('click', (e) => {
       if (e.target === this.els['help-overlay']) this.toggleHelp(false);
     });
-    // The inspector floats over the map canvas, inside the same wrapper that has the
+    // The hex editor floats over the map canvas, inside the same wrapper that has the
     // pan/hex-select pointer handler. Without this, a trusted click on any inspector
     // control also fires the canvas pointerdown/up -> it re-selects the hex under the
     // control and rebuilds the inspector mid-click, swallowing the control's own click
     // (chips/dropdowns silently do nothing on real clicks, only synthetic events work).
     ['pointerdown','pointerup','mousedown','mouseup'].forEach(evt =>
-      this.els['inspector'].addEventListener(evt, (e) => e.stopPropagation()));
+      this.els['hex-editor'].addEventListener(evt, (e) => e.stopPropagation()));
+
+    this.els['hex-editor'].addEventListener('click', (e) => {
+      const terr = e.target.closest('.terr[data-terrain]');
+      if (terr && this.inspectorHex) {
+        this.store.setTerrain(this.inspectorHex, terr.dataset.terrain);
+        this.brushTerrain = terr.dataset.terrain;
+        this._reflectBrush();
+        return;
+      }
+      const feat = e.target.closest('.feat[data-feature]');
+      if (feat) {
+        this._toggleHexFeature(feat.dataset.feature);
+        return;
+      }
+      const ink = e.target.closest('.inkmini[data-feature]');
+      if (ink) {
+        this._toggleHexEditorInk(ink.dataset.feature);
+        return;
+      }
+      const remove = e.target.closest('.edgechip .x[data-remove]');
+      if (remove) {
+        this._toggleHexEditorInk(remove.dataset.remove);
+      }
+    });
 
     this.els['file-btn'].addEventListener('click', () => {
       const next = !this.els['file-popover'].classList.contains('open');
@@ -321,12 +401,6 @@ export class UI {
       if (this.loadHandlers?.exportTwu) this.loadHandlers.exportTwu();
     });
 
-    this.els['inspector-terrain'].addEventListener('change', () => {
-      const key = this.els['inspector-terrain'].value;
-      if (this.inspectorHex) this.store.setTerrain(this.inspectorHex, key);
-      this.brushTerrain = key;
-      this._reflectBrush();
-    });
 
     this.els['brush-ink-list'].addEventListener('click', (e) => {
       const row = e.target.closest('.ink[data-ink-key]');
@@ -554,7 +628,7 @@ export class UI {
       hint.innerHTML = '<b>Nudge map</b> — drag scan or arrow keys to align<span class="hint-extra"> · <span class="kbd">Shift</span> + arrows = ×10</span>';
       return;
     }
-    hint.innerHTML = '<b>Inspect</b> — click hex to inspect and edit<span class="hint-extra"> · <span class="kbd">I</span> inspect</span>';
+    hint.innerHTML = '<b>Inspect</b> — click a hex to edit it<span class="hint-extra"> · <span class="kbd">Esc</span> close · edges apply the ink you tap</span>';
   }
 
   toggleBrush() {
@@ -884,104 +958,74 @@ export class UI {
 
   // ----------------- inspector -----------------
 
-  openInspector(code, screenPt) {
+  openInspector(code) {
     this.inspectorHex = code;
-    this.els['inspector-hex'].textContent = code;
-    this.els['inspector'].hidden = false;
-
-    const terrain = this.store.state.terrain.terrain[code] || 'clear';
-    this._fillTerrainSelect();
-    this.els['inspector-terrain'].value = terrain;
-
+    this.hexedSelectedEdge = null;
+    this.els['hexed-title'].textContent = `Hex ${code}`;
+    this.els['hex-editor'].hidden = false;
+    this.els['layers-panel'].hidden = true;
     this._refreshInspector();
-    this._positionInspector(screenPt);
+    for (let i = 0; i < 6; i++) {
+      if (edgeNeighbor(code, i, this.store.centers, this.store.state.grid)) {
+        this._selectHexEditorEdge(i);
+        break;
+      }
+    }
   }
 
   _refreshInspector() {
     if (!this.inspectorHex) return;
     const code = this.inspectorHex;
-    const terrain = this.store.state.terrain.terrain[code] || 'clear';
-    this.els['inspector-terrain'].value = terrain;
+    const palette = this.store.getPalette();
+    const terrainKey = this.store.state.terrain.terrain[code] || 'clear';
+    const terrain = (palette?.terrain || []).find(t => t.key === terrainKey);
+    this.els['hexed-terrain-current'].textContent = terrain?.label || terrainKey;
+    this.els['hexed-center-code'].textContent = code;
 
-    // in-hex features
-    const currentFeatures = this.store.getHexFeatures(code);
-    this.els['inspector-features'].querySelectorAll('input[type="checkbox"]').forEach(ch => {
-      ch.checked = currentFeatures.includes(ch.dataset.feature);
+    const terrainColor = terrain?.color || '#888';
+    this.els['hexed-fill'].setAttribute('fill', terrainColor);
+    this.els['hexed-fill'].setAttribute('fill-opacity', '0.18');
+
+    this.els['hexed-terrain-grid'].querySelectorAll('.terr[data-terrain]').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.terrain === terrainKey);
     });
 
-    // edges
+    const currentFeatures = this.store.getHexFeatures(code);
+    this.els['hexed-feat-count'].textContent = String(currentFeatures.length);
+    this.els['hexed-featrow'].querySelectorAll('.feat[data-feature]').forEach(btn => {
+      btn.classList.toggle('is-active', currentFeatures.includes(btn.dataset.feature));
+    });
+
     const centers = this.store.centers;
     const grid = this.store.state.grid;
+    let marked = 0;
     for (let i = 0; i < 6; i++) {
       const nb = edgeNeighbor(code, i, centers, grid);
-      const current = nb ? this.store.edgeFeatures(code, nb) : [];
-      const group = this.edgeSelectGroups[i];
-      group.classList.toggle('disabled', !nb);
-      group.querySelectorAll('input[type="checkbox"]').forEach(ch => {
-        ch.disabled = !nb;
-        ch.checked = nb ? current.includes(ch.dataset.feature) : false;
-      });
-      if (nb) this.edgeGroups[i].classList.remove('dim');
-      else this.edgeGroups[i].classList.add('dim');
+      const hit = this.hexedEdgeGroups[i]?.querySelector('.edge-hit');
+      if (hit) {
+        hit.classList.toggle('disabled', !nb);
+        hit.style.pointerEvents = nb ? 'auto' : 'none';
+      }
+      if (nb && this.store.edgeFeatures(code, nb).length) marked++;
     }
 
-    this._paintEdges();
-  }
+    const selLabel = this.hexedSelectedEdge !== null ? EDGE_NAMES[this.hexedSelectedEdge] : '—';
+    this.els['hexed-edges-meta'].textContent = `${marked} of 6 marked · ${selLabel} selected`;
 
-  _fillTerrainSelect() {
-    const sel = this.els['inspector-terrain'];
-    if (sel.dataset.ready) return;
-    const palette = this.store.getPalette();
-    const items = palette && palette.terrain ? palette.terrain : Object.keys(TERRAIN_COLORS).map(k => ({ key: k, label: k }));
-    sel.innerHTML = items.map(t =>
-      `<option value="${t.key}">${t.label || t.key}</option>`
-    ).join('');
-    sel.dataset.ready = '1';
-  }
+    this.hexedEdgeLabels.forEach((label, i) => {
+      label.classList.toggle('sel', i === this.hexedSelectedEdge);
+    });
 
-  _positionInspector(screenPt) {
-    const rect = this.els['inspector'].getBoundingClientRect();
-    const wrap = this.canvasWrapRect();
-    let x = (screenPt?.x ?? wrap.width / 2) + 18;
-    let y = (screenPt?.y ?? wrap.height / 2) - rect.height / 2;
-    if (x + rect.width > wrap.width) x = Math.max(8, (screenPt?.x ?? wrap.width / 2) - rect.width - 18);
-    if (y + rect.height > wrap.height) y = Math.max(8, wrap.height - rect.height - 8);
-    if (y < 8) y = 8;
-    this.els['inspector'].style.left = `${x}px`;
-    this.els['inspector'].style.top = `${y}px`;
-  }
-
-  canvasWrapRect() {
-    return document.getElementById('canvas-wrap').getBoundingClientRect();
+    this._paintHexEditorDiagram();
+    this._refreshHexEditorEdgePanel();
   }
 
   closeInspector() {
     this.inspectorHex = null;
-    this.els['inspector'].hidden = true;
+    this.hexedSelectedEdge = null;
+    this.els['hex-editor'].hidden = true;
+    this.els['layers-panel'].hidden = false;
     this.renderer.closeInspector();
-  }
-
-  _highlightEdge(i) {
-    if (!this.inspectorHex) return;
-    const nb = edgeNeighbor(this.inspectorHex, i, this.store.centers, this.store.state.grid);
-    const line = this.edgeGroups[i].querySelector('.hex-edge');
-    if (line) line.classList.add('active');
-    this.renderer.setHighlight(this.inspectorHex, i, nb);
-    if (nb) this.status(`Edge ${EDGE_NAMES[i]} → ${nb}`, 2000);
-  }
-
-  _unhighlightEdge() {
-    for (const g of this.edgeGroups) {
-      const line = g.querySelector('.hex-edge');
-      if (line) line.classList.remove('active');
-    }
-    this.renderer.clearHighlight();
-    this.status('');
-  }
-
-  _focusEdgeSelect(i) {
-    const chk = this.edgeSelectGroups[i].querySelector('input[type="checkbox"]');
-    if (chk) chk.focus();
   }
 
   _toggleHexFeature(key) {
@@ -989,54 +1033,81 @@ export class UI {
     this.store.toggleHexFeature(this.inspectorHex, key);
   }
 
-  _toggleEdgeFeature(i, featureKey) {
-    if (!this.inspectorHex) return;
+  _toggleHexEditorInk(featureKey) {
+    if (!this.inspectorHex || this.hexedSelectedEdge === null) return;
+    const i = this.hexedSelectedEdge;
     const nb = edgeNeighbor(this.inspectorHex, i, this.store.centers, this.store.state.grid);
     if (!nb) return;
     this.store.toggleHexsideFeature(this.inspectorHex, nb, featureKey);
   }
 
-  // Paint each edge of the inspector hexagon by its assigned hexside feature(s).
-  _paintEdges() {
+  _paintHexEditorDiagram() {
     if (!this.inspectorHex) return;
+    const svgNs = 'http://www.w3.org/2000/svg';
     const centers = this.store.centers;
     const grid = this.store.state.grid;
     const palette = this.store.getPalette();
     const features = palette?.hexsideFeatures || [];
+    const code = this.inspectorHex;
 
     for (let i = 0; i < 6; i++) {
-      const nb = edgeNeighbor(this.inspectorHex, i, centers, grid);
-      const current = nb ? this.store.edgeFeatures(this.inspectorHex, nb) : [];
-      const group = this.edgeGroups[i];
+      const group = this.hexedEdgeGroups[i];
+      const hit = group.querySelector('.edge-hit');
+      const inksG = group.querySelector('.edge-inks');
+      const sel = group.querySelector('.edge-sel-overlay');
+      inksG.innerHTML = '';
 
-      // remove old feature strokes
-      group.querySelectorAll('.hex-edge-layer').forEach(el => el.remove());
+      const nb = edgeNeighbor(code, i, centers, grid);
+      const current = nb ? this.store.edgeFeatures(code, nb) : [];
+      const { a, b } = this.hexedEdgePts[i];
+      const d = `M${a.x.toFixed(1)} ${a.y.toFixed(1)} L${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
 
-      const { a, b } = this.edgePoints[i];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const ux = -dy / len;
-      const uy = dx / len;
-      const spacing = 5;
-      const n = current.length;
-      const offsetBase = -((n - 1) * spacing) / 2;
+      if (!current.length) {
+        hit.setAttribute('stroke', '#4a4e57');
+        hit.setAttribute('stroke-width', '10');
+      } else {
+        hit.setAttribute('stroke', 'transparent');
+        hit.setAttribute('stroke-width', '14');
+        current.forEach((featureKey, idx) => {
+          const f = features.find(x => x.key === featureKey);
+          if (!f) return;
+          const color = this._hexsideFeatureColor(f);
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const len = Math.hypot(dx, dy) || 1;
+          const ux = -dy / len;
+          const uy = dx / len;
+          const n = current.length;
+          const off = -((n - 1) * 4) / 2 + idx * 4;
+          const x1 = a.x + ux * off;
+          const y1 = a.y + uy * off;
+          const x2 = b.x + ux * off;
+          const y2 = b.y + uy * off;
+          const segD = `M${x1.toFixed(1)} ${y1.toFixed(1)} L${x2.toFixed(1)} ${y2.toFixed(1)}`;
 
-      current.forEach((featureKey, idx) => {
-        const f = features.find(x => x.key === featureKey);
-        if (!f) return;
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('class', 'hex-edge-layer');
-        const off = offsetBase + idx * spacing;
-        line.setAttribute('x1', a.x + ux * off);
-        line.setAttribute('y1', a.y + uy * off);
-        line.setAttribute('x2', b.x + ux * off);
-        line.setAttribute('y2', b.y + uy * off);
-        line.setAttribute('stroke', f.color);
-        line.setAttribute('stroke-width', '5');
-        line.setAttribute('stroke-linecap', 'round');
-        group.appendChild(line);
-      });
+          const casing = document.createElementNS(svgNs, 'path');
+          casing.setAttribute('d', segD);
+          casing.setAttribute('stroke', 'var(--ink-casing)');
+          casing.setAttribute('stroke-width', '12');
+          casing.setAttribute('stroke-linecap', 'round');
+          casing.setAttribute('fill', 'none');
+          casing.setAttribute('pointer-events', 'none');
+          inksG.appendChild(casing);
+
+          const core = document.createElementNS(svgNs, 'path');
+          core.setAttribute('d', segD);
+          core.setAttribute('stroke', color);
+          core.setAttribute('stroke-width', '6');
+          core.setAttribute('stroke-linecap', 'round');
+          core.setAttribute('fill', 'none');
+          core.setAttribute('pointer-events', 'none');
+          if (f.dash) core.setAttribute('stroke-dasharray', '7 5');
+          inksG.appendChild(core);
+        });
+      }
+
+      sel.setAttribute('d', d);
+      sel.setAttribute('opacity', i === this.hexedSelectedEdge ? '0.28' : '0');
     }
   }
 
@@ -1046,14 +1117,10 @@ export class UI {
     const paletteChanged = palette !== this._lastPalette;
     if (paletteChanged) {
       this._lastPalette = palette;
-      this._rebuildEdgeControls();
-      this._rebuildFeatureControls();
-      this.els['inspector-terrain'].dataset.ready = '';
+      this._rebuildHexEditorPalette();
       this._setupEdgePaint();
       if (this.inspectorHex) this._refreshInspector();
     }
-
-    this._fillTerrainSelect();
     this._renderBrushCard();
     this._renderLayersPanel();
     this._updateCounts();

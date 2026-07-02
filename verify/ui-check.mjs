@@ -76,25 +76,25 @@ try{
   });
   await sleep(200);
 
-  // 2. INSPECTOR feature checkbox -> store.hexFeatures
+  // 2. HEX EDITOR feature chip -> store.hexFeatures
   const box = await page.locator('#map-canvas').boundingBox();
   const cx=box.x+box.width/2, cy=box.y+box.height/2;
   let opened=false, code='';
-  outer: for(let dy=-200;dy<=200&&!opened;dy+=40){ for(let dx=-300;dx<=300;dx+=40){ await page.mouse.click(cx+dx,cy+dy); await sleep(80); const hidden=await page.getAttribute('#inspector','hidden'); if(hidden===null){opened=true; code=(await page.textContent('#inspector-hex'))?.trim()||''; break outer;} } }
-  let featOk=false, featNote='inspector did not open';
+  outer: for(let dy=-200;dy<=200&&!opened;dy+=40){ for(let dx=-300;dx<=300;dx+=40){ await page.mouse.click(cx+dx,cy+dy); await sleep(80); const hidden=await page.getAttribute('#hex-editor','hidden'); if(hidden===null){opened=true; code=(await page.textContent('#hexed-title'))?.replace(/^Hex\s+/,'').trim()||''; break outer;} } }
+  let featOk=false, featNote='hex editor did not open';
   if(opened){
-    const n = await page.locator('#inspector-features input[type=checkbox]').count();
+    const n = await page.locator('#hexed-featrow .feat').count();
     if(n>0){
       const totalFeat = ()=>page.evaluate(()=>{const s=window.hexwright.store.state; return Object.values(s.hexFeatures).reduce((a,v)=>a+(v?v.length:0),0);});
       const ihex = await page.evaluate(()=>window.hexwright.ui && window.hexwright.ui.inspectorHex);
       const before = await totalFeat();
-      await page.locator('#inspector-features label.feature-chip').first().click().catch(async()=>{ await page.locator('#inspector-features input[type=checkbox]').first().click({force:true}).catch(()=>{}); });
+      await page.locator('#hexed-featrow .feat').first().click();
       await sleep(300);
       const after = await totalFeat();
-      featOk = after > before; featNote=`inspectorHex=${ihex}, total features ${before}->${after}, ${n} checkboxes`;
-    } else featNote=`inspector open (hex ${code}) but 0 feature checkboxes`;
+      featOk = after > before; featNote=`inspectorHex=${ihex}, total features ${before}->${after}, ${n} feat chips`;
+    } else featNote=`hex editor open (hex ${code}) but 0 feature chips`;
   }
-  rec('inspector feature checkbox writes store.hexFeatures', featOk, featNote);
+  rec('hex editor feature chip writes store.hexFeatures', featOk, featNote);
 
   // 3. ANOMALY toggle -> status text populated
   await page.click('#toggle-anomaly').catch(()=>{});
