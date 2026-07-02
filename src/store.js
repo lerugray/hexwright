@@ -1,4 +1,4 @@
-import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency } from './geometry.js';
+import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency, enumerateGridLattice } from './geometry.js';
 
 const MAX_UNDO = 64;
 const DEFAULT_PALETTE_URL = 'palettes/gota.json';
@@ -101,7 +101,8 @@ export class ProjectStore {
       traces: [],
       loadedHexsides: null,
       mapOffset: [0, 0],
-      schemaVersion: 2
+      schemaVersion: 2,
+      blankLattice: false
     };
   }
 
@@ -174,7 +175,8 @@ export class ProjectStore {
       mapOffset: Array.isArray(project.mapOffset)
         ? [Number(project.mapOffset[0]) || 0, Number(project.mapOffset[1]) || 0]
         : [0, 0],
-      schemaVersion: 2
+      schemaVersion: 2,
+      blankLattice: project.blankLattice === true
     };
 
     this.rebuildIndex();
@@ -255,6 +257,12 @@ export class ProjectStore {
       return;
     }
     this.centers = buildLandIndex(this.state.terrain, this.state.grid);
+    if (this.state.blankLattice && this.state.grid) {
+      const lattice = enumerateGridLattice(this.state.grid);
+      for (const code of Object.keys(lattice)) {
+        if (!this.centers[code]) this.centers[code] = lattice[code];
+      }
+    }
     this.adj = buildAdjacency(this.centers);
     this.edgeIndex = this.buildEdgeIndex(this.state.hexsides);
   }
@@ -354,8 +362,7 @@ export class ProjectStore {
     this.pushUndo();
     this.state.terrain.terrain[code] = key;
     this.state.provenance[code] = 'confirmed';
-    this.centers = buildLandIndex(this.state.terrain, this.state.grid);
-    this.adj = buildAdjacency(this.centers);
+    this.rebuildIndex();
     this.notify('terrain');
   }
 
@@ -380,8 +387,7 @@ export class ProjectStore {
       if (opts.provenance === 'draft') this.state.provenance[code] = 'draft';
       count++;
     }
-    this.centers = buildLandIndex(this.state.terrain, this.state.grid);
-    this.adj = buildAdjacency(this.centers);
+    this.rebuildIndex();
     this.notify('terrain');
     return count;
   }
@@ -706,7 +712,8 @@ export class ProjectStore {
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance),
       mapOffset: deepClone(this.state.mapOffset || [0, 0]),
-      palette: this.palette?.name || 'gota'
+      palette: this.palette?.name || 'gota',
+      ...(this.state.blankLattice ? { blankLattice: true } : {})
     };
   }
 

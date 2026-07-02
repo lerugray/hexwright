@@ -24,7 +24,7 @@ page.on('console', (msg) => {
 page.on('pageerror', (err) => errors.push(`PAGEERROR: ${err.message}`));
 
 try {
-  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load', timeout: 20000 });
+  await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`, { waitUntil: 'load', timeout: 20000 });
 
   const btnExists = await page.locator('#toggle-help').count();
   rec('help button exists in topbar', btnExists === 1, `count=${btnExists}`);
@@ -69,9 +69,14 @@ try {
 
   await page.click('#toggle-help');
   await sleep(100);
+  const hasReferenceTitle = await page.evaluate(() => {
+    return document.querySelector('.help-sheet h1')?.textContent?.includes('Hexwright reference');
+  });
+  rec('help sheet has reference title', hasReferenceTitle === true);
+
   const hasRequiredShortcuts = await page.evaluate(() => {
-    const text = (document.getElementById('help-overlay')?.textContent || '').toLowerCase();
-    return ['e', 'b', 'n', 'v'].every((key) => new RegExp(`\\b${key}\\b`).test(text));
+    const kbds = [...document.querySelectorAll('#help-overlay .kbd')].map((el) => el.textContent.trim().toLowerCase());
+    return ['e', 'b', 'n', 'v'].every((key) => kbds.includes(key));
   });
   rec('help content lists e/b/n/v shortcuts', hasRequiredShortcuts === true);
 

@@ -20,11 +20,8 @@ let exported = null;
 page.on('download', async d => { try { const p = VER+'/export-hexsides.json'; await d.saveAs(p); exported = p; } catch(e){} });
 
 try {
-  await page.goto(`http://localhost:${PORT}/`, {waitUntil:'load', timeout:20000});
+  await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`, {waitUntil:'load', timeout:20000});
   rec('page loads', true);
-
-  await page.click('#file-btn');
-  await page.click('#load-sample');
   // wait for land count to populate
   await page.waitForFunction(() => {
     const el = document.getElementById('count-land');

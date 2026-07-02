@@ -76,9 +76,17 @@ export class MapRenderer {
 
   fitView() {
     const img = this.store.state.mapImage;
-    if (!img || !img.naturalWidth) return;
-    const imgW = img.naturalWidth;
-    const imgH = img.naturalHeight;
+    const [fw, fh] = this.store.state.imageFull || [];
+    let imgW, imgH;
+    if (img && img.naturalWidth) {
+      imgW = img.naturalWidth;
+      imgH = img.naturalHeight;
+    } else if (fw && fh) {
+      imgW = fw;
+      imgH = fh;
+    } else {
+      return;
+    }
     const pad = 24;
     const zoom = Math.min((this.width - pad * 2) / imgW, (this.height - pad * 2) / imgH);
     this.view.zoom = Math.max(0.02, zoom);
@@ -411,7 +419,8 @@ export class MapRenderer {
 
     ctx.clearRect(0, 0, width, height);
 
-    if (!img) {
+    const hasGrid = state.grid && this.store.centers;
+    if (!img && !hasGrid) {
       ctx.fillStyle = '#0b0c0e';
       ctx.fillRect(0, 0, width, height);
       ctx.fillStyle = '#555';
@@ -423,7 +432,7 @@ export class MapRenderer {
     // Map mode: base map + traces only.
     // Classification mode: parchment background, no map/traces.
     // Both: current behavior (map + traces + classification overlay).
-    if (this.viewMode !== 'classification') {
+    if (this.viewMode !== 'classification' && img) {
       this._drawBaseMap(ctx, this.view);
       this._drawTraces(ctx, this.view);
       if (this.mapDim > 0) {
@@ -522,6 +531,7 @@ export class MapRenderer {
     ctx.lineWidth = 1.2 / s;
     for (const code of Object.keys(this.store.centers)) {
       const type = terrain[code];
+      if (!type) continue;
       const colors = this._terrainColor(type, mode);
       const poly = hexPolygon(code, grid);
       ctx.beginPath();

@@ -121,6 +121,33 @@ export function buildLandIndex(terrain, grid) {
   return centers;
 }
 
+export function enumerateGridLattice(grid) {
+  if (!grid) return {};
+  const imageFull = grid.image_full;
+  if (!Array.isArray(imageFull) || imageFull.length < 2) return {};
+  const colPitch = grid.col_pitch_x ?? grid.x_model?.col_pitch_x ?? 0;
+  const rowPitch = grid.row_pitch_y ?? grid.y_model?.row_pitch_y ?? 0;
+  if (colPitch <= 0 || rowPitch <= 0) return {};
+
+  const imgW = imageFull[0];
+  const imgH = imageFull[1];
+  const xMin = -colPitch / 2;
+  const xMax = imgW + colPitch / 2;
+  const yMin = -rowPitch / 2;
+  const yMax = imgH + rowPitch / 2;
+
+  const centers = {};
+  for (let col = 0; col <= 99; col++) {
+    for (let row = 0; row <= 99; row++) {
+      const code = formatCCRR(col, row);
+      const c = hexCenter(code, grid);
+      if (c.x < xMin || c.x > xMax || c.y < yMin || c.y > yMax) continue;
+      centers[code] = c;
+    }
+  }
+  return centers;
+}
+
 export function buildAdjacency(centers, threshold = ADJACENCY_THRESHOLD) {
   const codes = Object.keys(centers);
   const adj = {};

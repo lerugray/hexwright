@@ -302,9 +302,14 @@ export class UI {
         if (this.mode === 'edges') this._selectEdgeFeatureByIndex(idx);
         else this._selectTerrainByIndex(idx);
       }
+      if (e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        this.renderer.fitView();
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
-        this.store.undo();
+        if (e.shiftKey) this.store.redo();
+        else this.store.undo();
       }
     });
 
