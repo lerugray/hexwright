@@ -105,7 +105,59 @@
     </button>
   </nav>
 
-  <div id="edge-paint-picker" class="edge-paint-picker" role="group" aria-label="Edge paint feature"></div>
+  <aside id="brush-card" class="brush-card hx-ui" aria-label="Active brush">
+    <div class="head">
+      <span>Brush</span>
+      <span id="brush-mode-tag" class="mode-tag">Terrain</span>
+    </div>
+    <div id="brush-ink-list" class="ink-list"></div>
+  </aside>
+
+  <aside id="layers-panel" class="panel hx-ui" aria-label="Layers">
+    <div class="head">
+      <span class="title">Layers</span>
+      <span class="head-meta">Land <span id="count-land" class="hx-data">0</span></span>
+    </div>
+
+    <div id="feature-layer-rows"></div>
+
+    <div id="terrain-layer-wrap">
+      <div id="terrain-fill-row" class="layer-row">
+        <button type="button" id="terrain-fill-eye" class="eye" aria-label="Toggle terrain fill visibility"></button>
+        <span class="swatch terrain-fill"></span>
+        <span class="name">Terrain fill</span>
+        <span id="terrain-fill-count" class="count hx-data">100%</span>
+      </div>
+      <label class="slider-row">
+        <span class="lbl">
+          <span>Terrain fill opacity</span>
+          <span id="overlay-opacity-value" class="val">100%</span>
+        </span>
+        <input id="overlay-opacity" type="range" min="0" max="1" step="0.05" value="1" aria-label="Terrain fill opacity" />
+      </label>
+    </div>
+
+    <div id="trace-layer-wrap" hidden>
+      <div id="trace-layer-rows"></div>
+      <label class="slider-row">
+        <span class="lbl">
+          <span>Trace opacity</span>
+          <span id="trace-opacity-value" class="val">50%</span>
+        </span>
+        <input id="trace-opacity" type="range" min="0" max="1" step="0.05" value="0.5" aria-label="Trace opacity" />
+      </label>
+    </div>
+
+    <label class="slider-row">
+      <span class="lbl">
+        <span>Map dim — boost overlays</span>
+        <span id="map-dim-value" class="val">0%</span>
+      </span>
+      <input id="map-dim" type="range" min="0" max="0.85" step="0.05" value="0" aria-label="Map dim" />
+    </label>
+
+    <div id="layer-counts" hidden></div>
+  </aside>
 
   <main class="workspace">
     <div id="canvas-wrap" class="canvas-wrap">
@@ -133,62 +185,6 @@
         </div>
       </div>
     </div>
-
-    <aside class="sidebar">
-      <section class="panel legend-panel">
-        <h2>Legend</h2>
-        <div class="legend-section">
-          <h3>Terrain</h3>
-          <ul id="terrain-legend" class="legend-list"></ul>
-        </div>
-        <div class="legend-section">
-          <h3>Hexsides</h3>
-          <ul id="hexside-legend" class="legend-list"></ul>
-        </div>
-        <div class="legend-section">
-          <h3>Features</h3>
-          <ul id="feature-legend" class="legend-list"></ul>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>Traces</h2>
-        <div id="trace-controls" class="trace-list"></div>
-        <label class="slider-row">
-          <span>Opacity</span>
-          <input id="trace-opacity" type="range" min="0" max="1" step="0.05" value="0.5" aria-label="Trace opacity" />
-        </label>
-      </section>
-
-      <section class="panel">
-        <h2>Overlay</h2>
-        <label class="slider-row">
-          <span>Terrain fill opacity</span>
-          <input id="overlay-opacity" type="range" min="0" max="1" step="0.05" value="1" aria-label="Terrain fill opacity" />
-        </label>
-      </section>
-
-      <section class="panel counts-panel">
-        <h2>Counts</h2>
-        <div class="count-row">
-          <span>Land hexes</span>
-          <span id="count-land" class="mono">0</span>
-        </div>
-        <div id="layer-counts" class="layer-counts"></div>
-      </section>
-
-      <section class="panel help-panel">
-        <h2>Shortcuts</h2>
-        <ul class="shortcuts">
-          <li><kbd>Drag</kbd> pan</li>
-          <li><kbd>Wheel</kbd> zoom</li>
-          <li><kbd>Click</kbd> inspect</li>
-          <li><kbd>E</kbd> edge paint mode</li>
-          <li><kbd>Esc</kbd> close</li>
-          <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</li>
-        </ul>
-      </section>
-    </aside>
   </main>
 
   <div id="status" class="status" aria-live="polite"></div>

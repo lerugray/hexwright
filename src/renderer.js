@@ -16,6 +16,9 @@ export class MapRenderer {
 
     this.viewMode = 'both';          // 'map' | 'classification' | 'both'
     this.overlayAlpha = 1;           // Both-view terrain-fill opacity (UI slider)
+    this.terrainFillVisible = true;  // View-only toggle: terrain fill layer
+    this.hexsideVisibility = {};     // View-only per-feature visibility map
+    this.mapDim = 0;                 // View-only raster dimming in both/map modes
     this.nudgeMode = false;          // drag/arrow-key the scan under the grid
     this.nudgeDrag = null;
     this.anomalyMode = false;
@@ -421,6 +424,12 @@ export class MapRenderer {
     if (this.viewMode !== 'classification') {
       this._drawBaseMap(ctx, this.view);
       this._drawTraces(ctx, this.view);
+      if (this.mapDim > 0) {
+        ctx.save();
+        ctx.fillStyle = `rgba(10,11,14,${this.mapDim})`;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+      }
     } else {
       ctx.fillStyle = '#eaddcf';
       ctx.fillRect(0, 0, width, height);
@@ -428,14 +437,15 @@ export class MapRenderer {
 
     if (this.viewMode !== 'map' && state.grid && this.store.centers) {
       const fillMode = this.viewMode === 'classification' ? 'full' : 'overlay';
-      if (fillMode === 'overlay') {
+      const terrainFillEnabled = fillMode === 'full' ? true : this.terrainFillVisible !== false;
+      if (terrainFillEnabled && fillMode === 'overlay') {
         // Both view: terrain fills fade with the Overlay slider so the scan
         // underneath stays traceable; hexsides/glyphs/grid keep full strength.
         ctx.save();
         ctx.globalAlpha = this.overlayAlpha;
         this._drawHexFills(ctx, this.view, fillMode);
         ctx.restore();
-      } else {
+      } else if (terrainFillEnabled) {
         this._drawHexFills(ctx, this.view, fillMode);
       }
       this._drawHexsides(ctx, this.view);
@@ -572,8 +582,11 @@ export class MapRenderer {
     ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
     const spacing = 3.5 / s;
+    const visible = this.hexsideVisibility || {};
     for (const [edgeKey, features] of Object.entries(this.store.state.hexsides || {})) {
       if (!features || !features.length) continue;
+      const visibleFeatures = features.filter((key) => visible[key] !== false);
+      if (!visibleFeatures.length) continue;
       const [a, b] = edgeKey.split('|');
       if (!a || !b) continue;
       const ep = sharedEdgeEndpoints(a, b, grid);
@@ -587,7 +600,7 @@ export class MapRenderer {
       const ty = dy / len;
 
       // Edge features (river/ridge/cliff/...) run ALONG the hexside — parallel offset lines.
-      const edgeFeats = features.filter(k => !isCrossing(k));
+      const edgeFeats = visibleFeatures.filter(k => !isCrossing(k));
       const offBaseE = -((edgeFeats.length - 1) * spacing) / 2;
       edgeFeats.forEach((featureKey, idx) => {
         const style = this._hexsideStyle(featureKey);
@@ -604,7 +617,7 @@ export class MapRenderer {
 
       // Crossing features (road/rail/bridge) CROSS the hexside — short perpendicular
       // rungs at the edge midpoint, offset along the edge from each other.
-      const crossFeats = features.filter(isCrossing);
+      const crossFeats = visibleFeatures.filter(isCrossing);
       if (crossFeats.length) {
         const mx = (ep.a.x + ep.b.x) / 2;
         const my = (ep.a.y + ep.b.y) / 2;

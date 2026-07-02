@@ -24,14 +24,57 @@ try{
   await sleep(1800);
 
   // 1. VIEW MODE: screenshot both, switch to classification, screenshot, compare
-  const bothShot = await page.screenshot();
+  const bothShot = await page.locator('#map-canvas').screenshot();
   await page.click('#view-mode [data-mode="classification"]');
   await sleep(1200);
-  const classShot = await page.screenshot({path: DESK+'/hexwright-classification-view.png'});
+  const classShot = await page.locator('#map-canvas').screenshot({path: DESK+'/hexwright-classification-view.png'});
   const ratio = Math.abs(bothShot.length - classShot.length) / Math.max(bothShot.length, classShot.length);
   rec('view-mode button visibly changes render (both vs classification)', ratio > 0.03, `byte-delta=${(ratio*100).toFixed(1)}% (both=${bothShot.length} class=${classShot.length})`);
   // back to both for inspector work
   await page.click('#view-mode [data-mode="both"]'); await sleep(500);
+
+  // 1b. first feature layer eye changes rendered canvas
+  const targetLayerInfo = await page.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll('#feature-layer-rows .layer-row'));
+    if (!rows.length) return null;
+    const parseCount = (row) => Number((row.querySelector('.count')?.textContent || '0').replace(/[^\d]/g, '') || '0');
+    const idx = Math.max(0, rows.findIndex((row) => parseCount(row) > 0));
+    return {
+      idx,
+      name: (rows[idx].querySelector('.name')?.textContent || '').trim(),
+      count: (rows[idx].querySelector('.count')?.textContent || '').trim()
+    };
+  });
+  const targetLayer = page.locator('#feature-layer-rows .layer-row').nth(targetLayerInfo?.idx || 0);
+  const targetEye = targetLayer.locator('.eye');
+  const beforeLayerShot = await page.locator('#map-canvas').screenshot();
+  await targetEye.click();
+  await sleep(700);
+  const afterLayerShot = await page.locator('#map-canvas').screenshot();
+  await targetEye.click();
+  await sleep(300);
+  const layerRatio = Math.abs(beforeLayerShot.length - afterLayerShot.length) / Math.max(beforeLayerShot.length, afterLayerShot.length);
+  rec(
+    'layer eye toggle visibly changes render',
+    layerRatio > 0.001,
+    `${targetLayerInfo?.name || 'layer'} count=${targetLayerInfo?.count || '?'} byte-delta=${(layerRatio * 100).toFixed(2)}%`
+  );
+
+  // 1c. map-dim slider darkens raster in both view
+  const beforeDimShot = await page.locator('#map-canvas').screenshot();
+  await page.$eval('#map-dim', (el) => {
+    el.value = '0.6';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await sleep(700);
+  const afterDimShot = await page.locator('#map-canvas').screenshot();
+  const dimRatio = Math.abs(beforeDimShot.length - afterDimShot.length) / Math.max(beforeDimShot.length, afterDimShot.length);
+  rec('map-dim slider visibly changes render in both view', dimRatio > 0.01, `byte-delta=${(dimRatio * 100).toFixed(2)}%`);
+  await page.$eval('#map-dim', (el) => {
+    el.value = '0';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await sleep(200);
 
   // 2. INSPECTOR feature checkbox -> store.hexFeatures
   const box = await page.locator('#map-canvas').boundingBox();
