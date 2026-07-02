@@ -25,34 +25,41 @@ export class UI {
     this.edgePoints = [];
     this.edgeSelectGroups = [];
 
+    this.mode = 'inspect';
     this.brushActive = false;
     this.brushTerrain = 'clear';
     this.lastBrushHex = null;
     this.lastBrushScreen = null;
     this.edgePaintActive = false;
     this.edgePaintFeature = null;
+    this.nudgeActive = false;
     this.anomalyActive = false;
     this.helpOpen = false;
+    this.projectSub = '';
 
     this.buildInspectorEdges();
     this.bindGlobal();
     this.bindControls();
+    this._setupBrush();
     this._setupEdgePaint();
+    this.setMode('inspect');
     this.updateUI();
   }
 
   gatherElements() {
     const ids = [
+      'strip-project-name', 'strip-project-sub', 'mode-hint', 'save-state',
       'load-map', 'load-grid', 'load-terrain', 'load-sides', 'load-sample',
       'fit-view', 'undo', 'clear-select', 'toggle-help',
-      'view-mode', 'toggle-brush', 'toggle-edge-paint', 'edge-paint-picker', 'export-overlay', 'toggle-anomaly', 'load-palette', 'anomaly-status',
-      'import-sides', 'import-terrain', 'import-wmp', 'export-btn', 'export-popover',
+      'view-mode', 'tool-rail', 'tool-inspect', 'tool-terrain', 'tool-edges', 'tool-nudge',
+      'edge-paint-picker', 'export-overlay', 'toggle-anomaly', 'anomaly-count', 'load-palette', 'anomaly-status',
+      'import-sides', 'import-terrain', 'import-wmp', 'file-btn', 'file-popover', 'export-btn', 'export-popover',
       'import-twu',
       'export-sides-file', 'export-sides-copy', 'export-terrain-file', 'export-terrain-copy', 'export-twu',
       'inspector', 'inspector-close', 'inspector-hex', 'inspector-terrain',
       'hex-svg', 'hex-shape', 'hex-edges', 'edge-selects', 'inspector-features',
       'terrain-legend', 'hexside-legend', 'feature-legend', 'trace-controls', 'trace-opacity',
-      'overlay-opacity', 'toggle-nudge', 'count-land', 'layer-counts', 'status',
+      'overlay-opacity', 'count-land', 'layer-counts', 'status',
       'help-overlay', 'close-help'
     ];
     for (const id of ids) this.els[id] = document.getElementById(id);
@@ -248,9 +255,10 @@ export class UI {
 
       if (this.helpOpen) return;
 
-      if (e.key.toLowerCase() === 'b') this.toggleBrush();
-      if (e.key.toLowerCase() === 'e') this.toggleEdgePaint();
-      if (e.key.toLowerCase() === 'n') this.toggleNudge();
+      if (e.key.toLowerCase() === 'i') this.setMode('inspect');
+      if (e.key.toLowerCase() === 'b') this.setMode('terrain');
+      if (e.key.toLowerCase() === 'e') this.setMode('edges');
+      if (e.key.toLowerCase() === 'n') this.setMode('nudge');
       if (this.nudgeActive && e.key.startsWith('Arrow')) {
         e.preventDefault();
         const step = e.shiftKey ? 10 : 1; // world (full-image) pixels
@@ -272,16 +280,26 @@ export class UI {
       }
     });
 
-    this.store.onChange((reason) => this.updateUI(reason));
+    this.store.onChange((reason) => {
+      // Loads aren't edits: booting a project/palette must not flag "unsaved edit"
+      // (the autosave listener registers after boot-load, so nothing would clear it).
+      if (reason !== 'project' && reason !== 'palette') this.markDirty();
+      this.updateUI(reason);
+    });
     this.renderer.onHexSelect = (code, screenPt) => {
       if (code) this.openInspector(code, screenPt);
       else this.closeInspector();
     };
 
-    // close export popover on outside click
+    // close popovers on outside click
     document.addEventListener('click', (e) => {
-      if (!this.els['export-popover'].contains(e.target) && e.target !== this.els['export-btn']) {
+      if (!e.target.closest('#export-btn, #export-popover')) {
         this.els['export-popover'].classList.remove('open');
+        this.els['export-btn'].setAttribute('aria-expanded', 'false');
+      }
+      if (!e.target.closest('#file-btn, #file-popover')) {
+        this.els['file-popover'].classList.remove('open');
+        this.els['file-btn'].setAttribute('aria-expanded', 'false');
       }
     });
   }
@@ -304,8 +322,24 @@ export class UI {
     ['pointerdown','pointerup','mousedown','mouseup'].forEach(evt =>
       this.els['inspector'].addEventListener(evt, (e) => e.stopPropagation()));
 
+    this.els['file-btn'].addEventListener('click', () => {
+      const next = !this.els['file-popover'].classList.contains('open');
+      this.els['file-popover'].classList.toggle('open', next);
+      this.els['file-btn'].setAttribute('aria-expanded', String(next));
+      if (next) {
+        this.els['export-popover'].classList.remove('open');
+        this.els['export-btn'].setAttribute('aria-expanded', 'false');
+      }
+    });
+
     this.els['export-btn'].addEventListener('click', () => {
-      this.els['export-popover'].classList.toggle('open');
+      const next = !this.els['export-popover'].classList.contains('open');
+      this.els['export-popover'].classList.toggle('open', next);
+      this.els['export-btn'].setAttribute('aria-expanded', String(next));
+      if (next) {
+        this.els['file-popover'].classList.remove('open');
+        this.els['file-btn'].setAttribute('aria-expanded', 'false');
+      }
     });
     this.els['export-sides-file'].addEventListener('click', () => this._download('hexsides.json', this.store.exportHexsidesJson()));
     this.els['export-sides-copy'].addEventListener('click', () => this._copy(this.store.exportHexsidesJson(), 'hexsides.json'));
@@ -347,10 +381,11 @@ export class UI {
       this.setViewMode(btn.dataset.mode);
     });
 
-    // Brush
-    this.els['toggle-brush'].addEventListener('click', () => this.toggleBrush());
-    this.els['toggle-edge-paint'].addEventListener('click', () => this.toggleEdgePaint());
-    this.els['toggle-nudge'].addEventListener('click', () => this.toggleNudge());
+    this.els['tool-rail'].addEventListener('click', (e) => {
+      const btn = e.target.closest('.tool[data-mode]');
+      if (!btn) return;
+      this.setMode(btn.dataset.mode);
+    });
 
     // Export overlay PNG
     this.els['export-overlay'].addEventListener('click', () => {
@@ -423,15 +458,88 @@ export class UI {
     });
   }
 
-  toggleBrush() {
-    this.brushActive = !this.brushActive;
-    if (this.brushActive && this.edgePaintActive) {
-      this.edgePaintActive = false;
-      this._setupEdgePaint();
-    }
+  setProjectSource(label = '') {
+    this.projectSub = label || '';
+    this._updateProjectInfo();
+  }
+
+  _updateProjectInfo() {
+    const name = this.store.state?.name || 'Hexwright';
+    this.els['strip-project-name'].textContent = name;
+    this.els['strip-project-sub'].textContent = this.projectSub || '';
+  }
+
+  markDirty() {
+    const el = this.els['save-state'];
+    if (!el) return;
+    el.textContent = 'unsaved edit';
+    el.classList.add('dirty');
+  }
+
+  markAutosaved() {
+    const el = this.els['save-state'];
+    if (!el) return;
+    el.textContent = 'autosaved';
+    el.classList.remove('dirty');
+  }
+
+  setMode(mode) {
+    if (!['inspect', 'terrain', 'edges', 'nudge'].includes(mode)) return;
+    this.mode = mode;
+    this.brushActive = mode === 'terrain';
+    this.edgePaintActive = mode === 'edges';
+    this.nudgeActive = mode === 'nudge';
+
     this._setupBrush();
+    this._setupEdgePaint();
+    this.renderer.setNudgeMode(this.nudgeActive);
+
+    if (this.nudgeActive && this.renderer.viewMode !== 'both') {
+      this.setViewMode('both');
+      this.status('Nudge map: drag the scan under the grid, or arrow keys (shift = ×10). Offset autosaves with the project.', 6000);
+    }
+
+    this._reflectMode();
+    this._updateModeHint();
     this._reflectBrush();
     this._reflectEdgePaint();
+    this.renderer.draw();
+  }
+
+  _reflectMode() {
+    this.els['tool-rail'].querySelectorAll('.tool[data-mode]').forEach((btn) => {
+      const active = btn.dataset.mode === this.mode;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-checked', String(active));
+    });
+  }
+
+  _edgeFeatureLabel() {
+    const palette = this.store.getPalette();
+    const feature = (palette?.hexsideFeatures || []).find((f) => f.key === this.edgePaintFeature);
+    return feature?.label || feature?.key || 'Edge';
+  }
+
+  _updateModeHint() {
+    const hint = this.els['mode-hint'];
+    if (!hint) return;
+    if (this.mode === 'terrain') {
+      hint.innerHTML = '<b>Terrain brush</b> — click or drag hexes to paint<span class="hint-extra"> · <span class="kbd">B</span> terrain · <span class="kbd">1</span>–<span class="kbd">0</span> terrain keys</span>';
+      return;
+    }
+    if (this.mode === 'edges') {
+      hint.innerHTML = `<b>Edge paint · ${this._edgeFeatureLabel()}</b> — click edge to toggle · drag to paint<span class="hint-extra"> · <span class="kbd">⌥</span> erase · <span class="kbd">E</span> edges</span>`;
+      return;
+    }
+    if (this.mode === 'nudge') {
+      hint.innerHTML = '<b>Nudge map</b> — drag scan or arrow keys to align<span class="hint-extra"> · <span class="kbd">Shift</span> + arrows = ×10</span>';
+      return;
+    }
+    hint.innerHTML = '<b>Inspect</b> — click hex to inspect and edit<span class="hint-extra"> · <span class="kbd">I</span> inspect</span>';
+  }
+
+  toggleBrush() {
+    this.setMode('terrain');
   }
 
   setBrushTerrain(key) {
@@ -454,46 +562,23 @@ export class UI {
   }
 
   _reflectBrush() {
-    const btn = this.els['toggle-brush'];
-    btn.classList.toggle('active', this.brushActive);
+    const btn = this.els['tool-terrain'];
     const palette = this.store.getPalette();
     const t = palette?.terrain?.find(x => x.key === this.brushTerrain);
-    btn.title = `Brush mode (b) — ${t ? t.label : this.brushTerrain}`;
-    btn.textContent = `Brush${t ? ': ' + t.label : ''}`;
+    if (btn) btn.title = `Terrain brush (B) — ${t ? t.label : this.brushTerrain}`;
   }
 
   toggleEdgePaint() {
-    this.edgePaintActive = !this.edgePaintActive;
-    if (this.edgePaintActive && this.brushActive) {
-      this.brushActive = false;
-      this._setupBrush();
-    }
-    if (this.edgePaintActive && this.nudgeActive) {
-      this.nudgeActive = false;
-      this.renderer.setNudgeMode(false);
-      this._reflectNudge();
-    }
-    this._setupEdgePaint();
-    this._reflectBrush();
-    this._reflectEdgePaint();
+    this.setMode('edges');
   }
 
   toggleNudge() {
-    this.nudgeActive = !this.nudgeActive;
-    if (this.nudgeActive) {
-      if (this.edgePaintActive) { this.edgePaintActive = false; this._setupEdgePaint(); this._reflectEdgePaint(); }
-      if (this.brushActive) { this.brushActive = false; this._setupBrush(); this._reflectBrush(); }
-      // The whole point is aligning scan to grid — make sure both are visible.
-      if (this.renderer.viewMode !== 'both') this.setViewMode('both');
-      this.status('Nudge map: drag the scan under the grid, or arrow keys (shift = ×10). Offset autosaves with the project.', 6000);
-    }
-    this.renderer.setNudgeMode(this.nudgeActive);
-    this._reflectNudge();
+    this.setMode('nudge');
   }
 
   _reflectNudge() {
-    const btn = this.els['toggle-nudge'];
-    if (btn) btn.classList.toggle('active', !!this.nudgeActive);
+    const btn = this.els['tool-nudge'];
+    if (btn) btn.classList.toggle('is-active', this.mode === 'nudge');
   }
 
   setEdgePaintFeature(key) {
@@ -521,16 +606,16 @@ export class UI {
   }
 
   _reflectEdgePaint() {
-    const btn = this.els['toggle-edge-paint'];
+    const btn = this.els['tool-edges'];
     const picker = this.els['edge-paint-picker'];
     const palette = this.store.getPalette();
     const feature = (palette?.hexsideFeatures || []).find(f => f.key === this.edgePaintFeature);
-    btn.classList.toggle('active', this.edgePaintActive);
-    btn.title = `Edge paint mode (e)${feature ? ` — ${feature.label || feature.key}` : ''}`;
+    btn.title = `Edge paint mode (E)${feature ? ` — ${feature.label || feature.key}` : ''}`;
     picker.classList.toggle('active', this.edgePaintActive);
     picker.querySelectorAll('.edge-paint-chip').forEach((chip) => {
       chip.classList.toggle('selected', chip.dataset.feature === this.edgePaintFeature);
     });
+    this._updateModeHint();
   }
 
   _selectTerrainByIndex(idx) {
@@ -575,12 +660,14 @@ export class UI {
 
   _reflectAnomaly() {
     this.els['toggle-anomaly'].classList.toggle('active', this.anomalyActive);
+    this.els['toggle-anomaly'].setAttribute('aria-pressed', String(this.anomalyActive));
   }
 
   _updateAnomalyStatus() {
+    const c = this.renderer.computeAnomalies();
+    this.els['anomaly-count'].textContent = String(c.unclassified + c.orphanHexsides + c.draft);
     const el = this.els['anomaly-status'];
     if (!this.anomalyActive) { el.textContent = ''; return; }
-    const c = this.renderer.computeAnomalies();
     el.textContent = `${c.unclassified} unclass, ${c.orphanHexsides} orphan, ${c.draft} draft`;
   }
 
@@ -755,6 +842,7 @@ export class UI {
   }
 
   updateUI(reason) {
+    this._updateProjectInfo();
     const palette = this.store.getPalette();
     const paletteChanged = palette !== this._lastPalette;
     if (paletteChanged) {
@@ -778,6 +866,8 @@ export class UI {
     this._updateAnomalyStatus();
     this.els['undo'].disabled = !this.store.canUndo();
     this._reflectViewMode();
+    this._reflectMode();
+    this._updateModeHint();
     this._reflectBrush();
     this._reflectEdgePaint();
 
