@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hexwright — Start screen</title>
+<link rel="stylesheet" href="../../design-systems/hexwright-instrument/tokens/colors_and_type.css">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body class="hx-ui">
+
+<!-- CLEAN SLATE: pre-project screen — no status strip, no rail, nothing loaded -->
+<div class="start-screen">
+  <div class="start-wrap">
+    <div class="brand">
+      <h1>Hexwright</h1>
+      <span class="ver hx-data">v2 — instrument build</span>
+    </div>
+
+    <div class="start-grid">
+      <div class="start-card">
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3 l7.8 4.5 v9 L12 21 l-7.8 -4.5 v-9 z"/><path d="M12 7.5 v9 M7.5 12 h9"/></svg></span>
+        <h2>New blank project</h2>
+        <p>Empty layers on a fresh grid. Calibrate from three anchor hexes or import a hexgrid.json.</p>
+        <span class="meta hx-data">nothing loaded until you say so</span>
+      </div>
+
+      <div class="start-card">
+        <span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7 v5 l4 2.4"/></svg></span>
+        <h2>Open recent</h2>
+        <p>Autosave slots, newest first. Everything you had, exactly where you left it.</p>
+        <span class="meta hx-data">gota-fullres · 12 min ago</span>
+      </div>
+
+      <div class="start-card">
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M3 6 h6 l2 2.5 h10 v10.5 H3 z"/></svg></span>
+        <h2>Load a project</h2>
+        <p>A ?project= manifest or individual map / grid / terrain / sides files.</p>
+        <span class="meta hx-data">drag &amp; drop works anywhere</span>
+      </div>
+    </div>
+
+    <div class="recent-list">
+      <h3>Recent</h3>
+      <div class="recent-row">
+        <span class="nm">gota-fullres.json</span>
+        <span class="detail hx-data">431 ridge · 308 river · autosaved</span>
+      </div>
+      <div class="recent-row">
+        <span class="nm">twu-project.json</span>
+        <span class="detail hx-data">rivers+rail · contract-tested</span>
+      </div>
+      <div class="recent-row">
+        <span class="nm">twar-panel3.json</span>
+        <span class="detail hx-data">new — nothing traced yet</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,51 @@
+{
+  "generated": "2026-07-02T00:19:32Z",
+  "sections": [
+    {
+      "id": "mockups",
+      "label": "Mockups",
+      "groups": [
+        {
+          "slug": "hexwright-overhaul",
+          "files": [
+            {
+              "label": "guidance.html",
+              "path": "mockups/hexwright-overhaul/guidance.html"
+            },
+            {
+              "label": "hexside-visibility.html",
+              "path": "mockups/hexwright-overhaul/hexside-visibility.html"
+            },
+            {
+              "label": "start-screen.html",
+              "path": "mockups/hexwright-overhaul/start-screen.html"
+            },
+            {
+              "label": "workbench-main.html",
+              "path": "mockups/hexwright-overhaul/workbench-main.html"
+            },
+            {
+              "label": "hex-editor.html",
+              "path": "mockups/hexwright-overhaul/hex-editor.html"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "design-systems",
+      "label": "Design Systems",
+      "groups": [
+        {
+          "slug": "hexwright-instrument",
+          "files": [
+            {
+              "label": "colors_and_type.css",
+              "path": "design-systems/hexwright-instrument/tokens/colors_and_type.css"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

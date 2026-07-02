@@ -1,0 +1,67 @@
+/* hexwright-instrument — design tokens
+   Darkroom instrument chrome: the map is the star, the UI recedes.
+   Fable, 2026-07-01. Fonts vendored locally (OFL) — see ../fonts/. */
+
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 400; font-style: normal; src: url('../fonts/ibm-plex-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 500; font-style: normal; src: url('../fonts/ibm-plex-sans-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 600; font-style: normal; src: url('../fonts/ibm-plex-sans-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-weight: 400; font-style: normal; src: url('../fonts/ibm-plex-mono-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-weight: 500; font-style: normal; src: url('../fonts/ibm-plex-mono-latin-500-normal.woff2') format('woff2'); }
+
+:root {
+  /* ---- chrome neutrals (cool, chroma <= 0.02) ---- */
+  --hx-bg-canvas:   oklch(0.16 0.008 250);  /* behind everything */
+  --hx-bg-panel:    oklch(0.21 0.010 250);  /* rails, panels, strips */
+  --hx-bg-raised:   oklch(0.25 0.010 250);  /* cards, rows, inputs */
+  --hx-bg-hover:    oklch(0.29 0.012 250);
+  --hx-hairline:    oklch(0.33 0.010 250);  /* borders, separators */
+  --hx-text-dim:    oklch(0.62 0.010 250);  /* secondary labels */
+  --hx-text:        oklch(0.84 0.008 250);  /* primary text */
+  --hx-text-bright: oklch(0.96 0.005 250);  /* emphasized values */
+
+  /* ---- state accents ---- */
+  --hx-accent:        oklch(0.80 0.115 205); /* cyan — active tool/selection */
+  --hx-accent-deep:   oklch(0.55 0.100 205); /* accent fills, rings on dark */
+  --hx-accent-tint:   oklch(0.30 0.045 205); /* active row/card backgrounds */
+  --hx-warn:          oklch(0.80 0.140 75);  /* amber — dirty/unsaved, confirms */
+  --hx-danger:        oklch(0.62 0.190 25);  /* destructive only */
+
+  /* ---- overlay inks (hexside layers): saturated core + pale casing ---- */
+  --ink-casing:     oklch(0.97 0.015 90 / 0.82); /* pale halo under every core */
+  --ink-river:      oklch(0.62 0.180 245);  /* azure */
+  --ink-road:       oklch(0.68 0.155 60);   /* ochre-orange */
+  --ink-rail:       oklch(0.58 0.185 305);  /* violet */
+  --ink-mountain:   oklch(0.56 0.205 20);   /* crimson — never brown-on-brown */
+  --ink-impassible: oklch(0.30 0.020 250);  /* slate, drawn with white dash */
+
+  /* ---- type ---- */
+  --font-ui:   'IBM Plex Sans', sans-serif;
+  --font-data: 'IBM Plex Mono', monospace;
+  --fs-11: 11px;  /* kbd chips, micro labels */
+  --fs-12: 12px;  /* panel labels, hints */
+  --fs-13: 13px;  /* body/default UI */
+  --fs-15: 15px;  /* section titles */
+  --fs-18: 18px;  /* start-screen headings */
+
+  /* ---- geometry ---- */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-6: 24px;
+  --rad-s: 6px; --rad-m: 10px;
+  --rail-w: 64px;          /* left tool rail */
+  --panel-w: 264px;        /* right panels */
+  --strip-h: 40px;         /* top status strip */
+  --shadow-panel: 0 4px 18px oklch(0 0 0 / 0.45);
+  --ring-active: 0 0 0 2px var(--hx-accent);
+}
+
+/* ---- base ---- */
+.hx-ui { font-family: var(--font-ui); font-size: var(--fs-13); color: var(--hx-text); }
+.hx-data { font-family: var(--font-data); }
+
+/* keyboard chip — every mode/brush advertises its key */
+.kbd {
+  font-family: var(--font-data); font-size: var(--fs-11); font-weight: 500;
+  color: var(--hx-text-dim); background: var(--hx-bg-raised);
+  border: 1px solid var(--hx-hairline); border-bottom-width: 2px;
+  border-radius: 4px; padding: 1px 5px; line-height: 1.4;
+}
+.is-active .kbd, .kbd.on-accent { color: var(--hx-bg-panel); background: var(--hx-accent); border-color: var(--hx-accent-deep); }
