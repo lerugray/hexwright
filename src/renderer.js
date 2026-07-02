@@ -4,6 +4,8 @@ import {
   worldToScreen, screenToWorld, edgeNeighbor, hexRadius, nearestEdge
 } from './geometry.js';
 
+const INK_CASING = 'rgba(247,242,226,0.82)';
+
 export class MapRenderer {
   constructor(canvas, store) {
     this.canvas = canvas;
@@ -602,12 +604,26 @@ export class MapRenderer {
       // Edge features (river/ridge/cliff/...) run ALONG the hexside — parallel offset lines.
       const edgeFeats = visibleFeatures.filter(k => !isCrossing(k));
       const offBaseE = -((edgeFeats.length - 1) * spacing) / 2;
-      edgeFeats.forEach((featureKey, idx) => {
+      const edgeLines = edgeFeats.map((featureKey, idx) => {
         const style = this._hexsideStyle(featureKey);
         const off = offBaseE + idx * spacing;
+        return { style, off };
+      });
+      edgeLines.forEach(({ style, off }) => {
+        ctx.beginPath();
+        ctx.strokeStyle = INK_CASING;
+        ctx.lineWidth = (style.width * 2) / s;
+        ctx.lineCap = 'round';
+        ctx.setLineDash([]);
+        ctx.moveTo(ep.a.x + ux * off, ep.a.y + uy * off);
+        ctx.lineTo(ep.b.x + ux * off, ep.b.y + uy * off);
+        ctx.stroke();
+      });
+      edgeLines.forEach(({ style, off }) => {
         ctx.beginPath();
         ctx.strokeStyle = style.stroke;
         ctx.lineWidth = style.width / s;
+        ctx.lineCap = 'round';
         ctx.setLineDash(style.dash.map(v => v / s));
         ctx.moveTo(ep.a.x + ux * off, ep.a.y + uy * off);
         ctx.lineTo(ep.b.x + ux * off, ep.b.y + uy * off);
@@ -624,14 +640,29 @@ export class MapRenderer {
         const rung = Math.min(len * 0.30, 11 / s);
         const cSpacing = 4.5 / s;
         const offBaseC = -((crossFeats.length - 1) * cSpacing) / 2;
-        crossFeats.forEach((featureKey, idx) => {
+        const crossLines = crossFeats.map((featureKey, idx) => {
           const style = this._hexsideStyle(featureKey);
           const along = offBaseC + idx * cSpacing;
           const cx = mx + tx * along;
           const cy = my + ty * along;
+          const coreWidth = style.width + 0.6;
+          return { style, cx, cy, coreWidth };
+        });
+        crossLines.forEach(({ cx, cy, coreWidth }) => {
+          ctx.beginPath();
+          ctx.strokeStyle = INK_CASING;
+          ctx.lineWidth = (coreWidth * 2) / s;
+          ctx.lineCap = 'round';
+          ctx.setLineDash([]);
+          ctx.moveTo(cx - ux * rung, cy - uy * rung);
+          ctx.lineTo(cx + ux * rung, cy + uy * rung);
+          ctx.stroke();
+        });
+        crossLines.forEach(({ style, cx, cy, coreWidth }) => {
           ctx.beginPath();
           ctx.strokeStyle = style.stroke;
-          ctx.lineWidth = (style.width + 0.6) / s;
+          ctx.lineWidth = coreWidth / s;
+          ctx.lineCap = 'round';
           ctx.setLineDash(style.dash.map(v => v / s));
           ctx.moveTo(cx - ux * rung, cy - uy * rung);
           ctx.lineTo(cx + ux * rung, cy + uy * rung);

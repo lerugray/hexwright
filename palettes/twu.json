@@ -12,7 +12,7 @@
   "hexFeatures": [],
   "hexsideFeatures": [
     { "key": "river", "label": "River", "color": "#2878ff", "kind": "edge", "exportLayer": "rivers" },
-    { "key": "rail", "label": "Rail", "color": "#8a8f98", "kind": "crossing", "dash": true, "exportLayer": "rails" }
+    { "key": "rail", "label": "Rail", "color": "#7a4fa3", "kind": "crossing", "dash": true, "exportLayer": "rails" }
   ],
   "terrainAliases": {
     "forest": "woods",
