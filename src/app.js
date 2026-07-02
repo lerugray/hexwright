@@ -331,6 +331,7 @@ async function main() {
   // Load a project manifest, offering the matching autosave slot first —
   // shared by the sample button and the ?project=<url> boot parameter.
   async function loadManifestWithRestore(manifestUrl) {
+    const manifestLabel = String(manifestUrl || '').split('/').pop() || '';
     const project = await loadProjectFromManifest(manifestUrl);
     const slot = getSessionSlotForName(project.name);
     if (slot && slot.land > 0 && askToRestore(slot, 'project')) {
@@ -345,10 +346,12 @@ async function main() {
       // scan is visible for tracing (classification would hide it and make
       // the Overlay slider a silent no-op).
       renderer.setViewMode('both');
+      ui.setProjectSource(manifestLabel);
       ui.status(`Restored autosave for ${project.name}.`, 4500);
       return;
     }
     await loadAndRender(project);
+    ui.setProjectSource(manifestLabel);
   }
 
   async function loadAndRender(project) {
@@ -374,6 +377,7 @@ async function main() {
       store.setProject({ mapImage: img, imageFull: gridFull || [img.naturalWidth, img.naturalHeight] });
       renderer.setBaseScale();
       renderer.fitView();
+      ui.setProjectSource(file?.name || '');
     },
     grid: async (file) => {
       const text = await readFile(file);
@@ -381,17 +385,20 @@ async function main() {
       store.setProject({ grid, imageFull: grid.image_full || store.state.imageFull });
       renderer.setBaseScale();
       renderer.fitView();
+      ui.setProjectSource(file?.name || '');
     },
     terrain: async (file) => {
       const text = await readFile(file);
       const terrain = JSON.parse(text);
       store.importTerrain(terrain);
       renderer.fitView();
+      ui.setProjectSource(file?.name || '');
     },
     sides: async (file) => {
       const text = await readFile(file);
       const hexsides = JSON.parse(text);
       store.importHexsides(hexsides);
+      ui.setProjectSource(file?.name || '');
     },
     sample: async () => {
       ui.status('Loading GotA sample...');
@@ -479,6 +486,7 @@ async function main() {
       proj.mapImage = null;
       await loadAndRender(proj);
       renderer.setViewMode('classification');
+      ui.setProjectSource('');
       ui.status(`Restored your last session for ${proj.name || 'untitled'} (data + grid). Load the base map to see it under the grid, or Load GotA sample to start fresh.`, 6000);
     }
   } catch (_) { /* ignore a corrupt autosave */ }
@@ -496,6 +504,7 @@ async function main() {
             encodeSessionRecord(project)
           );
           pruneSessionSlots();
+          ui.markAutosaved();
         }
       } catch (_) { /* quota or serialization issue — skip this autosave */ }
     }, 800);

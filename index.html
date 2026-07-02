@@ -4,90 +4,108 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Hexwright — hex wargame map editor</title>
+  <link rel="stylesheet" href="opendesign/design-systems/hexwright-instrument/tokens/colors_and_type.css" />
   <link rel="stylesheet" href="src/style.css" />
 </head>
-<body>
-  <header id="topbar" class="topbar">
-    <div class="brand">
-      <span class="brand-mark">⚒</span>
-      <h1>Hexwright</h1>
+<body class="hx-ui">
+  <header id="status-strip" class="status-strip hx-ui">
+    <div class="project">
+      <span id="strip-project-name" class="name">Hexwright</span>
+      <span id="strip-project-sub" class="sub hx-data"></span>
     </div>
-
-    <div class="load-group" role="group" aria-label="Project load">
-      <label class="file-btn">
-        <span>Map</span>
-        <input type="file" id="load-map" accept="image/*" hidden />
-      </label>
-      <label class="file-btn">
-        <span>Grid</span>
-        <input type="file" id="load-grid" accept=".json,application/json" hidden />
-      </label>
-      <label class="file-btn">
-        <span>Terrain</span>
-        <input type="file" id="load-terrain" accept=".json,application/json" hidden />
-      </label>
-      <label class="file-btn">
-        <span>Sides</span>
-        <input type="file" id="load-sides" accept=".json,application/json" hidden />
-      </label>
-      <button id="load-sample" type="button">Load GotA sample</button>
-    </div>
-
-    <div class="tool-group" role="group" aria-label="Canvas tools">
-      <button id="fit-view" type="button" title="Fit to view">Fit</button>
-      <button id="undo" type="button" title="Undo last action">Undo</button>
-      <button id="clear-select" type="button" title="Close inspector">Esc</button>
-      <button id="toggle-help" class="help-toggle" type="button" title="Help (?)" aria-haspopup="dialog" aria-expanded="false" aria-controls="help-overlay">?</button>
-    </div>
-
-    <div class="mode-group" role="group" aria-label="View and edit mode">
-      <div class="seg" id="view-mode" role="radiogroup" aria-label="View mode">
+    <div id="mode-hint" class="hint"><b>Inspect</b> — click hex to inspect and edit<span class="hint-extra"> · <span class="kbd">I</span> select inspect</span></div>
+    <div class="right">
+      <span id="save-state" class="save-state hx-data">autosaved</span>
+      <button id="fit-view" class="btn" type="button" title="Fit to view">Fit</button>
+      <button id="undo" class="btn" type="button" title="Undo last action">Undo</button>
+      <button id="clear-select" class="btn" type="button" title="Close inspector">Esc</button>
+      <div class="view-toggle seg" id="view-mode" role="radiogroup" aria-label="View mode">
         <button type="button" data-mode="map" aria-checked="false">Map</button>
         <button type="button" data-mode="classification" aria-checked="false">Class</button>
         <button type="button" data-mode="both" class="active" aria-checked="true">Both</button>
       </div>
-      <button id="toggle-brush" type="button" title="Brush mode (b)">Brush</button>
-      <button id="toggle-edge-paint" type="button" title="Edge paint mode (e)">Edge paint</button>
-      <button id="toggle-nudge" type="button" title="Nudge map alignment (n) — drag the scan or use arrow keys; shift = ×10">Nudge map</button>
-      <div id="edge-paint-picker" class="edge-paint-picker" role="group" aria-label="Edge paint feature"></div>
-      <button id="export-overlay" type="button" title="Export classification PNG">PNG</button>
-      <button id="toggle-anomaly" type="button" title="Anomaly check">Anomalies</button>
-      <label class="file-btn" title="Load palette JSON">
-        <span>Palette</span>
-        <input type="file" id="load-palette" accept=".json,application/json" hidden />
-      </label>
-      <span id="anomaly-status" class="anomaly-status" aria-live="polite"></span>
-    </div>
+      <button id="toggle-anomaly" class="btn" type="button" title="Anomaly check">Anomalies <span class="hx-data" id="anomaly-count">0</span></button>
+      <span id="anomaly-status" class="anomaly-status hx-data" aria-live="polite"></span>
 
-    <div class="io-group" role="group" aria-label="Import / Export">
-      <label class="file-btn" title="Import hexsides.json">
-        <span>Import sides</span>
-        <input type="file" id="import-sides" accept=".json,application/json" hidden />
-      </label>
-      <label class="file-btn" title="Import terrain.json">
-        <span>Import terrain</span>
-        <input type="file" id="import-terrain" accept=".json,application/json" hidden />
-      </label>
-      <label class="file-btn" title="Import a wargame-map-parser terrain classification as an editable DRAFT (all imported hexes marked unconfirmed until you touch them)">
-        <span>Import WMP draft</span>
-        <input type="file" id="import-wmp" accept=".json,application/json" hidden />
-      </label>
-      <label class="file-btn" title="Import one TWU layer file (rivers.json or rail.json)">
-        <span>Import TWU layer</span>
-        <input type="file" id="import-twu" accept=".json,application/json" hidden />
-      </label>
-      <div class="export-menu">
-        <button id="export-btn" type="button">Export ▾</button>
-        <div class="export-popover" id="export-popover">
+      <div class="popover-menu">
+        <button id="file-btn" class="btn" type="button" aria-haspopup="menu" aria-expanded="false">File ▾</button>
+        <div class="popover-panel file-popover" id="file-popover">
+          <label class="file-btn">
+            <span>Map</span>
+            <input type="file" id="load-map" accept="image/*" hidden />
+          </label>
+          <label class="file-btn">
+            <span>Grid</span>
+            <input type="file" id="load-grid" accept=".json,application/json" hidden />
+          </label>
+          <label class="file-btn">
+            <span>Terrain</span>
+            <input type="file" id="load-terrain" accept=".json,application/json" hidden />
+          </label>
+          <label class="file-btn">
+            <span>Sides</span>
+            <input type="file" id="load-sides" accept=".json,application/json" hidden />
+          </label>
+          <button id="load-sample" type="button">Load GotA sample</button>
+          <label class="file-btn" title="Import hexsides.json">
+            <span>Import sides</span>
+            <input type="file" id="import-sides" accept=".json,application/json" hidden />
+          </label>
+          <label class="file-btn" title="Import terrain.json">
+            <span>Import terrain</span>
+            <input type="file" id="import-terrain" accept=".json,application/json" hidden />
+          </label>
+          <label class="file-btn" title="Import a wargame-map-parser terrain classification as an editable DRAFT (all imported hexes marked unconfirmed until you touch them)">
+            <span>Import WMP draft</span>
+            <input type="file" id="import-wmp" accept=".json,application/json" hidden />
+          </label>
+          <label class="file-btn" title="Import one TWU layer file (rivers.json or rail.json)">
+            <span>Import TWU layer</span>
+            <input type="file" id="import-twu" accept=".json,application/json" hidden />
+          </label>
+          <label class="file-btn" title="Load palette JSON">
+            <span>Palette</span>
+            <input type="file" id="load-palette" accept=".json,application/json" hidden />
+          </label>
+        </div>
+      </div>
+
+      <div class="popover-menu export-menu">
+        <button id="export-btn" class="btn primary" type="button" aria-haspopup="menu" aria-expanded="false">Export ▾</button>
+        <div class="popover-panel export-popover" id="export-popover">
           <button id="export-sides-file" type="button">hexsides.json</button>
           <button id="export-sides-copy" type="button">Copy hexsides</button>
           <button id="export-terrain-file" type="button">terrain.json</button>
           <button id="export-terrain-copy" type="button">Copy terrain</button>
           <button id="export-twu" type="button">TWU rivers+rail</button>
+          <button id="export-overlay" type="button" title="Export classification PNG">Classification PNG</button>
         </div>
       </div>
+
+      <button id="toggle-help" class="btn help-toggle" type="button" title="Help (?)" aria-haspopup="dialog" aria-expanded="false" aria-controls="help-overlay">?</button>
     </div>
   </header>
+
+  <nav id="tool-rail" class="tool-rail" role="radiogroup" aria-label="Mode">
+    <button id="tool-inspect" class="tool is-active" type="button" role="radio" aria-checked="true" data-mode="inspect">
+      <span class="glyph"><svg viewBox="0 0 24 24"><path d="M4 4 l7 16 l2.5 -6.5 L20 11 z"/></svg></span>
+      <span class="lbl">Inspect</span><span class="kbd">I</span>
+    </button>
+    <button id="tool-terrain" class="tool" type="button" role="radio" aria-checked="false" data-mode="terrain">
+      <span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 3 l7.8 4.5 v9 L12 21 l-7.8 -4.5 v-9 z"/></svg></span>
+      <span class="lbl">Terrain</span><span class="kbd">B</span>
+    </button>
+    <button id="tool-edges" class="tool" type="button" role="radio" aria-checked="false" data-mode="edges">
+      <span class="glyph"><svg viewBox="0 0 24 24"><path d="M5 17 L17 5 M14 5 h3 v3"/></svg></span>
+      <span class="lbl">Edges</span><span class="kbd">E</span>
+    </button>
+    <button id="tool-nudge" class="tool" type="button" role="radio" aria-checked="false" data-mode="nudge">
+      <span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 4 v16 M4 12 h16 M12 4 l-2.5 3 M12 4 l2.5 3 M12 20 l-2.5 -3 M12 20 l2.5 -3"/></svg></span>
+      <span class="lbl">Nudge</span><span class="kbd">N</span>
+    </button>
+  </nav>
+
+  <div id="edge-paint-picker" class="edge-paint-picker" role="group" aria-label="Edge paint feature"></div>
 
   <main class="workspace">
     <div id="canvas-wrap" class="canvas-wrap">

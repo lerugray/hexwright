@@ -1,5 +1,5 @@
 // v2 UI-interaction test (trusted clicks): view-mode buttons, inspector feature chip,
-// anomaly toggle, overlay PNG export button, brush toggle.
+// anomaly toggle, overlay PNG export button, tool-rail mode selection.
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
 const DIR = process.cwd();
@@ -18,6 +18,7 @@ const results=[];
 const rec=(n,ok,note='')=>{results.push({ok});console.log(`${ok?'PASS':'FAIL'}  ${n}${note?'  — '+note:''}`);};
 try{
   await page.goto(`http://localhost:${PORT}/`,{waitUntil:'load',timeout:20000});
+  await page.click('#file-btn');
   await page.click('#load-sample');
   await page.waitForFunction(()=>{const el=document.getElementById('count-land');return el&&/[1-9]/.test(el.textContent);},{timeout:25000});
   await sleep(1800);
@@ -60,15 +61,16 @@ try{
 
   // 4. EXPORT overlay PNG -> download fires
   const before = downloads.length;
+  await page.click('#export-btn').catch(()=>{});
   await page.click('#export-overlay').catch(()=>{});
   await sleep(1500);
   rec('export-overlay button triggers a PNG download', downloads.length>before, `downloads=[${downloads.join(', ')}]`);
 
-  // 5. BRUSH toggle reflects active state
-  await page.click('#toggle-brush').catch(()=>{});
+  // 5. TOOL mode reflects active state
+  await page.click('#tool-terrain').catch(()=>{});
   await sleep(300);
-  const brushActive = await page.evaluate(()=>{const b=document.getElementById('toggle-brush'); return b.classList.contains('active')||b.getAttribute('aria-pressed')==='true'||/on/i.test(b.textContent);});
-  rec('brush toggle reflects active state', !!brushActive, `brushActive=${brushActive}`);
+  const toolActive = await page.evaluate(()=>{const b=document.getElementById('tool-terrain'); return b.classList.contains('is-active') && b.getAttribute('aria-checked')==='true';});
+  rec('terrain tool reflects active rail state', !!toolActive, `toolActive=${toolActive}`);
 
   rec('no console/page errors during UI interaction', errors.length===0, errors.slice(0,3).join(' | '));
 }catch(e){ console.log('FATAL',String(e)); rec('run',false,String(e)); }
