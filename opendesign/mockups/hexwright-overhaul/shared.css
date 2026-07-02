@@ -227,3 +227,6 @@ body {
 .recent-row:hover { background: var(--hx-bg-hover); }
 .recent-row .nm { flex: 1; font-size: var(--fs-12); color: var(--hx-text); font-weight: 500; }
 .recent-row .detail { font-family: var(--font-data); font-size: var(--fs-11); color: var(--hx-text-dim); }
+
+/* narrow widths: the hint keeps its mode+verb core, sheds the key-chip tail */
+@media (max-width: 1440px) { .status-strip .hint .hint-extra { display: none; } }
