@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hexwright — Hex editor (inspect &amp; assign)</title>
+<link rel="stylesheet" href="../../design-systems/hexwright-instrument/tokens/colors_and_type.css">
+<link rel="stylesheet" href="shared.css">
+<style>
+  /* file-local: the expanded hex editor panel */
+  .hexed { width: 300px; }
+  .sect { padding: var(--sp-2) var(--sp-3) var(--sp-3); border-top: 1px solid oklch(0.25 0.01 250); }
+  .sect .sect-t { font-size: var(--fs-11); text-transform: uppercase; letter-spacing: 0.06em; color: var(--hx-text-dim); margin-bottom: var(--sp-2); display: flex; justify-content: space-between; }
+  .terr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .terr {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+    background: var(--hx-bg-raised); border: 1px solid var(--hx-hairline);
+    border-radius: var(--rad-s); cursor: pointer; font-size: var(--fs-12);
+  }
+  .terr:hover { background: var(--hx-bg-hover); }
+  .terr.is-active { background: var(--hx-accent-tint); border-color: var(--hx-accent-deep); color: var(--hx-text-bright); font-weight: 500; }
+  .terr .tswatch { width: 16px; height: 16px; border-radius: 4px; flex: none; border: 1px solid oklch(0 0 0 / 0.35); }
+  .featrow { display: flex; flex-wrap: wrap; gap: 6px; }
+  .feat {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px;
+    background: var(--hx-bg-raised); border: 1px solid var(--hx-hairline);
+    border-radius: 999px; cursor: pointer; font-size: var(--fs-12); color: var(--hx-text);
+  }
+  .feat:hover { background: var(--hx-bg-hover); }
+  .feat.is-active { background: var(--hx-accent-tint); border-color: var(--hx-accent-deep); color: var(--hx-text-bright); }
+  .feat .fdot { width: 8px; height: 8px; border-radius: 50%; background: var(--hx-text-dim); }
+  .feat.is-active .fdot { background: var(--hx-accent); }
+  .hexdiagram { display: grid; place-items: center; padding: var(--sp-2) 0 var(--sp-1); }
+  .edge-label { font-family: var(--font-data); font-size: 10px; fill: var(--hx-text-dim); }
+  .edge-label.sel { fill: var(--hx-accent); font-weight: 700; }
+  .edge-seg { cursor: pointer; }
+  .inkgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: var(--sp-2); }
+  .inkmini {
+    display: inline-flex; align-items: center; gap: 7px; padding: 4px 8px;
+    background: var(--hx-bg-raised); border: 1px solid var(--hx-hairline);
+    border-radius: var(--rad-s); cursor: pointer; font-size: var(--fs-11); color: var(--hx-text);
+  }
+  .inkmini:hover { background: var(--hx-bg-hover); }
+  .inkmini .swatch { width: 18px; height: 7px; border-radius: 2px; box-shadow: 0 0 0 1.5px var(--ink-casing); }
+  .inkmini.applied { background: var(--hx-accent-tint); border-color: var(--hx-accent-deep); color: var(--hx-text-bright); }
+  .edchips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .edgechip .x { color: var(--hx-text-dim); cursor: pointer; margin-left: 2px; font-family: var(--font-data); }
+  .edgechip .x:hover { color: var(--hx-danger); }
+  .foot-hint { padding: var(--sp-2) var(--sp-3) var(--sp-3); font-size: var(--fs-11); color: var(--hx-text-dim); line-height: 1.5; border-top: 1px solid oklch(0.25 0.01 250); }
+</style>
+</head>
+<body class="hx-ui">
+
+<div class="map-stage"><span class="placeholder-tag">MAP RASTER — synthetic placeholder</span></div>
+
+<!-- grid with the inspected hex highlighted -->
+<svg class="hexgrid" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <g stroke="oklch(0.25 0.02 250 / 0.55)" stroke-width="1.1" fill="none">
+    <path d="M420 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M540 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M360 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M600 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M480 510 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+  </g>
+  <!-- the inspected hex: accent ring -->
+  <path d="M480 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"
+        fill="oklch(0.80 0.115 205 / 0.10)" stroke="var(--hx-accent)" stroke-width="2.5"/>
+  <!-- its marked edges, casing+core -->
+  <path class="stroke-casing" d="M480 405 l60 -35"/>
+  <path class="stroke-core core-river" d="M480 405 l60 -35"/>
+  <path class="stroke-casing" d="M600 405 l0 70"/>
+  <path class="stroke-core core-mountain" d="M600 405 l0 70"/>
+  <path class="stroke-casing" d="M480 475 l0 -70"/>
+  <path class="stroke-core core-road" d="M480 475 l0 -70"/>
+</svg>
+
+<header class="status-strip">
+  <div class="project">
+    <span class="name">GotA — Americas</span>
+    <span class="sub hx-data">gota-fullres.json</span>
+  </div>
+  <div class="hint"><b>Inspect</b> — click a hex to edit it · <span class="kbd">Esc</span> close · edges apply the ink you tap</div>
+  <div class="right">
+    <span class="save-state dirty">unsaved edit</span>
+    <div class="view-toggle" role="radiogroup" aria-label="View">
+      <button>Map</button><button>Class</button><button class="active">Both</button>
+    </div>
+    <button class="btn">File ▾</button>
+    <button class="btn primary">Export ▾</button>
+    <button class="btn" aria-label="Help"><span class="kbd">?</span></button>
+  </div>
+</header>
+
+<nav class="tool-rail" role="radiogroup" aria-label="Mode">
+  <div class="tool is-active" role="radio" aria-checked="true">
+    <span class="glyph"><svg viewBox="0 0 24 24"><path d="M4 4 l7 16 l2.5 -6.5 L20 11 z"/></svg></span>
+    <span class="lbl">Inspect</span><span class="kbd">I</span>
+  </div>
+  <div class="tool" role="radio" aria-checked="false">
+    <span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 3 l7.8 4.5 v9 L12 21 l-7.8 -4.5 v-9 z"/></svg></span>
+    <span class="lbl">Terrain</span><span class="kbd">B</span>
+  </div>
+  <div class="tool" role="radio" aria-checked="false">
+    <span class="glyph"><svg viewBox="0 0 24 24"><path d="M5 17 L17 5 M14 5 h3 v3"/></svg></span>
+    <span class="lbl">Edges</span><span class="kbd">E</span>
+  </div>
+  <div class="tool" role="radio" aria-checked="false">
+    <span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 4 v16 M4 12 h16 M12 4 l-2.5 3 M12 4 l2.5 3 M12 20 l-2.5 -3 M12 20 l2.5 -3"/></svg></span>
+    <span class="lbl">Nudge</span><span class="kbd">N</span>
+  </div>
+</nav>
+
+<!-- THE HEX EDITOR: docked, labeled, no mystery boxes -->
+<aside class="panel hexed" style="top: calc(var(--strip-h) + var(--sp-3));" aria-label="Hex editor">
+  <div class="head"><span class="title">Hex 4112</span><span class="collapse hx-data">×</span></div>
+
+  <div class="sect" style="border-top: 0;">
+    <div class="sect-t"><span>Terrain</span><span class="hx-data">woods</span></div>
+    <div class="terr-grid">
+      <div class="terr"><span class="tswatch" style="background: oklch(0.82 0.06 95)"></span>clear</div>
+      <div class="terr is-active"><span class="tswatch" style="background: oklch(0.52 0.09 145)"></span>woods</div>
+      <div class="terr"><span class="tswatch" style="background: oklch(0.62 0.06 75)"></span>rough</div>
+      <div class="terr"><span class="tswatch" style="background: oklch(0.55 0.07 175)"></span>swamp</div>
+      <div class="terr"><span class="tswatch" style="background: oklch(0.62 0.10 240)"></span>water</div>
+      <div class="terr"><span class="tswatch" style="background: oklch(0.85 0.07 85)"></span>desert</div>
+      <div class="terr"><span class="tswatch" style="background: oklch(0.55 0.02 250)"></span>urban</div>
+    </div>
+  </div>
+
+  <div class="sect">
+    <div class="sect-t"><span>Features</span><span class="hx-data">1</span></div>
+    <div class="featrow">
+      <span class="feat is-active"><span class="fdot"></span>town</span>
+      <span class="feat"><span class="fdot"></span>city</span>
+      <span class="feat"><span class="fdot"></span>fortress</span>
+      <span class="feat"><span class="fdot"></span>port</span>
+      <span class="feat"><span class="fdot"></span>resource</span>
+      <span class="feat"><span class="fdot"></span>objective</span>
+    </div>
+  </div>
+
+  <div class="sect">
+    <div class="sect-t"><span>Edges</span><span class="hx-data">3 of 6 marked · E selected</span></div>
+    <div class="hexdiagram">
+      <svg width="216" height="200" viewBox="0 0 216 200">
+        <!-- fat clickable edge segments, drawn with each edge's inks -->
+        <!-- NW -->
+        <path class="edge-seg" d="M58 62 L108 33" stroke="oklch(0.33 0.01 250)" stroke-width="10" stroke-linecap="round" fill="none"/>
+        <!-- NE: river -->
+        <path class="edge-seg" d="M108 33 L158 62" stroke="var(--ink-casing)" stroke-width="12" stroke-linecap="round" fill="none"/>
+        <path class="edge-seg" d="M108 33 L158 62" stroke="var(--ink-river)" stroke-width="6" stroke-linecap="round" fill="none"/>
+        <!-- E: ridge, selected -->
+        <path class="edge-seg" d="M158 62 L158 122" stroke="var(--ink-casing)" stroke-width="12" stroke-linecap="round" fill="none"/>
+        <path class="edge-seg" d="M158 62 L158 122" stroke="var(--ink-mountain)" stroke-width="6" stroke-linecap="round" fill="none"/>
+        <path d="M158 62 L158 122" stroke="var(--hx-accent)" stroke-width="16" stroke-linecap="round" fill="none" opacity="0.28"/>
+        <!-- SE -->
+        <path class="edge-seg" d="M158 122 L108 151" stroke="oklch(0.33 0.01 250)" stroke-width="10" stroke-linecap="round" fill="none"/>
+        <!-- SW: road -->
+        <path class="edge-seg" d="M108 151 L58 122" stroke="var(--ink-casing)" stroke-width="12" stroke-linecap="round" fill="none"/>
+        <path class="edge-seg" d="M108 151 L58 122" stroke="var(--ink-road)" stroke-width="6" stroke-linecap="round" fill="none"/>
+        <!-- W -->
+        <path class="edge-seg" d="M58 122 L58 62" stroke="oklch(0.33 0.01 250)" stroke-width="10" stroke-linecap="round" fill="none"/>
+        <!-- labels -->
+        <text class="edge-label" x="74" y="38" text-anchor="middle">NW</text>
+        <text class="edge-label" x="146" y="38" text-anchor="middle">NE</text>
+        <text class="edge-label sel" x="174" y="96" text-anchor="middle">E</text>
+        <text class="edge-label" x="146" y="172" text-anchor="middle">SE</text>
+        <text class="edge-label" x="70" y="172" text-anchor="middle">SW</text>
+        <text class="edge-label" x="42" y="96" text-anchor="middle">W</text>
+        <!-- center: hex id -->
+        <text x="108" y="97" text-anchor="middle" fill="var(--hx-text-dim)" font-family="IBM Plex Mono" font-size="12">4112</text>
+      </svg>
+    </div>
+
+    <div class="sect-t" style="margin-top: 2px;"><span>On edge E</span></div>
+    <div class="edchips">
+      <span class="edgechip"><span class="dot" style="background: var(--ink-mountain)"></span>ridge<span class="x">×</span></span>
+    </div>
+    <div class="inkgrid">
+      <span class="inkmini"><span class="swatch" style="background: var(--ink-river)"></span>river</span>
+      <span class="inkmini"><span class="swatch" style="background: oklch(0.74 0.10 235)"></span>stream</span>
+      <span class="inkmini"><span class="swatch" style="background: var(--ink-road)"></span>road</span>
+      <span class="inkmini"><span class="swatch" style="background: var(--ink-rail)"></span>rail</span>
+      <span class="inkmini applied"><span class="swatch" style="background: var(--ink-mountain)"></span>ridge</span>
+      <span class="inkmini"><span class="swatch" style="background: var(--ink-impassible)"></span>impassable</span>
+    </div>
+  </div>
+
+  <div class="foot-hint">
+    Click an edge on the diagram, then tap an ink to add or remove it.
+    Edges show every ink they carry — nothing hides until checked.
+  </div>
+</aside>
+
+</body>
+</html>

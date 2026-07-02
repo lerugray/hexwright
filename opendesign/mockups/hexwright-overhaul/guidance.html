@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hexwright — Guidance &amp; reference</title>
+<link rel="stylesheet" href="../../design-systems/hexwright-instrument/tokens/colors_and_type.css">
+<link rel="stylesheet" href="shared.css">
+<style>
+  /* file-local: raise the coach above the help-overlay scrim so both guidance
+     surfaces read clearly in one frame — a mockup convenience for documenting
+     both affordances together, not a claim both are live at once in the app */
+  .coach { z-index: 55; }
+  .help-intro { font-size: var(--fs-12); color: var(--hx-text-dim); line-height: 1.5; margin-top: 4px; }
+  .helprow .keys.plain { font-family: var(--font-data); font-size: var(--fs-11); color: var(--hx-text-dim); text-align: right; }
+  .section-note { font-size: var(--fs-11); color: var(--hx-text-dim); line-height: 1.5; margin-top: 6px; }
+</style>
+</head>
+<body class="hx-ui">
+
+<!-- WORKBENCH BACKGROUND, low fidelity: map-stage + status-strip + tool-rail only -->
+<div class="map-stage"><span class="placeholder-tag">MAP RASTER — synthetic placeholder</span></div>
+<svg class="hexgrid" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <g stroke="oklch(0.25 0.02 250 / 0.55)" stroke-width="1.1" fill="none">
+    <path d="M300 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M420 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M540 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M660 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M360 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M480 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M600 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M720 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M420 510 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M540 510 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M660 510 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+  </g>
+</svg>
+
+<header class="status-strip">
+  <div class="project">
+    <span class="name">GotA — Americas</span>
+    <span class="sub hx-data">gota-fullres.json</span>
+  </div>
+  <div class="hint"><b>Edge paint · Ridge</b> — click edge to toggle · drag to paint · <span class="kbd">⌥</span> erase · <span class="kbd">1</span>–<span class="kbd">0</span> switch ink</div>
+  <div class="right">
+    <span class="save-state">autosaved 12s ago</span>
+    <div class="view-toggle" role="radiogroup" aria-label="View">
+      <button>Map</button><button>Class</button><button class="active">Both</button>
+    </div>
+    <button class="btn">Anomalies <span class="hx-data">3</span></button>
+    <button class="btn">File ▾</button>
+    <button class="btn primary">Export ▾</button>
+    <button class="btn" aria-label="Help"><span class="kbd">?</span></button>
+  </div>
+</header>
+
+<nav class="tool-rail" role="radiogroup" aria-label="Mode">
+  <div class="tool" role="radio" aria-checked="false">
+    <span class="glyph"><svg viewBox="0 0 24 24"><path d="M4 4 l7 16 l2.5 -6.5 L20 11 z"/></svg></span>
+    <span class="lbl">Inspect</span><span class="kbd">I</span>
+  </div>
+  <div class="tool" role="radio" aria-checked="false">
+    <span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 3 l7.8 4.5 v9 L12 21 l-7.8 -4.5 v-9 z"/></svg></span>
+    <span class="lbl">Terrain</span><span class="kbd">B</span>
+  </div>
+  <div class="tool is-active" role="radio" aria-checked="true">
+    <span class="glyph"><svg viewBox="0 0 24 24"><path d="M5 17 L17 5 M14 5 h3 v3"/></svg></span>
+    <span class="lbl">Edges</span><span class="kbd">E</span>
+  </div>
+  <div class="tool" role="radio" aria-checked="false">
+    <span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 4 v16 M4 12 h16 M12 4 l-2.5 3 M12 4 l2.5 3 M12 20 l-2.5 -3 M12 20 l2.5 -3"/></svg></span>
+    <span class="lbl">Nudge</span><span class="kbd">N</span>
+  </div>
+</nav>
+
+<!-- HELP OVERLAY (open) -->
+<div class="help-overlay">
+  <div class="help-sheet">
+    <h1>Hexwright reference</h1>
+    <p class="help-intro">One mode is always active. The rail shows it; the strip hints it.</p>
+    <div class="cols">
+      <div>
+        <h2>Modes</h2>
+        <div class="helprow"><span>Inspect</span><span class="keys"><span class="kbd">I</span></span></div>
+        <div class="helprow"><span>Terrain brush</span><span class="keys"><span class="kbd">B</span></span></div>
+        <div class="helprow"><span>Edge paint</span><span class="keys"><span class="kbd">E</span></span></div>
+        <div class="helprow"><span>Nudge map</span><span class="keys"><span class="kbd">N</span></span></div>
+        <div class="helprow"><span>Cycle view</span><span class="keys"><span class="kbd">V</span></span></div>
+        <div class="helprow"><span>Close</span><span class="keys"><span class="kbd">Esc</span></span></div>
+      </div>
+      <div>
+        <h2>Painting</h2>
+        <div class="helprow"><span>Toggle edge</span><span class="keys"><span class="kbd">Click</span></span></div>
+        <div class="helprow"><span>Paint</span><span class="keys"><span class="kbd">Drag</span></span></div>
+        <div class="helprow"><span>Erase</span><span class="keys"><span class="kbd">⌥</span><span class="kbd">Drag</span></span></div>
+        <div class="helprow"><span>Select ink</span><span class="keys"><span class="kbd">1</span>–<span class="kbd">0</span></span></div>
+        <p class="section-note">Applies to the loaded ink only.</p>
+      </div>
+      <div>
+        <h2>Navigate</h2>
+        <div class="helprow"><span>Pan</span><span class="keys"><span class="kbd">Drag</span></span></div>
+        <div class="helprow"><span>Zoom</span><span class="keys"><span class="kbd">Wheel</span></span></div>
+        <div class="helprow"><span>Fit map</span><span class="keys"><span class="kbd">F</span></span></div>
+      </div>
+      <div>
+        <h2>Data</h2>
+        <div class="helprow"><span>Undo</span><span class="keys"><span class="kbd">Ctrl</span><span class="kbd">Z</span></span></div>
+        <div class="helprow"><span>Redo</span><span class="keys"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">Z</span></span></div>
+        <div class="helprow"><span>Autosave</span><span class="keys plain">every change</span></div>
+        <div class="helprow"><span>Export ▾</span><span class="keys plain">hexgrid / terrain / hexsides / hexFeatures JSON</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FIRST-RUN COACH CARD -->
+<div class="coach" style="left: var(--sp-3); bottom: var(--sp-4);">
+  <div class="t">Start here</div>
+  <p>Pick a mode on the rail — one is always active. In Edges mode, choose an ink in the Brush card; everything you draw uses that ink until you switch.</p>
+  <div class="actions">
+    <span class="dismiss">don't show again</span>
+    <button class="btn primary">Got it</button>
+  </div>
+</div>
+
+</body>
+</html>

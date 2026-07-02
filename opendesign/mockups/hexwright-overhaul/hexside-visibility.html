@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hexwright — Hexside visibility (casing system)</title>
+<link rel="stylesheet" href="../../design-systems/hexwright-instrument/tokens/colors_and_type.css">
+<link rel="stylesheet" href="shared.css">
+<style>
+  /* file-local: split-screen A/B layout — not part of the shared component library */
+  .dim-half {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 50%;
+    background: oklch(0.16 0.008 250 / 0.35);
+    z-index: 1; /* above map-stage (0), below the hex grid + strokes (2) */
+  }
+  .demo-svg { z-index: 2; } /* raise the grid+strokes above the dim overlay so they stay crisp */
+  .split-divider {
+    position: fixed; top: var(--strip-h); bottom: 0; left: 50%; width: 1px;
+    background: var(--hx-hairline); z-index: 10;
+  }
+  .half-tag {
+    position: fixed; top: calc(var(--strip-h) + var(--sp-3)); z-index: 20;
+    font-family: var(--font-data); font-size: var(--fs-11); font-weight: 500;
+    letter-spacing: 0.04em; text-transform: uppercase; color: var(--hx-text-dim);
+    background: var(--hx-bg-panel); border: 1px solid var(--hx-hairline);
+    border-radius: 4px; padding: 3px 9px;
+  }
+  .half-tag.left { left: var(--sp-3); }
+  .half-tag.right { left: calc(50% + var(--sp-3)); color: var(--hx-text-bright); }
+  .raw-stroke { fill: none; stroke-linecap: round; stroke-width: 4; }
+  .raw-ridge { stroke: #be8228; }
+  .raw-road  { stroke: #c9a06a; }
+  .raw-river { stroke: #2878ff; }
+  .legend-card { top: auto; right: auto; left: 50%; bottom: var(--sp-4); transform: translateX(-50%); width: 340px; }
+  .legend-rows { display: flex; flex-direction: column; gap: 8px; padding: var(--sp-2) var(--sp-3) var(--sp-3); }
+  .legend-row { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-12); color: var(--hx-text); line-height: 1.45; }
+  .legend-row .swatch { width: 22px; height: 8px; border-radius: 3px; flex: none; margin-top: 4px; box-shadow: 0 0 0 2px var(--ink-casing); }
+</style>
+</head>
+<body class="hx-ui">
+
+<!-- MAP STAGE: synthetic parchment placeholder, shared by both halves -->
+<div class="map-stage"><span class="placeholder-tag">MAP RASTER — synthetic placeholder</span></div>
+<div class="dim-half"></div>
+
+<!-- HEX GRID + demo strokes: left = today's raw single strokes, right = casing+core pairs -->
+<svg class="hexgrid demo-svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <g stroke="oklch(0.25 0.02 250 / 0.55)" stroke-width="1.1" fill="none">
+    <path d="M140 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M260 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M380 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M500 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M200 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M320 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M440 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M560 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M260 510 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M380 510 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M500 510 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+
+    <path d="M940 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M1060 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M1180 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M1300 300 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M1000 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M1120 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M1240 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M1360 405 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M1060 510 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M1180 510 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+    <path d="M1300 510 l60 -35 l60 35 l0 70 l-60 35 l-60 -35 z"/>
+  </g>
+
+  <!-- LEFT (today): single raw strokes, real problem colors — ridge and road nearly vanish on purpose -->
+  <path class="raw-stroke raw-river" d="M320 370 l60 35 l0 70"/>
+  <path class="raw-stroke raw-ridge" d="M440 405 l60 -35 l60 35"/>
+  <path class="raw-stroke raw-road" d="M260 335 l60 35 l60 -35"/>
+
+  <!-- RIGHT (casing system): pale casing under saturated core, same three runs -->
+  <path class="stroke-casing" d="M1120 370 l60 35 l0 70"/>
+  <path class="stroke-core core-river" d="M1120 370 l60 35 l0 70"/>
+  <path class="stroke-casing" d="M1240 405 l60 -35 l60 35"/>
+  <path class="stroke-core core-mountain" d="M1240 405 l60 -35 l60 35"/>
+  <path class="stroke-casing" d="M1060 335 l60 35 l60 -35"/>
+  <path class="stroke-core core-road" d="M1060 335 l60 35 l60 -35"/>
+</svg>
+
+<div class="split-divider"></div>
+<span class="half-tag left">Today</span>
+<span class="half-tag right">Casing system</span>
+
+<!-- TOP STATUS STRIP — same project so context reads as the same app -->
+<header class="status-strip">
+  <div class="project">
+    <span class="name">GotA — Americas</span>
+    <span class="sub hx-data">gota-fullres.json</span>
+  </div>
+  <div class="hint"><b>Hexside visibility</b> — same three runs, before and after the casing system</div>
+  <div class="right">
+    <span class="save-state">autosaved 12s ago</span>
+    <div class="view-toggle" role="radiogroup" aria-label="View">
+      <button>Map</button><button>Class</button><button class="active">Both</button>
+    </div>
+    <button class="btn">Anomalies <span class="hx-data">3</span></button>
+    <button class="btn">File ▾</button>
+    <button class="btn primary">Export ▾</button>
+    <button class="btn" aria-label="Help"><span class="kbd">?</span></button>
+  </div>
+</header>
+
+<!-- BOTTOM-CENTER LEGEND -->
+<aside class="panel legend-card" aria-label="Casing system legend">
+  <div class="head"><span class="title">Why casing</span></div>
+  <div class="legend-rows">
+    <div class="legend-row"><span class="swatch" style="background: var(--ink-mountain);"></span><span>Pale casing (7px) under saturated core (3.5px) — reads on light and dark art</span></div>
+    <div class="legend-row"><span class="swatch" style="background: var(--ink-mountain);"></span><span>Ridge ink moves ochre → crimson: never brown-on-brown</span></div>
+    <div class="legend-row"><span class="swatch" style="background: var(--hx-accent-deep);"></span><span>Map dim slider trades art brightness for overlay contrast</span></div>
+  </div>
+</aside>
+
+</body>
+</html>
