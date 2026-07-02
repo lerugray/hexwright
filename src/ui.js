@@ -12,6 +12,8 @@ const LAYER_LABELS = {
 };
 
 const EDGE_NAMES = ['E', 'NE', 'NW', 'W', 'SW', 'SE'];
+const EYE_OPEN_SVG = '<svg viewBox="0 0 24 24"><path d="M2 12 s4 -6 10 -6 s10 6 10 6 s-4 6 -10 6 s-10 -6 -10 -6 z"/><circle cx="12" cy="12" r="2.6"/></svg>';
+const EYE_OFF_SVG = '<svg viewBox="0 0 24 24"><path d="M4 4 l16 16 M2 12 s4 -6 10 -6 c2 0 3.8 0.7 5.3 1.6 M22 12 s-4 6 -10 6 c-2 0 -3.8 -0.7 -5.3 -1.6"/></svg>';
 
 export class UI {
   constructor(store, renderer) {
@@ -52,14 +54,19 @@ export class UI {
       'load-map', 'load-grid', 'load-terrain', 'load-sides', 'load-sample',
       'fit-view', 'undo', 'clear-select', 'toggle-help',
       'view-mode', 'tool-rail', 'tool-inspect', 'tool-terrain', 'tool-edges', 'tool-nudge',
-      'edge-paint-picker', 'export-overlay', 'toggle-anomaly', 'anomaly-count', 'load-palette', 'anomaly-status',
+      'brush-card', 'brush-mode-tag', 'brush-ink-list',
+      'layers-panel', 'feature-layer-rows', 'terrain-layer-wrap', 'terrain-fill-row', 'terrain-fill-eye', 'terrain-fill-count',
+      'trace-layer-wrap', 'trace-layer-rows',
+      'trace-opacity', 'trace-opacity-value', 'overlay-opacity', 'overlay-opacity-value',
+      'map-dim', 'map-dim-value',
+      'canvas-wrap',
+      'export-overlay', 'toggle-anomaly', 'anomaly-count', 'load-palette', 'anomaly-status',
       'import-sides', 'import-terrain', 'import-wmp', 'file-btn', 'file-popover', 'export-btn', 'export-popover',
       'import-twu',
       'export-sides-file', 'export-sides-copy', 'export-terrain-file', 'export-terrain-copy', 'export-twu',
       'inspector', 'inspector-close', 'inspector-hex', 'inspector-terrain',
       'hex-svg', 'hex-shape', 'hex-edges', 'edge-selects', 'inspector-features',
-      'terrain-legend', 'hexside-legend', 'feature-legend', 'trace-controls', 'trace-opacity',
-      'overlay-opacity', 'count-land', 'layer-counts', 'status',
+      'count-land', 'layer-counts', 'status',
       'help-overlay', 'close-help'
     ];
     for (const id of ids) this.els[id] = document.getElementById(id);
@@ -102,7 +109,6 @@ export class UI {
 
     this._rebuildEdgeControls();
     this._rebuildFeatureControls();
-    this._rebuildEdgePaintPicker();
   }
 
   _rebuildEdgeControls() {
@@ -195,41 +201,6 @@ export class UI {
     }
   }
 
-  _rebuildEdgePaintPicker() {
-    const container = this.els['edge-paint-picker'];
-    if (!container) return;
-    container.innerHTML = '';
-    const palette = this.store.getPalette();
-    const features = palette?.hexsideFeatures || [];
-    if (!features.length) return;
-    if (!this.edgePaintFeature || !features.some(f => f.key === this.edgePaintFeature)) {
-      this.edgePaintFeature = features[0].key;
-    }
-    for (const f of features) {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'edge-paint-chip';
-      chip.dataset.feature = f.key;
-      chip.title = f.label || f.key;
-      chip.setAttribute('aria-label', f.label || f.key);
-
-      const swatch = document.createElement('span');
-      swatch.className = 'edge-paint-chip-swatch';
-      swatch.style.background = f.color || '#888';
-      if (f.dash) swatch.classList.add('edge-paint-chip-swatch-dash');
-      chip.appendChild(swatch);
-
-      const text = document.createElement('span');
-      text.className = 'edge-paint-chip-label';
-      text.textContent = f.label || f.key;
-      chip.appendChild(text);
-
-      chip.addEventListener('click', () => this.setEdgePaintFeature(f.key));
-      container.appendChild(chip);
-    }
-    this._reflectEdgePaint();
-  }
-
   bindGlobal() {
     document.addEventListener('keydown', (e) => {
       const tag = e.target?.tagName || '';
@@ -272,7 +243,8 @@ export class UI {
       if (e.key.toLowerCase() === 'v') this.cycleViewMode();
       if (/^[0-9]$/.test(e.key)) {
         const idx = e.key === '0' ? 9 : parseInt(e.key, 10) - 1;
-        this._selectTerrainByIndex(idx);
+        if (this.mode === 'edges') this._selectEdgeFeatureByIndex(idx);
+        else this._selectTerrainByIndex(idx);
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -356,11 +328,41 @@ export class UI {
       this._reflectBrush();
     });
 
+    this.els['brush-ink-list'].addEventListener('click', (e) => {
+      const row = e.target.closest('.ink[data-ink-key]');
+      if (!row) return;
+      const key = row.dataset.inkKey;
+      if (this.mode === 'edges') this.setEdgePaintFeature(key);
+      else this.setBrushTerrain(key);
+    });
+
+    this.els['feature-layer-rows'].addEventListener('click', (e) => {
+      const eye = e.target.closest('.eye[data-feature-key]');
+      if (!eye) return;
+      this.toggleHexsideLayerVisibility(eye.dataset.featureKey);
+    });
+
+    this.els['terrain-fill-eye'].addEventListener('click', () => {
+      this.renderer.terrainFillVisible = !this.renderer.terrainFillVisible;
+      this._renderLayersPanel();
+      this.renderer.draw();
+    });
+
+    this.els['trace-layer-rows'].addEventListener('click', (e) => {
+      const eye = e.target.closest('.eye[data-trace-index]');
+      if (!eye) return;
+      const idx = Number(eye.dataset.traceIndex);
+      const trace = this.store.state.traces[idx];
+      if (!trace) return;
+      this.store.setTraceOn(idx, !trace.on);
+    });
+
     this.els['trace-opacity'].addEventListener('input', (e) => {
       const op = parseFloat(e.target.value);
       for (let i = 0; i < this.store.state.traces.length; i++) {
         this.store.setTraceOpacity(i, op);
       }
+      this.els['trace-opacity-value'].textContent = `${Math.round(op * 100)}%`;
     });
 
     // Terrain-fill (classification overlay) opacity — lets the scan show
@@ -371,6 +373,14 @@ export class UI {
     this.els['overlay-opacity'].addEventListener('input', (e) => {
       if (this.renderer.viewMode !== 'both') this.setViewMode('both');
       this.renderer.overlayAlpha = parseFloat(e.target.value);
+      this.els['overlay-opacity-value'].textContent = `${Math.round(this.renderer.overlayAlpha * 100)}%`;
+      this.els['terrain-fill-count'].textContent = `${Math.round(this.renderer.overlayAlpha * 100)}%`;
+      this.renderer.draw();
+    });
+
+    this.els['map-dim'].addEventListener('input', (e) => {
+      this.renderer.mapDim = parseFloat(e.target.value);
+      this.els['map-dim-value'].textContent = `${Math.round(this.renderer.mapDim * 100)}%`;
       this.renderer.draw();
     });
 
@@ -503,6 +513,9 @@ export class UI {
     this._updateModeHint();
     this._reflectBrush();
     this._reflectEdgePaint();
+    this._renderBrushCard();
+    this._renderLayersPanel();
+    this._updateCanvasCursor();
     this.renderer.draw();
   }
 
@@ -520,15 +533,21 @@ export class UI {
     return feature?.label || feature?.key || 'Edge';
   }
 
+  _activeTerrainLabel() {
+    const palette = this.store.getPalette();
+    const terrain = (palette?.terrain || []).find((t) => t.key === this.brushTerrain);
+    return terrain?.label || this.brushTerrain || 'Terrain';
+  }
+
   _updateModeHint() {
     const hint = this.els['mode-hint'];
     if (!hint) return;
     if (this.mode === 'terrain') {
-      hint.innerHTML = '<b>Terrain brush</b> — click or drag hexes to paint<span class="hint-extra"> · <span class="kbd">B</span> terrain · <span class="kbd">1</span>–<span class="kbd">0</span> terrain keys</span>';
+      hint.innerHTML = `<b>Terrain brush · ${this._activeTerrainLabel()}</b> — click or drag hexes to paint<span class="hint-extra"> · <span class="kbd">B</span> terrain · <span class="kbd">1</span>–<span class="kbd">0</span> terrain keys</span>`;
       return;
     }
     if (this.mode === 'edges') {
-      hint.innerHTML = `<b>Edge paint · ${this._edgeFeatureLabel()}</b> — click edge to toggle · drag to paint<span class="hint-extra"> · <span class="kbd">⌥</span> erase · <span class="kbd">E</span> edges</span>`;
+      hint.innerHTML = `<b>Edge paint · ${this._edgeFeatureLabel()}</b> — click edge to toggle · drag to paint<span class="hint-extra"> · <span class="kbd">⌥</span> erase · <span class="kbd">1</span>–<span class="kbd">0</span> switch ink</span>`;
       return;
     }
     if (this.mode === 'nudge') {
@@ -546,6 +565,8 @@ export class UI {
     this.brushTerrain = key;
     this._setupBrush();
     this._reflectBrush();
+    this._renderBrushCard();
+    this._updateCanvasCursor();
   }
 
   _setupBrush() {
@@ -566,6 +587,7 @@ export class UI {
     const palette = this.store.getPalette();
     const t = palette?.terrain?.find(x => x.key === this.brushTerrain);
     if (btn) btn.title = `Terrain brush (B) — ${t ? t.label : this.brushTerrain}`;
+    this._updateModeHint();
   }
 
   toggleEdgePaint() {
@@ -585,6 +607,8 @@ export class UI {
     this.edgePaintFeature = key;
     this._setupEdgePaint();
     this._reflectEdgePaint();
+    this._renderBrushCard();
+    this._updateCanvasCursor();
   }
 
   _setupEdgePaint() {
@@ -607,14 +631,9 @@ export class UI {
 
   _reflectEdgePaint() {
     const btn = this.els['tool-edges'];
-    const picker = this.els['edge-paint-picker'];
     const palette = this.store.getPalette();
     const feature = (palette?.hexsideFeatures || []).find(f => f.key === this.edgePaintFeature);
     btn.title = `Edge paint mode (E)${feature ? ` — ${feature.label || feature.key}` : ''}`;
-    picker.classList.toggle('active', this.edgePaintActive);
-    picker.querySelectorAll('.edge-paint-chip').forEach((chip) => {
-      chip.classList.toggle('selected', chip.dataset.feature === this.edgePaintFeature);
-    });
     this._updateModeHint();
   }
 
@@ -625,6 +644,186 @@ export class UI {
     this.setBrushTerrain(t.key);
     if (this.inspectorHex) this.store.setTerrain(this.inspectorHex, t.key);
     this.status(`Terrain ${idx + 1}: ${t.label}`, 1200);
+  }
+
+  _selectEdgeFeatureByIndex(idx) {
+    const palette = this.store.getPalette();
+    const feature = palette?.hexsideFeatures?.[idx];
+    if (!feature) return;
+    this.setEdgePaintFeature(feature.key);
+    this.status(`Ink ${idx + 1}: ${feature.label || feature.key}`, 1200);
+  }
+
+  _shortcutLabel(idx) {
+    if (idx < 0 || idx > 9) return '';
+    return idx === 9 ? '0' : String(idx + 1);
+  }
+
+  _featureCounts() {
+    const counts = {};
+    for (const features of Object.values(this.store.state.hexsides || {})) {
+      if (!Array.isArray(features)) continue;
+      for (const key of features) counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+  }
+
+  _hexsideFeatureColor(feature) {
+    if (feature?.color) return feature.color;
+    const fallback = HEXSIDE_COLORS[feature?.key];
+    return fallback?.stroke || '#888';
+  }
+
+  _renderBrushCard() {
+    const card = this.els['brush-card'];
+    const list = this.els['brush-ink-list'];
+    if (!card || !list) return;
+
+    const show = this.mode === 'terrain' || this.mode === 'edges';
+    card.style.display = show ? '' : 'none';
+    if (!show) return;
+
+    const palette = this.store.getPalette() || {};
+    this.els['brush-mode-tag'].textContent = this.mode === 'edges' ? 'Edge paint' : 'Terrain';
+
+    if (this.mode === 'edges') {
+      const counts = this._featureCounts();
+      const features = palette.hexsideFeatures || [];
+      if (features.length && !features.some((f) => f.key === this.edgePaintFeature)) {
+        this.edgePaintFeature = features[0].key;
+        this._setupEdgePaint();
+      }
+      list.innerHTML = features.map((f, idx) => {
+        const active = f.key === this.edgePaintFeature;
+        const keycap = this._shortcutLabel(idx);
+        const swatch = this._hexsideFeatureColor(f);
+        return `<div class="ink${active ? ' is-active' : ''}" data-ink-key="${f.key}">
+          <span class="swatch" style="background:${swatch}"></span>
+          <span class="name">${f.label || f.key}</span>
+          <span class="count">${counts[f.key] || 0}</span>
+          ${keycap ? `<span class="kbd">${keycap}</span>` : ''}
+        </div>`;
+      }).join('');
+      return;
+    }
+
+    const terrain = palette.terrain || [];
+    list.innerHTML = terrain.map((t, idx) => {
+      const active = t.key === this.brushTerrain;
+      const keycap = this._shortcutLabel(idx);
+      return `<div class="ink terrain-ink${active ? ' is-active' : ''}" data-ink-key="${t.key}">
+        <span class="swatch" style="background:${t.color || '#888'}"></span>
+        <span class="name">${t.label || t.key}</span>
+        ${keycap ? `<span class="kbd">${keycap}</span>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  _featureVisible(featureKey) {
+    const visibility = this.renderer.hexsideVisibility || {};
+    return visibility[featureKey] !== false;
+  }
+
+  toggleHexsideLayerVisibility(featureKey) {
+    if (!featureKey) return;
+    if (!this.renderer.hexsideVisibility) this.renderer.hexsideVisibility = {};
+    this.renderer.hexsideVisibility[featureKey] = !this._featureVisible(featureKey);
+    this._renderLayersPanel();
+    this.renderer.draw();
+  }
+
+  _traceColor(trace) {
+    const palette = this.store.getPalette();
+    const feature = (palette?.hexsideFeatures || []).find((f) => f.key === trace.layer || f.exportLayer === trace.layer);
+    if (feature) return this._hexsideFeatureColor(feature);
+    return HEXSIDE_COLORS[trace.layer]?.stroke || '#888';
+  }
+
+  _renderLayersPanel() {
+    const palette = this.store.getPalette() || {};
+    const counts = this._featureCounts();
+    const features = palette.hexsideFeatures || [];
+    const featureRows = this.els['feature-layer-rows'];
+
+    featureRows.innerHTML = features.map((f) => {
+      const on = this._featureVisible(f.key);
+      return `<div class="layer-row${on ? '' : ' dimmed'}">
+        <button type="button" class="eye${on ? '' : ' off'}" data-feature-key="${f.key}" aria-label="Toggle ${f.label || f.key}">
+          ${on ? EYE_OPEN_SVG : EYE_OFF_SVG}
+        </button>
+        <span class="swatch" style="background:${this._hexsideFeatureColor(f)}"></span>
+        <span class="name">${f.label || f.key}</span>
+        <span class="count">${counts[f.key] || 0}</span>
+      </div>`;
+    }).join('');
+
+    const terrainFillOn = this.renderer.terrainFillVisible !== false;
+    this.els['terrain-fill-row'].classList.toggle('dimmed', !terrainFillOn);
+    this.els['terrain-fill-eye'].classList.toggle('off', !terrainFillOn);
+    this.els['terrain-fill-eye'].innerHTML = terrainFillOn ? EYE_OPEN_SVG : EYE_OFF_SVG;
+
+    const overlayOpacity = Math.max(0, Math.min(1, this.renderer.overlayAlpha ?? 1));
+    this.els['overlay-opacity'].value = String(overlayOpacity);
+    this.els['overlay-opacity-value'].textContent = `${Math.round(overlayOpacity * 100)}%`;
+    this.els['terrain-fill-count'].textContent = `${Math.round(overlayOpacity * 100)}%`;
+
+    const traces = this.store.state.traces || [];
+    this.els['trace-layer-wrap'].hidden = traces.length === 0;
+    if (traces.length) {
+      this.els['trace-layer-rows'].innerHTML = traces.map((trace, idx) => {
+        const on = trace.on !== false;
+        return `<div class="layer-row${on ? '' : ' dimmed'}">
+          <button type="button" class="eye${on ? '' : ' off'}" data-trace-index="${idx}" aria-label="Toggle ${trace.name}">
+            ${on ? EYE_OPEN_SVG : EYE_OFF_SVG}
+          </button>
+          <span class="swatch" style="background:${this._traceColor(trace)}"></span>
+          <span class="name">${trace.name}</span>
+          <span class="count">${on ? 'on' : 'off'}</span>
+        </div>`;
+      }).join('');
+      const traceOpacity = Number.isFinite(traces[0]?.opacity) ? traces[0].opacity : 0.5;
+      this.els['trace-opacity'].value = String(traceOpacity);
+      this.els['trace-opacity-value'].textContent = `${Math.round(traceOpacity * 100)}%`;
+    }
+
+    const mapDim = Math.max(0, Math.min(0.85, this.renderer.mapDim || 0));
+    this.els['map-dim'].value = String(mapDim);
+    this.els['map-dim-value'].textContent = `${Math.round(mapDim * 100)}%`;
+  }
+
+  _terrainColorForCursor() {
+    const palette = this.store.getPalette();
+    const terrain = (palette?.terrain || []).find((t) => t.key === this.brushTerrain);
+    return terrain?.color || '#cccccc';
+  }
+
+  _edgeColorForCursor() {
+    const palette = this.store.getPalette();
+    const feature = (palette?.hexsideFeatures || []).find((f) => f.key === this.edgePaintFeature);
+    return this._hexsideFeatureColor(feature);
+  }
+
+  _buildInkCursor(color) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+      <path d="M12 1.5v5M12 17.5v5M1.5 12h5M17.5 12h5" stroke="rgba(255,255,255,0.85)" stroke-width="1.4" stroke-linecap="round"/>
+      <circle cx="12" cy="12" r="4.6" fill="${color}" stroke="rgba(255,255,255,0.95)" stroke-width="1.8"/>
+    </svg>`;
+    return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 12 12, crosshair`;
+  }
+
+  _updateCanvasCursor() {
+    const wrap = this.els['canvas-wrap'];
+    if (!wrap) return;
+    if (this.mode === 'nudge') {
+      wrap.style.cursor = 'move';
+      return;
+    }
+    if (this.mode === 'inspect') {
+      wrap.style.cursor = 'default';
+      return;
+    }
+    const color = this.mode === 'edges' ? this._edgeColorForCursor() : this._terrainColorForCursor();
+    wrap.style.cursor = this._buildInkCursor(color);
   }
 
   _paintStraightRun(toCode) {
@@ -849,19 +1048,14 @@ export class UI {
       this._lastPalette = palette;
       this._rebuildEdgeControls();
       this._rebuildFeatureControls();
-      this._rebuildEdgePaintPicker();
       this.els['inspector-terrain'].dataset.ready = '';
-      this.els['terrain-legend'].dataset.ready = '';
-      this.els['hexside-legend'].dataset.ready = '';
-      this.els['feature-legend'].dataset.ready = '';
-      this.els['trace-controls'].dataset.ready = '';
       this._setupEdgePaint();
       if (this.inspectorHex) this._refreshInspector();
     }
 
     this._fillTerrainSelect();
-    this._updateLegend();
-    this._updateTraceControls();
+    this._renderBrushCard();
+    this._renderLayersPanel();
     this._updateCounts();
     this._updateAnomalyStatus();
     this.els['undo'].disabled = !this.store.canUndo();
@@ -870,6 +1064,7 @@ export class UI {
     this._updateModeHint();
     this._reflectBrush();
     this._reflectEdgePaint();
+    this._updateCanvasCursor();
 
     if (this.inspectorHex && !paletteChanged) {
       this._refreshInspector();
@@ -882,55 +1077,6 @@ export class UI {
         this.renderer.draw();
       });
     }
-  }
-
-  _updateLegend() {
-    const ulTerrain = this.els['terrain-legend'];
-    if (ulTerrain.dataset.ready) return;
-    const palette = this.store.getPalette() || {};
-
-    ulTerrain.innerHTML = (palette.terrain || []).map(t =>
-      `<li><span class="legend-swatch" style="background:${t.color};border-color:${t.color}"></span>${t.label || t.key}</li>`
-    ).join('');
-
-    this.els['hexside-legend'].innerHTML = (palette.hexsideFeatures || []).map(f => {
-      const dash = f.dash ? 'border-top-style: dashed;' : '';
-      return `<li><span class="legend-line" style="background:${f.color};${dash}"></span>${f.label || f.key}</li>`;
-    }).join('');
-
-    this.els['feature-legend'].innerHTML = (palette.hexFeatures || []).map(f =>
-      `<li><span class="legend-glyph">${f.glyph || '◆'}</span>${f.label || f.key}</li>`
-    ).join('');
-
-    ulTerrain.dataset.ready = '1';
-  }
-
-  _updateTraceControls() {
-    const container = this.els['trace-controls'];
-    if (container.dataset.ready) return;
-    const palette = this.store.getPalette();
-    container.innerHTML = this.store.state.traces.map((t, i) => {
-      let color = '#888';
-      if (palette && palette.hexsideFeatures) {
-        const f = palette.hexsideFeatures.find(x => x.key === t.layer || x.exportLayer === t.layer);
-        if (f) color = f.color;
-      }
-      if (color === '#888' && HEXSIDE_COLORS[t.layer]) color = HEXSIDE_COLORS[t.layer].stroke;
-      return `
-      <div class="trace-row">
-        <label>
-          <input type="checkbox" data-trace="${i}" ${t.on ? 'checked' : ''} />
-          <span class="layer-dot" style="background:${color}"></span>
-          ${t.name}
-        </label>
-      </div>`;
-    }).join('');
-    container.querySelectorAll('input[data-trace]').forEach(ch => {
-      ch.addEventListener('change', (e) => {
-        this.store.setTraceOn(Number(e.target.dataset.trace), e.target.checked);
-      });
-    });
-    container.dataset.ready = '1';
   }
 
   _updateCounts() {
