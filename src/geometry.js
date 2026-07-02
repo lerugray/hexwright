@@ -11,10 +11,10 @@ export const TERRAIN_COLORS = {
 
 export const HEXSIDE_COLORS = {
   rivers:     { stroke: '#2878ff', width: 3.5, dash: [] },
-  mountains:  { stroke: '#be8228', width: 4.0, dash: [] },
-  impassible: { stroke: '#dc2828', width: 4.0, dash: [] },
-  roads:      { stroke: '#c9a06a', width: 3.0, dash: [] },
-  rails:      { stroke: '#8a8f98', width: 3.0, dash: [6, 5] }
+  mountains:  { stroke: '#c2333b', width: 4.0, dash: [] },
+  impassible: { stroke: '#3a3f4a', width: 4.0, dash: [6, 5] },
+  roads:      { stroke: '#b96b1f', width: 3.0, dash: [] },
+  rails:      { stroke: '#7a4fa3', width: 3.0, dash: [6, 5] }
 };
 
 export const EDITABLE_LAYERS = ['rivers', 'mountains', 'impassible', 'roads', 'rails'];
