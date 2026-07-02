@@ -15,8 +15,7 @@ page.on('pageerror',e=>errors.push('PAGEERROR: '+e.message));
 const results=[];
 const rec=(n,ok,note='')=>{results.push({ok});console.log(`${ok?'PASS':'FAIL'}  ${n}${note?'  — '+note:''}`);};
 try{
-  await page.goto(`http://localhost:${PORT}/`,{waitUntil:'load',timeout:20000});
-  await page.click('#load-sample');
+  await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`,{waitUntil:'load',timeout:20000});
   await page.waitForFunction(()=>{const el=document.getElementById('count-land');return el&&/[1-9]/.test(el.textContent);},{timeout:25000});
   await sleep(1500);
   const r = await page.evaluate(async ()=>{
