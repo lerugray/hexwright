@@ -64,8 +64,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('dialog', (d) => d.accept().catch(() => {}));
 
 try {
-  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
-  await page.click('#load-sample');
+  await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`, { waitUntil: 'load' });
   await page.waitForFunction(() => {
     const el = document.getElementById('count-land');
     return el && /[1-9]/.test(el.textContent || '');

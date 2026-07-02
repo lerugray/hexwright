@@ -8,8 +8,7 @@ const srv=spawn('python3',['-m','http.server',String(PORT)],{cwd:DIR,stdio:'igno
 await sleep(1300);
 const b=await chromium.launch(); const page=await b.newPage({viewport:{width:1600,height:1000}});
 const errors=[]; page.on('pageerror',e=>errors.push(String(e))); page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
-await page.goto(`http://localhost:${PORT}/`,{waitUntil:'load'});
-await page.click('#load-sample');
+await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`,{waitUntil:'load'});
 await page.waitForFunction(()=>{const el=document.getElementById('count-land');return el&&/[1-9]/.test(el.textContent);},{timeout:25000});
 await sleep(1200);
 // Upload a WMP-style classification (forest->woods, lake->water; provenance should be draft)

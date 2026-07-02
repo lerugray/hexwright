@@ -20,8 +20,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push(`PAGEERROR: ${e.message}`));
 
 try {
-  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load', timeout: 20000 });
-  await page.click('#load-sample');
+  await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`, { waitUntil: 'load', timeout: 20000 });
   await page.waitForFunction(() => {
     const el = document.getElementById('count-land');
     return el && /[1-9]/.test(el.textContent);
@@ -98,8 +97,9 @@ try {
   const pCenter = asPagePoint(setup.points.center);
   const pMissing = setup.points.missing ? asPagePoint(setup.points.missing) : null;
 
-  await page.click('#toggle-edge-paint');
-  await page.click(`#edge-paint-picker .edge-paint-chip[data-feature="${setup.featureKey}"]`);
+  await page.keyboard.press('e');
+  await sleep(150);
+  await page.click(`#brush-card .ink[data-ink-key="${setup.featureKey}"]`);
   await sleep(150);
 
   // click = toggle on
@@ -208,7 +208,7 @@ try {
   }
 
   // edge-paint OFF: pan + inspect behavior should work as before
-  await page.click('#toggle-edge-paint');
+  await page.keyboard.press('i');
   await sleep(120);
 
   const beforePan = await page.evaluate(() => ({ ...window.hexwright.renderer.view }));
@@ -229,9 +229,9 @@ try {
   await page.mouse.click(pCenterAfterPan.x, pCenterAfterPan.y);
   await sleep(100);
   const selectWorks = await page.evaluate((code) => {
-    const inspector = document.getElementById('inspector');
-    const shown = inspector && inspector.hidden === false;
-    const selected = document.getElementById('inspector-hex')?.textContent?.trim() || '';
+    const editor = document.getElementById('hex-editor');
+    const shown = editor && editor.hidden === false;
+    const selected = document.getElementById('hexed-title')?.textContent?.replace(/^Hex\s+/, '').trim() || '';
     return shown && selected === code;
   }, setup.code);
   rec('hex click still opens inspector with edge-paint off', selectWorks, setup.code);
