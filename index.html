@@ -13,12 +13,12 @@
       <span id="strip-project-name" class="name">Hexwright</span>
       <span id="strip-project-sub" class="sub hx-data"></span>
     </div>
-    <div id="mode-hint" class="hint"><b>Inspect</b> — click hex to inspect and edit<span class="hint-extra"> · <span class="kbd">I</span> select inspect</span></div>
+    <div id="mode-hint" class="hint"><b>Inspect</b> — click a hex to edit it<span class="hint-extra"> · <span class="kbd">Esc</span> close · edges apply the ink you tap</span></div>
     <div class="right">
       <span id="save-state" class="save-state hx-data">autosaved</span>
       <button id="fit-view" class="btn" type="button" title="Fit to view">Fit</button>
       <button id="undo" class="btn" type="button" title="Undo last action">Undo</button>
-      <button id="clear-select" class="btn" type="button" title="Close inspector">Esc</button>
+      <button id="clear-select" class="btn" type="button" title="Close hex editor">Esc</button>
       <div class="view-toggle seg" id="view-mode" role="radiogroup" aria-label="View mode">
         <button type="button" data-mode="map" aria-checked="false">Map</button>
         <button type="button" data-mode="classification" aria-checked="false">Class</button>
@@ -159,31 +159,48 @@
     <div id="layer-counts" hidden></div>
   </aside>
 
+  <aside id="hex-editor" class="panel hexed hx-ui" hidden aria-label="Hex editor">
+    <div class="head">
+      <span class="title" id="hexed-title">Hex ----</span>
+      <button type="button" id="hexed-close" class="collapse hx-data" aria-label="Close hex editor">×</button>
+    </div>
+
+    <div class="sect" style="border-top: 0;">
+      <div class="sect-t"><span>Terrain</span><span class="hx-data" id="hexed-terrain-current"></span></div>
+      <div class="terr-grid" id="hexed-terrain-grid"></div>
+    </div>
+
+    <div class="sect">
+      <div class="sect-t"><span>Features</span><span class="hx-data" id="hexed-feat-count">0</span></div>
+      <div class="featrow" id="hexed-featrow"></div>
+    </div>
+
+    <div class="sect">
+      <div class="sect-t"><span>Edges</span><span class="hx-data" id="hexed-edges-meta"></span></div>
+      <div class="hexdiagram">
+        <svg id="hexed-svg" width="216" height="200" viewBox="0 0 216 200" aria-hidden="true">
+          <polygon id="hexed-fill" points="" fill="none" />
+          <g id="hexed-edges"></g>
+          <g id="hexed-edge-labels"></g>
+          <text id="hexed-center-code" x="108" y="97" text-anchor="middle" fill="var(--hx-text-dim)" font-family="var(--font-data)" font-size="12"></text>
+        </svg>
+      </div>
+      <div class="sect-t" style="margin-top: 2px;"><span id="hexed-on-edge-label">On edge —</span></div>
+      <div class="edchips" id="hexed-edchips"></div>
+      <div class="inkgrid" id="hexed-inkgrid"></div>
+    </div>
+
+    <div class="foot-hint">
+      Click an edge on the diagram, then tap an ink to add or remove it.
+      Edges show every ink they carry — nothing hides until checked.
+    </div>
+  </aside>
+
   <main class="workspace">
     <div id="canvas-wrap" class="canvas-wrap">
       <canvas id="map-canvas" role="img" aria-label="Map canvas"></canvas>
 
-      <div id="inspector" class="inspector" role="dialog" aria-modal="false" aria-labelledby="inspector-title" hidden>
-        <div class="inspector-head">
-          <div class="inspector-title">
-            <span id="inspector-hex" class="mono">----</span>
-            <select id="inspector-terrain" aria-label="Hex terrain"></select>
-          </div>
-          <button id="inspector-close" type="button" aria-label="Close inspector">×</button>
-        </div>
-        <div class="inspector-body">
-          <div class="hex-illustration" id="hex-illustration" aria-label="Hex edge editor">
-            <svg id="hex-svg" viewBox="-120 -110 240 220" aria-hidden="true">
-              <polygon id="hex-shape" points="" fill="rgba(255,122,26,0.12)" stroke="#ff7a1a" stroke-width="3" />
-              <g id="hex-edges"></g>
-              <circle cx="0" cy="0" r="4" fill="#ff7a1a" />
-            </svg>
-            <div id="edge-selects" class="edge-selects"></div>
-          </div>
-          <div class="inspector-features" id="inspector-features"></div>
-          <p class="inspector-hint">Select an edge to assign its shared hexside layers. Toggle in-hex features below.</p>
-        </div>
-      </div>
+
     </div>
   </main>
 

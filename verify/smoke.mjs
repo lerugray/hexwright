@@ -23,6 +23,7 @@ try {
   await page.goto(`http://localhost:${PORT}/`, {waitUntil:'load', timeout:20000});
   rec('page loads', true);
 
+  await page.click('#file-btn');
   await page.click('#load-sample');
   // wait for land count to populate
   await page.waitForFunction(() => {
@@ -47,7 +48,7 @@ try {
   });
   console.log('API:', JSON.stringify(api));
 
-  // Open inspector by scanning canvas clicks around center
+  // Open hex editor by scanning canvas clicks around center
   const box = await page.locator('#map-canvas').boundingBox();
   let opened=false, hexCode='';
   const cx = box.x+box.width/2, cy = box.y+box.height/2;
@@ -56,29 +57,30 @@ try {
     for (let dx=-300; dx<=300; dx+=50) {
       await page.mouse.click(cx+dx, cy+dy);
       await sleep(120);
-      const hidden = await page.getAttribute('#inspector','hidden');
-      if (hidden === null) { opened=true; hexCode=(await page.textContent('#inspector-hex'))?.trim()||''; break outer; }
+      const hidden = await page.getAttribute('#hex-editor','hidden');
+      if (hidden === null) { opened=true; hexCode=(await page.textContent('#hexed-title'))?.replace(/^Hex\s+/,'').trim()||''; break outer; }
     }
   }
-  rec('click a hex opens the inspector', opened, opened?`hex=${hexCode}`:'inspector never unhid across scan');
+  rec('click a hex opens the hex editor', opened, opened?`hex=${hexCode}`:'hex editor never unhid across scan');
   if (opened) await page.screenshot({path: VER+'/02-inspector.png'});
 
-  // Assign a river via a TRUSTED click on the edge chip (NOT dispatchEvent — a synthetic
-  // event hides the label/checkbox double-toggle class of bug that a real click exposes).
+  // Assign a river via trusted clicks: pick a diagram edge with a neighbor, then tap river ink
   let assigned=false;
   if (opened) {
-    const riverChip = page.locator('#edge-selects .edge-chip[data-feature="river"]').filter({ has: page.locator('input:not([disabled])') }).first();
-    const chipCount = await page.locator('#edge-selects .edge-chip[data-feature="river"]').count();
-    if (await riverChip.count() > 0) {
-      await riverChip.scrollIntoViewIfNeeded().catch(()=>{});
-      await riverChip.click({ timeout: 5000 }).catch(()=>{});
+    const edgeSeg = page.locator('#hexed-edges .edge-seg.edge-hit:not(.disabled)').first();
+    const edgeCount = await page.locator('#hexed-edges .edge-seg.edge-hit:not(.disabled)').count();
+    const riverInk = page.locator('#hexed-inkgrid .inkmini[data-feature="river"]').first();
+    if (await edgeSeg.count() > 0 && await riverInk.count() > 0) {
+      await edgeSeg.click({ timeout: 5000 }).catch(()=>{});
+      await sleep(200);
+      await riverInk.click({ timeout: 5000 }).catch(()=>{});
       await sleep(400);
       assigned = await page.evaluate(()=>{
         try { const s = window.hexwright.store; const hs = JSON.stringify(s.state?.hexsides || {}); return /"river"/.test(hs); }
         catch(e) { return false; }
       });
     }
-    rec('assign a river hexside via inspector (trusted click)', assigned, `${chipCount} river chips`);
+    rec('assign a river hexside via hex editor (trusted click)', assigned, `${edgeCount} clickable edges`);
     await page.screenshot({path: VER+'/03-assigned.png'});
   }
 
