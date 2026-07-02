@@ -190,21 +190,90 @@ function getNewestSessionSlot() {
   return slots.length ? slots[0] : null;
 }
 
-function askToRestore(slot, kind = 'boot') {
-  if (!slot || !slot.project) return false;
-  const name = slot.project.name || 'untitled';
-  const when = slot.savedAt
-    ? new Date(slot.savedAt).toLocaleString()
-    : 'unknown time';
-  const message = kind === 'project'
-    ? `Restore autosaved session for "${name}" (${when})?`
-    : `Restore your most recent autosaved session "${name}" (${when})?`;
-  try {
-    return window.confirm(message);
-  } catch (_) {
-    // In non-interactive contexts, default to restore.
-    return true;
-  }
+function formatRelativeTime(ts) {
+  if (!ts) return 'unknown time';
+  const diff = Math.max(0, Date.now() - ts);
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return sec <= 1 ? 'just now' : `${sec} sec ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return min === 1 ? '1 min ago' : `${min} min ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return hr === 1 ? '1 hr ago' : `${hr} hr ago`;
+  const day = Math.floor(hr / 24);
+  return day === 1 ? '1 day ago' : `${day} days ago`;
+}
+
+function sniffJsonKind(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+  if (obj.col_pitch_x !== undefined || obj.x_model !== undefined) return 'grid';
+  if (obj.terrain !== undefined) return 'terrain';
+  if (Array.isArray(obj.rivers) || Array.isArray(obj.mountains)) return 'sides';
+  if (Object.keys(obj).some((k) => /^[a-f0-9]{4}$/i.test(k))) return 'sides';
+  if (obj.map && obj.hexgrid) return 'manifest';
+  return null;
+}
+
+function makeBlankProject({ grid = null, blankLattice = false } = {}) {
+  return {
+    name: 'untitled',
+    mapImage: null,
+    imageFull: grid?.image_full || [100, 100],
+    grid,
+    terrain: { terrain: {} },
+    hexsides: null,
+    palette: null,
+    traces: [],
+    hexFeatures: {},
+    provenance: {},
+    ...(blankLattice ? { blankLattice: true } : {})
+  };
+}
+
+function promptRestore(slot, kind = 'boot') {
+  return new Promise((resolve) => {
+    if (!slot || !slot.project) {
+      resolve(false);
+      return;
+    }
+    const prompt = document.getElementById('restore-prompt');
+    const msg = document.getElementById('restore-prompt-msg');
+    const restoreBtn = document.getElementById('restore-prompt-restore');
+    const freshBtn = document.getElementById('restore-prompt-fresh');
+    if (!prompt || !msg || !restoreBtn || !freshBtn) {
+      resolve(true);
+      return;
+    }
+
+    const name = slot.project.name || 'untitled';
+    const when = slot.savedAt ? formatRelativeTime(slot.savedAt) : 'unknown time';
+    msg.textContent = kind === 'project'
+      ? `Restore autosave for ${name} (${when})?`
+      : `Restore autosave for ${name} (${when})?`;
+
+    const finish = (choice) => {
+      prompt.hidden = true;
+      document.removeEventListener('keydown', onKey);
+      restoreBtn.onclick = null;
+      freshBtn.onclick = null;
+      resolve(choice);
+    };
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(false);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        finish(true);
+      }
+    };
+
+    restoreBtn.onclick = () => finish(true);
+    freshBtn.onclick = () => finish(false);
+    document.addEventListener('keydown', onKey);
+    prompt.hidden = false;
+    restoreBtn.focus();
+  });
 }
 
 function pruneSessionSlots() {
@@ -328,13 +397,122 @@ async function main() {
   const renderer = new MapRenderer(canvas, store);
   const ui = new UI(store, renderer);
 
-  // Load a project manifest, offering the matching autosave slot first —
-  // shared by the sample button and the ?project=<url> boot parameter.
+  const startScreen = document.getElementById('start-screen');
+  const recentList = document.getElementById('recent-list');
+  const recentListWrap = document.getElementById('recent-list-wrap');
+  const recentMeta = document.getElementById('recent-meta');
+  const loadChooser = document.getElementById('load-chooser');
+  const coachCard = document.getElementById('coach-card');
+  let _awaitingBlankGrid = false;
+  let _coachHiddenSession = false;
+
+  function isStartScreenVisible() {
+    return startScreen && !startScreen.hidden;
+  }
+
+  function hideStartScreen() {
+    if (startScreen) startScreen.hidden = true;
+    if (loadChooser) loadChooser.hidden = true;
+  }
+
+  function showStartScreen() {
+    if (startScreen) startScreen.hidden = false;
+    if (coachCard) coachCard.hidden = true;
+    populateRecentList();
+  }
+
+  function maybeShowCoach() {
+    if (isStartScreenVisible() || _coachHiddenSession) return;
+    if (localStorage.getItem('hexwright.coach.dismissed') === '1') return;
+    if (coachCard) coachCard.hidden = false;
+  }
+
+  function hideCoach() {
+    _coachHiddenSession = true;
+    if (coachCard) coachCard.hidden = true;
+  }
+
+  function dismissCoachForever() {
+    localStorage.setItem('hexwright.coach.dismissed', '1');
+    hideCoach();
+  }
+
+  function finishProjectLoad() {
+    hideStartScreen();
+    maybeShowCoach();
+  }
+
+  function isRenderableProject() {
+    const s = store.state;
+    return !!(s.mapImage || s.grid);
+  }
+
+  function maybeFinishPartialLoad() {
+    if (isRenderableProject()) finishProjectLoad();
+  }
+
+  function populateRecentList() {
+    const slots = listSessionSlots().slice(0, MAX_SESSION_SLOTS);
+    if (!recentList || !recentListWrap || !recentMeta) return;
+
+    recentList.innerHTML = '';
+    if (!slots.length) {
+      recentListWrap.hidden = true;
+      recentMeta.textContent = 'no autosaves yet';
+      recentMeta.classList.add('dimmed');
+      return;
+    }
+
+    recentListWrap.hidden = false;
+    recentMeta.classList.remove('dimmed');
+    const newest = slots[0];
+    recentMeta.textContent = `${newest.project.name || 'untitled'} · ${formatRelativeTime(newest.savedAt)}`;
+
+    for (const slot of slots) {
+      const row = document.createElement('div');
+      row.className = 'recent-row';
+      row.dataset.key = slot.key;
+      const name = document.createElement('span');
+      name.className = 'nm';
+      name.textContent = slot.project.name || 'untitled';
+      const detail = document.createElement('span');
+      detail.className = 'detail hx-data';
+      detail.textContent = `${slot.land} hexes · ${formatRelativeTime(slot.savedAt)}`;
+      row.append(name, detail);
+      row.addEventListener('click', () => restoreFromSlot(slot));
+      recentList.appendChild(row);
+    }
+  }
+
+  async function restoreFromSlot(slot) {
+    if (!slot?.project) return;
+    const proj = slot.project;
+    proj.mapImage = null;
+    await loadAndRender(proj);
+    renderer.setViewMode('classification');
+    ui.setProjectSource('');
+    ui.status(`Restored session for ${proj.name || 'untitled'} (data + grid). Load the base map to see it under the grid.`, 6000);
+    finishProjectLoad();
+  }
+
+  async function loadAndRender(project) {
+    store.loadProject(project);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    renderer.resize();
+    renderer.setBaseScale();
+    renderer.fitView();
+    const land = Object.keys(project.terrain?.terrain || {}).length;
+    if (land > 0) {
+      ui.status(`${project.name || 'Project'} loaded — ${land} land hexes`, 3000);
+    }
+    ui._updateProjectInfo();
+  }
+
   async function loadManifestWithRestore(manifestUrl) {
     const manifestLabel = String(manifestUrl || '').split('/').pop() || '';
     const project = await loadProjectFromManifest(manifestUrl);
     const slot = getSessionSlotForName(project.name);
-    if (slot && slot.land > 0 && askToRestore(slot, 'project')) {
+    if (slot && slot.land > 0 && await promptRestore(slot, 'project')) {
       const restored = slot.project;
       restored.mapImage = project.mapImage;
       restored.traces = project.traces || [];
@@ -342,28 +520,15 @@ async function main() {
       if (!restored.grid) restored.grid = project.grid;
       if (project.palette) restored.palette = project.palette;
       await loadAndRender(restored);
-      // The manifest brings a real map image — restore into Both view so the
-      // scan is visible for tracing (classification would hide it and make
-      // the Overlay slider a silent no-op).
       renderer.setViewMode('both');
       ui.setProjectSource(manifestLabel);
       ui.status(`Restored autosave for ${project.name}.`, 4500);
+      finishProjectLoad();
       return;
     }
     await loadAndRender(project);
     ui.setProjectSource(manifestLabel);
-  }
-
-  async function loadAndRender(project) {
-    store.loadProject(project);
-    // Let the flex layout settle so the canvas has real dimensions before we
-    // measure + fit — otherwise the first render sizes against a stale/zero
-    // rect and draws nothing until a later event forces a redraw.
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    renderer.resize();
-    renderer.setBaseScale();
-    renderer.fitView();
-    ui.status(`${project.name || 'Project'} loaded — ${Object.keys(project.terrain.terrain || {}).length} land hexes`, 3000);
+    finishProjectLoad();
   }
 
   ui.setLoadHandlers({
@@ -371,21 +536,29 @@ async function main() {
       ui.status('Loading map image...');
       const dataUrl = await readFile(file, 'dataurl');
       const img = await loadImage(dataUrl);
-      // Preserve the grid's calibration space if a grid is loaded — swapping in
-      // a different-resolution raster must not re-anchor world coordinates.
       const gridFull = store.state.grid && store.state.grid.image_full;
       store.setProject({ mapImage: img, imageFull: gridFull || [img.naturalWidth, img.naturalHeight] });
       renderer.setBaseScale();
       renderer.fitView();
       ui.setProjectSource(file?.name || '');
+      maybeFinishPartialLoad();
     },
     grid: async (file) => {
       const text = await readFile(file);
       const grid = JSON.parse(text);
+      if (_awaitingBlankGrid) {
+        _awaitingBlankGrid = false;
+        await loadAndRender(makeBlankProject({ grid, blankLattice: true }));
+        ui.setProjectSource(file?.name || '');
+        ui.status('Blank project loaded — assign terrain on the grid.', 4000);
+        finishProjectLoad();
+        return;
+      }
       store.setProject({ grid, imageFull: grid.image_full || store.state.imageFull });
       renderer.setBaseScale();
       renderer.fitView();
       ui.setProjectSource(file?.name || '');
+      maybeFinishPartialLoad();
     },
     terrain: async (file) => {
       const text = await readFile(file);
@@ -393,12 +566,14 @@ async function main() {
       store.importTerrain(terrain);
       renderer.fitView();
       ui.setProjectSource(file?.name || '');
+      maybeFinishPartialLoad();
     },
     sides: async (file) => {
       const text = await readFile(file);
       const hexsides = JSON.parse(text);
       store.importHexsides(hexsides);
       ui.setProjectSource(file?.name || '');
+      maybeFinishPartialLoad();
     },
     sample: async () => {
       ui.status('Loading GotA sample...');
@@ -462,12 +637,113 @@ async function main() {
     }
   });
 
-  // Session autosave: debounced-persist the working project to localStorage on
-  // every change (data + grid; the base-map bitmap is not serialized), and restore
-  // it on the next visit so an accidental reload never loses hand-assignment work.
-  // ?project=<manifest-url> boots straight into a project (used by the
-  // double-click launcher for the full-res local GotA manifest). Falls back
-  // to the normal newest-slot restore prompt when absent or failing.
+  // Start screen interactions
+  document.getElementById('new-with-grid')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    _awaitingBlankGrid = true;
+    document.getElementById('load-grid')?.click();
+  });
+
+  document.getElementById('new-gridless')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await loadAndRender(makeBlankProject());
+    ui.setProjectSource('');
+    ui.status('No grid loaded — import a hexgrid.json via File ▾ to begin assigning', 0);
+    finishProjectLoad();
+  });
+
+  document.getElementById('card-load')?.addEventListener('click', (e) => {
+    if (e.target.closest('button, input')) return;
+    if (loadChooser) loadChooser.hidden = !loadChooser.hidden;
+    document.getElementById('card-load')?.classList.toggle('is-open', loadChooser && !loadChooser.hidden);
+  });
+
+  document.getElementById('manifest-load-btn')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const url = document.getElementById('manifest-url')?.value?.trim();
+    if (!url) return;
+    ui.status(`Loading ${url}...`);
+    try {
+      await loadManifestWithRestore(url);
+    } catch (err) {
+      console.error(err);
+      ui.status(`Project load failed: ${err.message}`, 7000);
+    }
+  });
+
+  document.querySelectorAll('[data-pick]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-pick');
+      document.getElementById(id)?.click();
+    });
+  });
+
+  document.getElementById('coach-got-it')?.addEventListener('click', hideCoach);
+  document.getElementById('coach-dismiss')?.addEventListener('click', dismissCoachForever);
+  document.getElementById('coach-dismiss')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      dismissCoachForever();
+    }
+  });
+
+  document.addEventListener('dragover', (e) => {
+    e.preventDefault();
+  });
+
+  document.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    const files = [...(e.dataTransfer?.files || [])];
+    if (!files.length) return;
+
+    let mapFile = null;
+    let gridFile = null;
+    let terrainFile = null;
+    let sidesFile = null;
+    let manifestUrl = null;
+
+    for (const file of files) {
+      if (/\.(png|jpe?g|webp|gif|bmp|tiff?)$/i.test(file.name) || file.type.startsWith('image/')) {
+        mapFile = file;
+        continue;
+      }
+      if (!/\.json$/i.test(file.name) && file.type !== 'application/json') continue;
+      try {
+        const text = await readFile(file);
+        const obj = JSON.parse(text);
+        const kind = sniffJsonKind(obj);
+        if (kind === 'grid') gridFile = file;
+        else if (kind === 'terrain') terrainFile = file;
+        else if (kind === 'sides') sidesFile = file;
+        else if (kind === 'manifest' && obj.hexgrid) {
+          manifestUrl = URL.createObjectURL(file);
+        }
+      } catch (_) { /* skip unreadable json */ }
+    }
+
+    if (manifestUrl && !mapFile && !gridFile && !terrainFile && !sidesFile) {
+      ui.status('Drop companion map/grid/terrain/sides files with a manifest, or paste its URL in Load a project.');
+      URL.revokeObjectURL(manifestUrl);
+      return;
+    }
+
+    if (mapFile || gridFile || terrainFile || sidesFile) {
+      try {
+        const project = await loadUserFiles(mapFile, gridFile, terrainFile, sidesFile);
+        await loadAndRender(project);
+        ui.setProjectSource([mapFile, gridFile, terrainFile, sidesFile].filter(Boolean).map((f) => f.name).join(' + '));
+        finishProjectLoad();
+      } catch (err) {
+        console.error(err);
+        ui.status(`Drop load failed: ${err.message}`, 7000);
+      }
+      return;
+    }
+
+    ui.status('No recognizable map/grid/terrain/sides files in drop.', 4000);
+  });
+
   const bootManifest = new URLSearchParams(window.location.search).get('project');
   if (bootManifest) {
     try {
@@ -476,20 +752,13 @@ async function main() {
       await loadManifestWithRestore(bootManifest);
     } catch (err) {
       console.error(err);
-      ui.status(`Project load failed: ${err.message} — use Load GotA sample or the file pickers.`, 7000);
+      ui.status(`Project load failed: ${err.message} — use Load a project on the start screen.`, 7000);
+      showStartScreen();
     }
-  } else try {
+  } else {
     migrateLegacySessionOnce();
-    const newest = getNewestSessionSlot();
-    if (newest && newest.land > 0 && askToRestore(newest, 'boot')) {
-      const proj = newest.project;
-      proj.mapImage = null;
-      await loadAndRender(proj);
-      renderer.setViewMode('classification');
-      ui.setProjectSource('');
-      ui.status(`Restored your last session for ${proj.name || 'untitled'} (data + grid). Load the base map to see it under the grid, or Load GotA sample to start fresh.`, 6000);
-    }
-  } catch (_) { /* ignore a corrupt autosave */ }
+    showStartScreen();
+  }
 
   let _autosaveTimer = null;
   store.onChange(() => {

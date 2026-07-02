@@ -14,8 +14,18 @@ async function makePage(context, errors) {
   const page = await context.newPage({viewport:{width:1600,height:1000}});
   page.on('pageerror',e=>errors.push(String(e)));
   page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
-  page.on('dialog', d=>d.accept().catch(()=>{}));
   return page;
+}
+
+async function loadSampleFromStart(page) {
+  await page.click('#card-load');
+  await page.fill('#manifest-url', 'samples/gota-project.json');
+  await page.click('#manifest-load-btn');
+}
+
+async function restoreNewestRecent(page) {
+  await page.waitForSelector('.recent-row', { timeout: 10000 });
+  await page.click('.recent-row >> nth=0');
 }
 
 // Case 1: two projects autosave to separate per-project slots + reload restore.
@@ -24,7 +34,7 @@ async function makePage(context, errors) {
   const ctx = await b.newContext();
   const page = await makePage(ctx, errors);
   await page.goto(`http://localhost:${PORT}/`,{waitUntil:'load'});
-  await page.click('#load-sample');
+  await loadSampleFromStart(page);
   await page.waitForFunction(()=>{const el=document.getElementById('count-land');return el&&/[1-9]/.test(el.textContent);},{timeout:25000});
   await page.evaluate(()=>{const s=window.hexwright.store; s.setHexFeatures(Object.keys(s.state.terrain.terrain)[0],['city']);});
   await sleep(1100);
@@ -72,6 +82,7 @@ async function makePage(context, errors) {
   });
 
   await page.reload({waitUntil:'load'});
+  await restoreNewestRecent(page);
   await sleep(2200);
   const restored = await page.evaluate(()=>{ const s=window.hexwright.store.state; return {name:s.name, land:Object.keys(s.terrain.terrain||{}).length, viewMode:window.hexwright.renderer.viewMode}; });
 
@@ -79,7 +90,7 @@ async function makePage(context, errors) {
   rec('autosave writes second project slot key', perProject.betaSaved && perProject.betaKey===`hexwright.session.${slug('TWU Test Board')}`, perProject.betaKey);
   rec('slots carry project-specific payloads', perProject.gotaLand===4176 && perProject.gotaFeat>=1 && perProject.betaName==='TWU Test Board', JSON.stringify({gotaLand:perProject.gotaLand, gotaFeat:perProject.gotaFeat, betaName:perProject.betaName}));
   rec('legacy single key not used for new saves', !perProject.hasLegacy, perProject.keys.join(','));
-  rec('reload restores newest slot', restored.name==='TWU Test Board' && restored.land===2, JSON.stringify(restored));
+  rec('reload restores newest slot via start screen', restored.name==='TWU Test Board' && restored.land===2, JSON.stringify(restored));
   rec('reload restore keeps classification view', restored.viewMode==='classification', restored.viewMode);
   rec('case 1 has no console/page errors', errors.length===0, errors.slice(0,2).join(' | '));
   await ctx.close();
@@ -173,12 +184,13 @@ async function makePage(context, errors) {
   }, { older, newer });
   const page = await makePage(ctx, errors);
   await page.goto(`http://localhost:${PORT}/`,{waitUntil:'load'});
+  await restoreNewestRecent(page);
   await sleep(1200);
   const bootRestored = await page.evaluate(()=>{
     const s=window.hexwright.store.state;
     return {name:s.name, land:Object.keys(s.terrain.terrain||{}).length, viewMode:window.hexwright.renderer.viewMode};
   });
-  rec('boot restore chooses newest saved slot', bootRestored.name==='Newest Slot' && bootRestored.land===3, JSON.stringify(bootRestored));
+  rec('start screen restore chooses newest saved slot', bootRestored.name==='Newest Slot' && bootRestored.land===3, JSON.stringify(bootRestored));
   rec('boot restore stays in classification view', bootRestored.viewMode==='classification', bootRestored.viewMode);
   rec('case 3 has no console/page errors', errors.length===0, errors.slice(0,2).join(' | '));
   await ctx.close();
