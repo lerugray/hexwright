@@ -359,7 +359,8 @@ async function loadProjectFromManifest(manifestUrl) {
     terrain,
     hexsides,
     palette,
-    traces
+    traces,
+    blankLattice: manifest.blankLattice === true
   };
 }
 
@@ -777,6 +778,16 @@ async function main() {
         }
       } catch (_) { /* quota or serialization issue — skip this autosave */ }
     }, 800);
+  });
+
+  // Warn before closing if there are unsaved edits (projects with no terrain
+  // layer don't autosave, so the exported file is the only durable copy).
+  window.addEventListener('beforeunload', (e) => {
+    if (store.canUndo()) {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    }
   });
 
   // Expose minimal API for console debugging
