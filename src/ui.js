@@ -8,7 +8,8 @@ const LAYER_LABELS = {
   mountains: 'ridge',
   impassible: 'impass',
   roads: 'road',
-  rails: 'rail'
+  rails: 'rail',
+  border: 'border'
 };
 
 const EDGE_NAMES = ['E', 'NE', 'NW', 'W', 'SW', 'SE'];

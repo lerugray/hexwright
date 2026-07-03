@@ -14,10 +14,11 @@ export const HEXSIDE_COLORS = {
   mountains:  { stroke: '#c2333b', width: 4.0, dash: [] },
   impassible: { stroke: '#3a3f4a', width: 4.0, dash: [6, 5] },
   roads:      { stroke: '#b96b1f', width: 3.0, dash: [] },
-  rails:      { stroke: '#7a4fa3', width: 3.0, dash: [6, 5] }
+  rails:      { stroke: '#7a4fa3', width: 3.0, dash: [6, 5] },
+  border:     { stroke: '#d926a9', width: 3.5, dash: [7, 4] }
 };
 
-export const EDITABLE_LAYERS = ['rivers', 'mountains', 'impassible', 'roads', 'rails'];
+export const EDITABLE_LAYERS = ['rivers', 'mountains', 'impassible', 'roads', 'rails', 'border'];
 export const ADJACENCY_THRESHOLD = 160;
 
 export function parseCCRR(code) {

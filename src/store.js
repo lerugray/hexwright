@@ -5,7 +5,7 @@ const DEFAULT_PALETTE_URL = 'palettes/gota.json';
 
 // Legacy v1 grouped layers (all possible) so migration/export preserve any shape.
 const V1_EXPORT_LAYERS = ['rivers', 'streams', 'roads', 'rails', 'mountains', 'cliffs',
-  'escarpments', 'walls', 'bridges', 'impassible'];
+  'escarpments', 'walls', 'bridges', 'impassible', 'border'];
 
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
