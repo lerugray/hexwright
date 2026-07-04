@@ -1,4 +1,4 @@
-import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency, enumerateGridLattice, validateGrid } from './geometry.js';
+import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency, enumerateGridLattice, validateGrid, parseCCRR, isValidCell, hexCenter } from './geometry.js';
 
 const MAX_UNDO = 64;
 const DEFAULT_PALETTE_URL = 'palettes/gota.json';
@@ -282,6 +282,7 @@ export class ProjectStore {
       this.edgeIndex = null;
       return;
     }
+    const previousCenters = this.centers ? { ...this.centers } : {};
     this.centers = buildLandIndex(this.state.terrain, this.state.grid);
     // A valid grid must always show its editable cells. buildLandIndex is empty
     // for hexside-only / fresh projects (no terrain codes yet), so enumerate the
@@ -296,6 +297,14 @@ export class ProjectStore {
       const lattice = enumerateGridLattice(this.state.grid);
       for (const code of Object.keys(lattice)) {
         if (!this.centers[code]) this.centers[code] = lattice[code];
+      }
+    }
+    // Cleared terrain hexes stay hit-testable for brush toggle / undo restore.
+    for (const code of Object.keys(previousCenters)) {
+      if (this.centers[code]) continue;
+      const { col, row } = parseCCRR(code);
+      if (isValidCell(col, row, this.state.grid)) {
+        this.centers[code] = hexCenter(code, this.state.grid);
       }
     }
     this.adj = buildAdjacency(this.centers);
@@ -399,6 +408,21 @@ export class ProjectStore {
     this.state.provenance[code] = 'confirmed';
     this.rebuildIndex();
     this.notify('terrain');
+  }
+
+  clearTerrain(code) {
+    if (!this.state.terrain.terrain[code]) return;
+    this.pushUndo();
+    delete this.state.terrain.terrain[code];
+    delete this.state.provenance[code];
+    this.rebuildIndex();
+    this.notify('terrain');
+  }
+
+  applyTerrainBrush(code, key) {
+    const current = this.state.terrain.terrain[code];
+    if (current === key) this.clearTerrain(code);
+    else this.setTerrain(code, key);
   }
 
   // Legacy alias kept for ui.js/renderer.js until multi-select lands.

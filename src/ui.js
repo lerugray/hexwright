@@ -660,10 +660,19 @@ export class UI {
     this.renderer.setBrush({
       active: this.brushActive,
       terrainKey: this.brushTerrain,
+      onStrokeStart: () => this.store.beginStroke(),
+      onStrokeEnd: () => this.store.endStroke(),
+      onToggle: (code) => {
+        this.store.applyTerrainBrush(code, this.brushTerrain);
+        this.lastBrushHex = code;
+        const center = this.store.centers[code];
+        if (center) this.lastBrushScreen = this.renderer.worldToScreen(center);
+      },
       onPaint: (code) => {
         this.store.setTerrain(code, this.brushTerrain);
         this.lastBrushHex = code;
-        this.lastBrushScreen = this.renderer.worldToScreen(this.store.centers[code]);
+        const center = this.store.centers[code];
+        if (center) this.lastBrushScreen = this.renderer.worldToScreen(center);
       },
       onShiftClick: (code) => this._paintStraightRun(code)
     });

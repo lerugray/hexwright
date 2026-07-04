@@ -29,8 +29,16 @@ export class MapRenderer {
     this.nudgeDrag = null;
     this.anomalyMode = false;
 
-    this.brush = { active: false, terrainKey: null, onPaint: null, onShiftClick: null };
-    this.brushLastHex = null;
+    this.brush = {
+      active: false,
+      terrainKey: null,
+      onPaint: null,
+      onToggle: null,
+      onShiftClick: null,
+      onStrokeStart: null,
+      onStrokeEnd: null
+    };
+    this.brushStroke = null;
     this.edgePaint = {
       active: false,
       featureKey: null,
@@ -117,6 +125,7 @@ export class MapRenderer {
 
   setBrush(config) {
     this.brush = { ...this.brush, ...config };
+    if (!this.brush.active) this.brushStroke = null;
   }
 
   setNudgeMode(on) {
@@ -289,11 +298,22 @@ export class MapRenderer {
         wrap.setPointerCapture(e.pointerId);
         return;
       }
+      if (this.brush.active) {
+        this.isDragging = true;
+        this.clickMoved = false;
+        this.dragStart = { x: e.clientX, y: e.clientY };
+        this.brushStroke = {
+          moved: false,
+          strokeOpened: false,
+          touched: new Set()
+        };
+        wrap.setPointerCapture(e.pointerId);
+        return;
+      }
       this.isDragging = true;
       this.clickMoved = false;
       this.dragStart = { x: e.clientX, y: e.clientY };
       this.panStart = { x: this.view.panX, y: this.view.panY };
-      this.brushLastHex = null;
       wrap.setPointerCapture(e.pointerId);
     });
 
@@ -343,17 +363,35 @@ export class MapRenderer {
         }
         return;
       }
-      if (!this.isDragging) {
-        this._hoverAt(e);
-        return;
-      }
       if (this.brush.active) {
         const pt = this._eventToScreen(e);
-        const hex = this.hexAtScreen(pt);
-        if (hex && hex !== this.brushLastHex) {
-          this.brushLastHex = hex;
-          if (this.brush.onPaint) this.brush.onPaint(hex);
+        this.lastPointerPt = pt;
+        if (!this.isDragging) {
+          this._hoverAt(e);
+          return;
         }
+        const session = this.brushStroke;
+        if (!session) return;
+        const dx = e.clientX - this.dragStart.x;
+        const dy = e.clientY - this.dragStart.y;
+        if (!session.moved && Math.hypot(dx, dy) > 3) {
+          session.moved = true;
+          if (this.brush.onStrokeStart) {
+            this.brush.onStrokeStart();
+            session.strokeOpened = true;
+          }
+        }
+        if (session.moved) {
+          const hex = this.hexAtScreen(pt);
+          if (hex && !session.touched.has(hex)) {
+            session.touched.add(hex);
+            if (this.brush.onPaint) this.brush.onPaint(hex);
+          }
+        }
+        return;
+      }
+      if (!this.isDragging) {
+        this._hoverAt(e);
         return;
       }
       const dx = e.clientX - this.dragStart.x;
@@ -412,14 +450,24 @@ export class MapRenderer {
       if (this.brush.active) {
         const pt = this._eventToScreen(e);
         const hex = this.hexAtScreen(pt);
-        if (hex) {
-          if (e.shiftKey && this.brush.onShiftClick) {
-            this.brush.onShiftClick(hex);
-          } else if (this.brush.onPaint) {
-            this.brush.onPaint(hex);
+        const session = this.brushStroke;
+        this.brushStroke = null;
+        if (hex && e.shiftKey && this.brush.onShiftClick) {
+          this.brush.onShiftClick(hex);
+          return;
+        }
+        if (session) {
+          if (session.moved) {
+            if (hex && !session.touched.has(hex)) {
+              if (this.brush.onPaint) this.brush.onPaint(hex);
+            }
+            if (session.strokeOpened && this.brush.onStrokeEnd) {
+              this.brush.onStrokeEnd();
+            }
+          } else if (hex && this.brush.onToggle) {
+            this.brush.onToggle(hex);
           }
         }
-        this.brushLastHex = null;
         return;
       }
       if (!this.clickMoved) {
@@ -436,14 +484,26 @@ export class MapRenderer {
           this.edgePaint.onStrokeEnd();
         }
       }
+      if (this.brush.active) {
+        const session = this.brushStroke;
+        this.brushStroke = null;
+        if (session && session.strokeOpened && this.brush.onStrokeEnd) {
+          this.brush.onStrokeEnd();
+        }
+      }
     });
 
     wrap.addEventListener('pointercancel', () => {
       this.isDragging = false;
-      const session = this.edgePaintStroke;
+      const edgeSession = this.edgePaintStroke;
       this.edgePaintStroke = null;
-      if (session && session.strokeOpened && this.edgePaint.onStrokeEnd) {
+      if (edgeSession && edgeSession.strokeOpened && this.edgePaint.onStrokeEnd) {
         this.edgePaint.onStrokeEnd();
+      }
+      const brushSession = this.brushStroke;
+      this.brushStroke = null;
+      if (brushSession && brushSession.strokeOpened && this.brush.onStrokeEnd) {
+        this.brush.onStrokeEnd();
       }
     });
 
