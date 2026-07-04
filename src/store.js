@@ -200,15 +200,34 @@ export class ProjectStore {
 
     if (isV1Project(project)) {
       // v1 hexsides are grouped export-layer lists; migrate into per-edge arrays.
-      for (const layer of V1_EXPORT_LAYERS) {
+      // Iterate the layers actually PRESENT in the file, not just the legacy
+      // hardcoded list — palette-defined class-split layers (roads-secondary etc.)
+      // must never be silently dropped. Legacy names keep their exact old
+      // behavior; new names must resolve to a palette feature key, else warn LOUD.
+      const validKeys = new Set(
+        ((this.palette || {}).hexsideFeatures || []).map((f) => f.key)
+      );
+      const layerNames = new Set([
+        ...V1_EXPORT_LAYERS,
+        ...Object.keys(project.hexsides || {})
+      ]);
+      for (const layer of layerNames) {
         const list = project.hexsides && project.hexsides[layer];
         if (!Array.isArray(list)) continue;
+        const featureKey = this._toFeatureKey(layer);
+        if (!featureKey) continue;
+        if (!V1_EXPORT_LAYERS.includes(layer) && !validKeys.has(featureKey)) {
+          if (list.length) {
+            console.warn(
+              `hexwright: hexside layer "${layer}" (${list.length} entries) NOT loaded — no palette feature mapping`
+            );
+          }
+          continue;
+        }
         for (const pair of list) {
           const a = pair.a, b = pair.b;
           if (!a || !b) continue;
           const key = pairKey(a, b);
-          const featureKey = this._toFeatureKey(layer);
-          if (!featureKey) continue;
           const arr = hexsides[key] || (hexsides[key] = []);
           if (!arr.includes(featureKey)) arr.push(featureKey);
         }
