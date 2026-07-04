@@ -705,6 +705,9 @@ export class UI {
         if (!this.edgePaintFeature) return;
         const erase = !!opts.erase;
         this.store.setHexsideFeature(hit.a, hit.b, this.edgePaintFeature, !erase);
+      },
+      onBoundary: () => {
+        this.status('That hexside faces off-map — no hex on the other side, so it cannot carry a feature. Map-edge roads/rivers need no tracing; the game handles entry/exit by hex, not hexside.', 6000);
       }
     });
   }

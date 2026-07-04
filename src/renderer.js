@@ -1,7 +1,7 @@
 import {
   TERRAIN_COLORS, HEXSIDE_COLORS,
   hexCenter, hexPolygon, sharedEdgeEndpoints, pointInPolygon,
-  worldToScreen, screenToWorld, edgeNeighbor, hexRadius, nearestEdge
+  worldToScreen, screenToWorld, edgeNeighbor, edgeMidpoint, hexRadius, nearestEdge
 } from './geometry.js';
 
 // Solid near-white casing: traced ink must pop off BOTH the cream paper and the
@@ -139,6 +139,28 @@ export class MapRenderer {
   hexAtScreen(pt) {
     const world = screenToWorld(pt, this.view);
     return this._hexAt(world);
+  }
+
+  /**
+   * True when the click landed nearest a MISSING-NEIGHBOR hexside (map edge /
+   * hole in the lattice). Those edges are unpaintable by design — every
+   * hexside is a pair of two real hexes — so the UI should say so instead of
+   * silently ignoring the click (bit Ray on col-00's off-map edges, 2026-07-04).
+   */
+  boundaryEdgeNear(pt) {
+    const grid = this.store.state.grid;
+    const hex = this.hexAtScreen(pt);
+    if (!hex || !grid) return false;
+    const s = this.view.baseScale * this.view.zoom;
+    const tol = hexRadius(grid) * 0.5 * s;
+    for (let i = 0; i < 6; i++) {
+      if (edgeNeighbor(hex, i, this.store.centers, grid)) continue;
+      const mid = edgeMidpoint(hex, i, grid);
+      if (!mid) continue;
+      const sp = worldToScreen(mid, this.view);
+      if (Math.hypot(sp.x - pt.x, sp.y - pt.y) <= tol) return true;
+    }
+    return false;
   }
 
   hexAtWorld(pt) {
@@ -308,6 +330,8 @@ export class MapRenderer {
             } else if (this.edgePaint.onToggle) {
               this.edgePaint.onToggle(hit);
             }
+          } else if (this.edgePaint.onBoundary && this.boundaryEdgeNear(pt)) {
+            this.edgePaint.onBoundary();
           }
         }
         return;
