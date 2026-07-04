@@ -3,6 +3,9 @@ import { chromium } from 'playwright';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { skipIfMissing, PATHS } from './_local-data.mjs';
+
+skipIfMissing(PATHS.gotaHexgrid);
 
 const DIR = process.cwd();
 const VER = DIR + '/verify';
@@ -43,7 +46,7 @@ try {
     page.waitForEvent('filechooser'),
     page.click('#new-with-grid')
   ]);
-  await fileChooser.setFiles(path.join(DIR, 'samples/gota-hexgrid.json'));
+  await fileChooser.setFiles(path.join(DIR, 'local/samples/gota/gota-hexgrid.json'));
   await sleep(2000);
 
   const status = (await page.textContent('#status-strip'))?.trim() || '';

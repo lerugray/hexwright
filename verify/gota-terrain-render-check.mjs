@@ -2,6 +2,9 @@
 // Also guards hexside-only autosave restore discarding manifest terrain.
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
+import { skipIfMissing, GOTA_PROJECT_URL, PATHS } from './_local-data.mjs';
+
+skipIfMissing(PATHS.gotaProject);
 
 const DIR = process.cwd();
 const PORT = 8045;
@@ -70,7 +73,7 @@ try {
   {
     const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
     pageForErrors(page);
-    await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`, { waitUntil: 'load', timeout: 20000 });
+    await page.goto(`http://localhost:${PORT}/?project=${GOTA_PROJECT_URL}`, { waitUntil: 'load', timeout: 20000 });
     await page.waitForFunction(() => {
       const el = document.getElementById('count-land');
       return el && /[1-9]/.test(el.textContent);
@@ -110,7 +113,7 @@ try {
       }));
     }, { key: SESSION_KEY });
 
-    await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`, { waitUntil: 'load', timeout: 20000 });
+    await page.goto(`http://localhost:${PORT}/?project=${GOTA_PROJECT_URL}`, { waitUntil: 'load', timeout: 20000 });
     await sleep(500);
     const restoreBtn = page.locator('#restore-prompt-restore');
     try {

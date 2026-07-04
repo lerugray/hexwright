@@ -446,14 +446,6 @@ button:disabled, .file-btn:disabled {
   cursor: not-allowed;
 }
 
-#load-sample {
-  background: var(--accent);
-  border-color: var(--hx-accent-deep, var(--accent));
-  color: var(--hx-bg-panel, #111);
-  font-weight: 600;
-}
-#load-sample:hover { background: var(--accent-2); }
-
 .help-toggle {
   width: 28px;
   height: 28px;

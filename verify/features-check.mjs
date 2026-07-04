@@ -1,14 +1,14 @@
 // Point-feature editing: place, edit attrs, delete, export shape, round-trip, autosave, manifest load.
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { ProjectStore, validateFeaturesDocument } from '../src/store.js';
+import { GOTA_PROJECT_URL, PATHS } from './_local-data.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIR = REPO;
-const PORT = 8032;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
 const rec = (name, ok, note = '') => {
@@ -18,10 +18,10 @@ const rec = (name, ok, note = '') => {
 
 // --- Unit: export shape + validation + round-trip (no browser) ---
 const unitStore = new ProjectStore();
-unitStore.setPalette(JSON.parse(readFileSync(resolve(REPO, 'palettes/twu-ep.json'), 'utf8')));
+unitStore.setPalette(JSON.parse(readFileSync(resolve(REPO, 'palettes/default.json'), 'utf8')));
 unitStore.state.features = {};
-unitStore.setPointFeature('3706', 'vp', { name: 'KONIGSBERG', attrs: { vp: 25 } });
-unitStore.setPointFeature('3606', 'fortress', { name: 'Konigsberg ring', attrs: { sp: 4 } });
+unitStore.setPointFeature('3706', 'objective', { name: 'Test Objective', attrs: { vp: 25 } });
+unitStore.setPointFeature('3606', 'fort', { name: 'Test Fort', attrs: { strength: 4 } });
 
 const exported = unitStore.exportFeaturesObject();
 rec('export has _comment + features array', exported._comment && Array.isArray(exported.features), exported._comment?.slice(0, 30));
@@ -52,7 +52,11 @@ try {
   rec('invalid import fails loudly', /Expected features/.test(err.message), err.message.slice(0, 60));
 }
 
-// --- Headless UI harness ---
+// --- Headless UI harness (requires operator sample under local/) ---
+if (!existsSync(PATHS.gotaProject)) {
+  console.log('SKIP local game data not present (local/samples/gota/gota-project.json)');
+} else {
+const PORT = 8032;
 const srv = spawn('python3', ['-m', 'http.server', String(PORT)], { cwd: DIR, stdio: 'ignore' });
 await sleep(1300);
 
@@ -63,7 +67,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push(`PAGEERROR: ${e.message}`));
 
 try {
-  await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`, { waitUntil: 'load', timeout: 20000 });
+  await page.goto(`http://localhost:${PORT}/?project=${GOTA_PROJECT_URL}`, { waitUntil: 'load', timeout: 20000 });
   await page.waitForFunction(() => {
     const el = document.getElementById('count-land');
     return el && /[1-9]/.test(el.textContent);
@@ -224,6 +228,7 @@ try {
 
 await browser.close();
 srv.kill();
+}
 
 const passed = results.filter((r) => r.ok).length;
 console.log(`\n=== ${passed}/${results.length} checks passed ===`);

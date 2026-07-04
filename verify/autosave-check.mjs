@@ -1,6 +1,10 @@
 // v2.1 chunk B test: per-project autosave slots + legacy migration + newest boot restore.
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
+import { skipIfMissing, GOTA_PROJECT_URL, PATHS } from './_local-data.mjs';
+
+skipIfMissing(PATHS.gotaProject);
+
 const DIR=process.cwd(); const PORT=8027;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const srv=spawn('python3',['-m','http.server',String(PORT)],{cwd:DIR,stdio:'ignore'});
@@ -19,7 +23,7 @@ async function makePage(context, errors) {
 
 async function loadSampleFromStart(page) {
   await page.click('#card-load');
-  await page.fill('#manifest-url', 'samples/gota-project.json');
+  await page.fill('#manifest-url', GOTA_PROJECT_URL);
   await page.click('#manifest-load-btn');
 }
 

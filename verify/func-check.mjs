@@ -2,6 +2,10 @@
 // WMP-alias import + draft provenance, view modes, overlay PNG export, anomaly counts.
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
+import { skipIfMissing, GOTA_PROJECT_URL, PATHS } from './_local-data.mjs';
+
+skipIfMissing(PATHS.gotaProject);
+
 const DIR = process.cwd();
 const PORT = 8021;
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
@@ -15,7 +19,7 @@ page.on('pageerror',e=>errors.push('PAGEERROR: '+e.message));
 const results=[];
 const rec=(n,ok,note='')=>{results.push({ok});console.log(`${ok?'PASS':'FAIL'}  ${n}${note?'  — '+note:''}`);};
 try{
-  await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`,{waitUntil:'load',timeout:20000});
+  await page.goto(`http://localhost:${PORT}/?project=${GOTA_PROJECT_URL}`,{waitUntil:'load',timeout:20000});
   await page.waitForFunction(()=>{const el=document.getElementById('count-land');return el&&/[1-9]/.test(el.textContent);},{timeout:25000});
   await sleep(1500);
   const r = await page.evaluate(async ()=>{

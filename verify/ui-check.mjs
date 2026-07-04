@@ -2,6 +2,10 @@
 // anomaly toggle, overlay PNG export button, tool-rail mode selection.
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
+import { skipIfMissing, GOTA_PROJECT_URL, PATHS } from './_local-data.mjs';
+
+skipIfMissing(PATHS.gotaProject);
+
 const DIR = process.cwd();
 const DESK = DIR + '/verify';
 const PORT = 8022;
@@ -17,7 +21,7 @@ page.on('download', async d=>{ downloads.push(d.suggestedFilename()); try{ await
 const results=[];
 const rec=(n,ok,note='')=>{results.push({ok});console.log(`${ok?'PASS':'FAIL'}  ${n}${note?'  — '+note:''}`);};
 try{
-  await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`,{waitUntil:'load',timeout:20000});
+  await page.goto(`http://localhost:${PORT}/?project=${GOTA_PROJECT_URL}`,{waitUntil:'load',timeout:20000});
   await page.waitForFunction(()=>{const el=document.getElementById('count-land');return el&&/[1-9]/.test(el.textContent);},{timeout:25000});
   await sleep(1800);
 

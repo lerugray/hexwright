@@ -609,15 +609,6 @@ async function main() {
       ui.setProjectSource(file?.name || '');
       maybeFinishPartialLoad();
     },
-    sample: async () => {
-      ui.status('Loading GotA sample...');
-      try {
-        await loadManifestWithRestore('samples/gota-project.json');
-      } catch (err) {
-        console.error(err);
-        ui.status(`Sample load failed: ${err.message}`, 5000);
-      }
-    },
     importSides: async (file) => {
       const text = await readFile(file);
       store.importHexsides(text);

@@ -1,5 +1,8 @@
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
+import { skipIfMissing, GOTA_PROJECT_URL, PATHS } from './_local-data.mjs';
+
+skipIfMissing(PATHS.gotaProject);
 
 const DIR = process.cwd();
 const PORT = 8031;
@@ -24,7 +27,7 @@ page.on('console', (msg) => {
 page.on('pageerror', (err) => errors.push(`PAGEERROR: ${err.message}`));
 
 try {
-  await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`, { waitUntil: 'load', timeout: 20000 });
+  await page.goto(`http://localhost:${PORT}/?project=${GOTA_PROJECT_URL}`, { waitUntil: 'load', timeout: 20000 });
 
   const btnExists = await page.locator('#toggle-help').count();
   rec('help button exists in topbar', btnExists === 1, `count=${btnExists}`);

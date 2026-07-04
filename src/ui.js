@@ -61,7 +61,7 @@ export class UI {
   gatherElements() {
     const ids = [
       'strip-project-name', 'strip-project-sub', 'mode-hint', 'save-state',
-      'load-map', 'load-grid', 'load-terrain', 'load-sides', 'load-sample',
+      'load-map', 'load-grid', 'load-terrain', 'load-sides',
       'fit-view', 'undo', 'clear-select', 'toggle-help',
       'view-mode', 'tool-rail', 'tool-inspect', 'tool-terrain', 'tool-edges', 'tool-features', 'tool-nudge',
       'brush-card', 'brush-mode-tag', 'brush-ink-list',
@@ -557,7 +557,6 @@ export class UI {
     this.els['load-grid'].addEventListener('change', (e) => handlers.grid(e.target.files[0]));
     this.els['load-terrain'].addEventListener('change', (e) => handlers.terrain(e.target.files[0]));
     this.els['load-sides'].addEventListener('change', (e) => handlers.sides(e.target.files[0]));
-    this.els['load-sample'].addEventListener('click', handlers.sample);
     this.els['import-sides'].addEventListener('change', (e) => handlers.importSides(e.target.files[0]));
     this.els['import-terrain'].addEventListener('change', (e) => handlers.importTerrain(e.target.files[0]));
     this.els['import-wmp'].addEventListener('change', (e) => handlers.importWmp(e.target.files[0]));

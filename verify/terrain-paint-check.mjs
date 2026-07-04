@@ -1,5 +1,8 @@
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
+import { skipIfMissing, GOTA_PROJECT_URL, PATHS } from './_local-data.mjs';
+
+skipIfMissing(PATHS.gotaProject);
 
 const DIR = process.cwd();
 const PORT = 8029;
@@ -20,7 +23,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push(`PAGEERROR: ${e.message}`));
 
 try {
-  await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`, { waitUntil: 'load', timeout: 20000 });
+  await page.goto(`http://localhost:${PORT}/?project=${GOTA_PROJECT_URL}`, { waitUntil: 'load', timeout: 20000 });
   await page.waitForFunction(() => {
     const el = document.getElementById('count-land');
     return el && /[1-9]/.test(el.textContent);

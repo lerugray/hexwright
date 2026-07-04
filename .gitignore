@@ -7,4 +7,8 @@ node_modules/
 verify/*.png
 verify/export-*.json
 verify/wmp-out.json
+
+# operator-local game data, palettes, samples, and per-game launchers
 local/
+samples/
+Launch Hexwright - *.command

@@ -3,11 +3,49 @@
 // exportHexsidesObject appended regenerated pairs onto the preserved copy (2x).
 // Also guards non-canonical edge keys (b|a) and dual-perspective internal storage.
 import { ProjectStore } from '../src/store.js';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { PATHS } from './_local-data.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+const NAB_FIXTURE_PALETTE = {
+  name: 'Napoleon at Bay',
+  terrain: [
+    { key: 'clear', label: 'Clear', color: '#c8b88a' },
+    { key: 'woods', label: 'Woods', color: '#5c7a4a' },
+    { key: 'water', label: 'Water', color: '#3f78b4' },
+    { key: 'urban', label: 'Urban', color: '#9a9a9a' }
+  ],
+  hexFeatures: [],
+  hexsideFeatures: [
+    { key: 'river_primary', label: 'Primary River', color: '#1e5fd8', kind: 'edge', exportLayer: 'rivers-primary' },
+    { key: 'river_secondary', label: 'Secondary River', color: '#6fb0ff', kind: 'edge', exportLayer: 'rivers-secondary' },
+    { key: 'road_primary', label: 'Primary Road', color: '#c8321e', kind: 'crossing', exportLayer: 'roads-primary' },
+    { key: 'road_secondary', label: 'Secondary Road', color: '#b96b1f', kind: 'crossing', exportLayer: 'roads-secondary' },
+    { key: 'bridge', label: 'Bridge', color: '#e0c060', kind: 'crossing', exportLayer: 'bridges' }
+  ],
+  terrainAliases: { forest: 'woods', lake: 'water' },
+  hexsideAliases: {
+    'rivers-primary': 'river_primary',
+    'rivers-secondary': 'river_secondary',
+    'roads-primary': 'road_primary',
+    'roads-secondary': 'road_secondary',
+    bridges: 'bridge',
+    rivers: 'river_secondary',
+    roads: 'road_primary',
+    river: 'river_primary',
+    road: 'road_primary'
+  }
+};
+
+function loadNabPalette() {
+  if (existsSync(PATHS.nabPalette)) {
+    return JSON.parse(readFileSync(PATHS.nabPalette, 'utf8'));
+  }
+  return NAB_FIXTURE_PALETTE;
+}
 const results = [];
 const rec = (name, ok, note = '') => {
   results.push({ name, ok, note });
@@ -41,7 +79,7 @@ function assertLayerExport(store, layer, want) {
 
 // --- Synthetic store: plain + crossing + class-split layers ---
 const store = new ProjectStore();
-store.setPalette(JSON.parse(readFileSync(resolve(REPO, 'palettes/nab.json'), 'utf8')));
+store.setPalette(loadNabPalette());
 
 // loadedHexsides mirrors a real NaB bundle: class-split arrays present pre-edit.
 store.state.loadedHexsides = {
@@ -78,7 +116,7 @@ rec('clipboard path uses same object', store.exportHexsidesJson().includes('"riv
 
 // Round-trip: export -> migrate -> re-export must be identical (class-split inks preserved).
 const round = new ProjectStore();
-round.setPalette(JSON.parse(readFileSync(resolve(REPO, 'palettes/nab.json'), 'utf8')));
+round.setPalette(loadNabPalette());
 round.state.loadedHexsides = structuredClone(exp1);
 const migrated = round.migrateToV2({ hexsides: exp1 }, {}, round.palette.hexsideAliases);
 round.state.hexsides = migrated.hexsides;
@@ -93,9 +131,13 @@ for (const layer of ['rivers-primary', 'rivers-secondary', 'roads-primary', 'roa
 }
 
 // --- Real NaB bundle must not double on export ---
+if (!existsSync(PATHS.nabHexsides)) {
+  console.log('SKIP local game data not present (local/nab/hexsides.json)');
+} else {
+const nabPalette = loadNabPalette();
 const nab = new ProjectStore();
-nab.setPalette(JSON.parse(readFileSync(resolve(REPO, 'palettes/nab.json'), 'utf8')));
-const bundle = JSON.parse(readFileSync(resolve(REPO, 'local/nab/hexsides.json'), 'utf8'));
+nab.setPalette(nabPalette);
+const bundle = JSON.parse(readFileSync(PATHS.nabHexsides, 'utf8'));
 nab.state.loadedHexsides = structuredClone(bundle);
 const nabMigrated = nab.migrateToV2({ hexsides: bundle }, {}, nab.palette.hexsideAliases);
 nab.state.hexsides = nabMigrated.hexsides;
@@ -107,6 +149,8 @@ for (const layer of ['rivers-primary', 'rivers-secondary', 'roads-primary', 'roa
   const { dupes } = countDupes(exported);
   rec(`NaB ${layer} export matches source`, exported.length === source.length && dupes === 0,
     `${exported.length}/${source.length}, dupes=${dupes}`);
+}
+
 }
 
 const passed = results.filter((r) => r.ok).length;

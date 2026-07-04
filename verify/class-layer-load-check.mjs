@@ -8,6 +8,9 @@ import { spawn } from 'child_process';
 import { readFileSync } from 'fs';
 import { resolve, basename, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { skipIfMissing, PATHS } from './_local-data.mjs';
+
+skipIfMissing(PATHS.nabHexsides, PATHS.nabPalette, PATHS.nabProject);
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PARENT = resolve(REPO, '..');
@@ -22,7 +25,7 @@ const rec = (name, ok, note = '') => {
 
 // Expected counts straight from the bundle + palette alias map.
 const bundle = JSON.parse(readFileSync(resolve(REPO, 'local/nab/hexsides.json'), 'utf8'));
-const palette = JSON.parse(readFileSync(resolve(REPO, 'palettes/nab.json'), 'utf8'));
+const palette = JSON.parse(readFileSync(PATHS.nabPalette, 'utf8'));
 const aliases = palette.hexsideAliases || {};
 const expected = {};
 for (const [layer, list] of Object.entries(bundle)) {

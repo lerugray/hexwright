@@ -2,13 +2,17 @@
 // anomaly draft count, status message.
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
+import { skipIfMissing, GOTA_PROJECT_URL, PATHS } from './_local-data.mjs';
+
+skipIfMissing(PATHS.gotaProject);
+
 const DIR=process.cwd(); const PORT=8026;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const srv=spawn('python3',['-m','http.server',String(PORT)],{cwd:DIR,stdio:'ignore'});
 await sleep(1300);
 const b=await chromium.launch(); const page=await b.newPage({viewport:{width:1600,height:1000}});
 const errors=[]; page.on('pageerror',e=>errors.push(String(e))); page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
-await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`,{waitUntil:'load'});
+await page.goto(`http://localhost:${PORT}/?project=${GOTA_PROJECT_URL}`,{waitUntil:'load'});
 await page.waitForFunction(()=>{const el=document.getElementById('count-land');return el&&/[1-9]/.test(el.textContent);},{timeout:25000});
 await sleep(1200);
 // Upload a WMP-style classification (forest->woods, lake->water; provenance should be draft)

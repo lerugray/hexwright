@@ -2,6 +2,9 @@ import { chromium } from 'playwright';
 import { spawn } from 'child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { skipIfMissing, GOTA_PROJECT_URL, PATHS } from './_local-data.mjs';
+
+skipIfMissing(PATHS.gotaProject);
 
 const DIR = process.cwd();
 const PORT = 8030;
@@ -64,7 +67,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('dialog', (d) => d.accept().catch(() => {}));
 
 try {
-  await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`, { waitUntil: 'load' });
+  await page.goto(`http://localhost:${PORT}/?project=${GOTA_PROJECT_URL}`, { waitUntil: 'load' });
   await page.waitForFunction(() => {
     const el = document.getElementById('count-land');
     return el && /[1-9]/.test(el.textContent || '');

@@ -1,7 +1,7 @@
 import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency, enumerateGridLattice, validateGrid, parseCCRR, isValidCell, hexCenter } from './geometry.js';
 
 const MAX_UNDO = 64;
-const DEFAULT_PALETTE_URL = 'palettes/gota.json';
+const DEFAULT_PALETTE_URL = 'palettes/default.json';
 
 // Legacy v1 grouped layers (all possible) so migration/export preserve any shape.
 const V1_EXPORT_LAYERS = ['rivers', 'streams', 'roads', 'rails', 'mountains', 'cliffs',
@@ -1043,7 +1043,7 @@ export class ProjectStore {
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance),
       mapOffset: deepClone(this.state.mapOffset || [0, 0]),
-      palette: this.palette?.name || 'gota',
+      palette: this.palette?.name || 'default',
       ...(this.state.blankLattice ? { blankLattice: true } : {})
     };
   }

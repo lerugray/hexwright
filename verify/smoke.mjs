@@ -1,5 +1,8 @@
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
+import { skipIfMissing, GOTA_PROJECT_URL, PATHS } from './_local-data.mjs';
+
+skipIfMissing(PATHS.gotaProject);
 
 const DIR = process.cwd();
 const VER = DIR + '/verify';
@@ -20,7 +23,7 @@ let exported = null;
 page.on('download', async d => { try { const p = VER+'/export-hexsides.json'; await d.saveAs(p); exported = p; } catch(e){} });
 
 try {
-  await page.goto(`http://localhost:${PORT}/?project=samples/gota-project.json`, {waitUntil:'load', timeout:20000});
+  await page.goto(`http://localhost:${PORT}/?project=${GOTA_PROJECT_URL}`, {waitUntil:'load', timeout:20000});
   rec('page loads', true);
   // wait for land count to populate
   await page.waitForFunction(() => {

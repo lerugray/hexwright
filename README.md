@@ -1,233 +1,215 @@
-<div align="center">
-
 # Hexwright
 
-**An engine-agnostic hex-map terrain/feature editor. Zero build, vanilla JavaScript + Canvas2D.**
-
-Load a hex map, assign each hex's terrain, its in-hex features, and its multi-feature hexsides by hand,
-and export the canonical `hexgrid` / `terrain` / `hexsides` JSON your game reads.
-
-![License: MIT](https://img.shields.io/badge/license-MIT-blue)
-![Zero build](https://img.shields.io/badge/build-none-brightgreen)
-![Dependencies: none](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
-![Vanilla JS](https://img.shields.io/badge/vanilla-JS%20%2B%20Canvas2D-f7df1e)
-
-![Hexwright editing a hex map](docs/screenshot-both.png)
-
-</div>
-
-## Ray — open a project and touch up hexsides (start here)
-
-1. **Double-click** `Launch Hexwright - Napoleon at Bay.command`, `Launch Hexwright - TWU East Prussia.command`, **or** `Launch Hexwright - Guns of the Americas.command` (in this folder). Your browser opens with the map raster and every hexside layer already loaded — nothing to import.
-2. **Pick a project** by launching the one you want; each launcher opens straight into that map. (The plain `Launch Hexwright.command` opens the start screen with no project loaded.)
-3. **Fix a hexside:** click **Edges** on the left rail, pick an ink in the Brush card (Primary/Secondary River, Primary/Secondary Road, Bridge on NaB; River / Rail / Border / Impassable on TWU), then click a hexside line to add it — or **Alt-click** a line to remove it. (Or use **Inspect**: click a hex, then tap one of its 6 edges and toggle a feature.) **Middle-mouse drag pans in any mode** — left-drag keeps painting while a paint tool is active. A hexside on the map's outer edge has no hex on the other side and can't carry a feature; the status bar says so if you click one.
-4. **Export** your work: click **Export ▾** (top-right) → **hexsides.json**. Do this before closing — the exported file is your durable copy. The editor also autosaves about a second after every change (any project with terrain **or** hexside content) and offers to restore on the next launch; a regular browser refresh is safe and always loads current editor code.
-5. **Where it lands:** `~/Downloads/hexsides.json`. To push your edits back into the game, run `python3 from_hexwright.py` inside that game's `tools/terrain-extraction/hexsides/` folder — it rewrites the game's river/road/rail/border/impassable files from your export.
-
-## Contents
-
-- [What it is](#what-it-is)
-- [Why](#why)
-- [Quick start](#quick-start)
-- [Features](#features)
-- [Edge paint quick use](#edge-paint-quick-use)
-- [Data model](#data-model)
-- [Bring your own game](#bring-your-own-game)
-- [WMP pipeline](#wmp-pipeline-auto-guess-then-refine)
-- [TWU pipeline (rivers + rail)](#twu-pipeline-rivers--rail)
-- [Testing](#testing)
-- [License](#license)
-
-## What it is
-
-Open a map, see its hex grid, click a hex. Set the hex's base terrain, toggle in-hex features
-(city, town, fort, port, objective...), and set what each of its six edges carries. Hexsides hold
-several features at once, so a single edge can be both a river and a road. Edges are shared, so
-assigning one also assigns it for the neighbor. Export the result as the JSON files your engine loads.
-
-It is the deliberate, human-in-the-loop alternative to auto-detecting this from a scan. You already
-know where the rivers and ridges go; Hexwright lets you say so quickly, and check your work at a glance.
-
-## Why
-
-Auto-snapping hand-traced features to hexsides is brittle: a meandering printed river sits well off
-the clean geometric edges, so proximity matching fails. A human-in-the-loop editor is what real
-wargame studios use. It is deterministic, correct, and reusable, and it doubles as the correction
-surface for any project whose auto-digitized terrain needs fixing. When a classifier can produce a
-rough first pass (see the [WMP pipeline](#wmp-pipeline-auto-guess-then-refine)), Hexwright imports it
-as an editable draft you refine.
+Engine-agnostic hex-map editor for digitizing printed wargame boards. Zero build, vanilla JavaScript and Canvas2D. Load a calibrated grid over a scan, assign terrain, hexside features, and point features by hand, then export canonical JSON your game engine consumes.
 
 ## Quick start
 
-Zero build, no runtime dependencies. From the repo root:
+No runtime dependencies. Install dev tools once for the verify suite:
 
 ```
-npm run serve          # or: python3 -m http.server 8000
-# open http://localhost:8000  ->  "Load GotA sample"
+npm install
+npx playwright install chromium
 ```
 
-The sample loader needs the local server for `fetch`; the file pickers work either way.
+Serve from the **parent directory** of this repo so manifest paths can reach sibling map rasters (for example `../my-game/assets/board.jpg`):
 
-## Features
+```
+cd ..
+python3 -m http.server 8000
+# open http://localhost:8000/hexwright/
+```
 
-- **Base terrain** per hex, from a configurable palette.
-- **In-hex features** (city, town, fort, port, airfield, objective, resource...), multiple per hex.
-- **Multi-feature hexsides** — each edge can carry several features at once (a stream *and* a road).
-  They render distinctly: **edge features** (river, ridge, cliff) run as lines *along* the edge, while
-  **crossings** (road, rail, bridge) draw as short rungs *across* the edge midpoint, so a road that
-  crosses a river reads at a glance. The inspector groups the two kinds accordingly.
-- **View modes** — *Map* (scan + reference traces), *Classification* (data only, no photo), *Both*.
-- **Overlay export** — render the current classification to a PNG at the source-map resolution, so you
-  can drop it beside the scan and spot mistakes.
-- **Anomaly check** — highlight unclassified hexes, orphan hexsides, and unconfirmed *draft* hexes.
-- **Configurable palette** — terrain, features, hexside features, kinds, and colors live in a JSON
-  config; any game supplies its own vocabulary. The bundled default is GotA's (`palettes/gota.json`).
-- **WMP draft import** — ingest a wargame-map-parser classification as a low-confidence draft to refine.
-- **TWU on-ramp** — import TWU `rivers.json` (`hexsides` pair-arrays) and `rail.json` (`links` pair-arrays or `{a,b}` objects) with strict validation and loud errors, then export TWU-exact files (`rivers.json` + `rail.json` with `hexes` endpoint union).
-- **Reference trace overlays** with opacity control, brush drag-assign, edge-paint drag-assign, undo/redo, and a palette-driven legend.
-- **Session autosave** — your work persists to `localStorage` on every change and restores on the next
-  visit, so an accidental reload never loses hand-assignment work.
-- **grid_version 2 (jagged grids)** — supports lattices whose row length varies by parity (even/odd
-  rows have different column counts), for maps whose true column count isn't uniform; the loader
-  fails loud rather than silently truncating a short row.
-- **Per-layer clear** — a confirm-gated × next to each layer in the Layers panel wipes just that
-  layer's edges, without touching the others.
-- **Shift-to-snap edge drawing** — hold Shift while edge-painting to snap the cursor to the nearest
-  valid hexside (cyan preview), useful at low zoom or on blurry scans.
-- **Terrain click-toggle parity** — clicking a hex already painted with the active terrain clears it
-  back to unset, matching hexside toggle behavior.
-- **Alt-click erase-all** — Alt-click a hexside to strip every feature it carries in one action, not
-  just the active ink.
-- **Hexside stroke-opacity slider** — fade hexside line strength independently of the terrain-fill
-  wash, for scans where the trace overlay competes with thin printed ink.
-- **Terrain/grid display on raw loads** — a project loaded straight from its source files (not
-  through a saved autosave) reliably shows its terrain fill and grid overlay now; a prior gate
-  silently blanked both when no autosave existed yet.
-- **Per-project launchers** — double-click `.command` files boot straight into Napoleon at Bay, TWU
-  East Prussia, or Guns of the Americas with the map + every layer preloaded; no manual project
-  picking.
+On macOS, double-click `Launch Hexwright.command` to start a local server and open the editor. Put private project data under `local/` (gitignored); reference it with `?project=local/my-game/project.json`.
 
-- **Overlay opacity slider** — fade the terrain-fill wash in Both view so the scan stays
-  traceable underneath; hexsides, grid, and traces keep full strength. Dragging it from any
-  view switches you to Both (it never silently no-ops).
-- **Nudge map alignment** (`n`) — drag the scan under the fixed digital grid, or arrow keys
-  for 1-px steps (Shift = ×10). The offset autosaves with the project: align once, aligned
-  forever. The pragmatic answer to calibration drift — move the imagery, keep the hex data
-  canonical.
-- **In-app help** (`?`) — full guide + shortcut table from the toolbar.
-- **Double-click launcher** (`Launch Hexwright.command`, macOS) — starts the local server
-  (from the PARENT folder, so gitignored `local/` manifests can reference sibling-repo
-  full-resolution maps that must not enter this public repo) and opens the editor; boots
-  straight into `local/gota-fullres.json` when present via the `?project=<manifest>` URL
-  parameter.
+## Editor modes
 
-## Edge paint quick use
+Hexwright has five tool modes on the left rail:
 
-Turn on **Edge paint** (`e`), pick a hexside feature chip, then paint directly on map edges.
+| Mode | Key | Purpose |
+| --- | --- | --- |
+| **Inspect** | (default) | Click a hex to open the inspector. Toggle terrain, in-hex features, and individual hexside features. |
+| **Terrain paint** | `b` | Brush-assign base terrain. Click toggles off a hex already painted with the active ink. Drag paints a stroke (one undo entry per stroke). |
+| **Hexside edges** | `e` | Paint shared edges. Click toggles the active feature. Drag sets on. **Shift** snaps the cursor to the nearest valid edge (cyan preview). **Alt+click** or **Alt+drag** erases only the active ink. **Alt+click** with no active ink strips every feature on that edge. A **stroke-opacity** slider fades line strength without affecting terrain fill. |
+| **Point features** | `p` | Place typed markers (city, fort, objective, etc.) with optional numeric attributes. Click an existing marker to edit name and attrs. |
+| **Grid nudge** | `n` | Drag the scan under the fixed grid, or use arrow keys for 1 px steps (Shift = 10 px). Offset persists in the project autosave. |
 
-- **Click** toggles the active feature on the nearest valid shared edge.
-- **Drag** paints (set-on) across edges; one drag stroke is one undo entry.
-- **Alt+click / Alt+drag** erases the active feature from hit edges.
-- Edge paint takes pointer priority while enabled; turn it off and normal pan/inspect behavior returns.
+Middle-mouse drag pans in every mode. `v` cycles view: Map, Classification, Both. `?` opens the in-app help and shortcut table.
 
-| Shortcut | Action |
-| --- | --- |
-| `Drag` | Pan |
-| `Wheel` | Zoom |
-| `Click` | Inspect hex |
-| `e` | Toggle edge paint mode |
-| `b` | Toggle brush mode |
-| `v` | Cycle view mode |
-| `1`-`0` | Quick terrain select |
-| `Esc` | Close inspector |
-| `Ctrl/Cmd + Z` | Undo |
+## Grid schema
 
-## Data model
+Hex codes use flat-top **even-q** addressing: `"0803"` = column 08, row 03.
 
-A project is flat-top even-q, addressed by CCRR hex codes (`"0803"` = column 08, row 03).
+### Version 1 (rectangular)
 
-- **`hexgrid`** — grid calibration (the hex-to-pixel formula + image dimensions).
-- **`terrain`** — `{"terrain": {"CCRR": terrainKey}}`; one base terrain per hex.
-- **`hexsides`** (exported) — grouped by layer for back-compatibility:
-  `{"rivers":[{a,b}], "roads":[...], "mountains":[...], ...}`, each shared edge stored once with `a<b`.
-  An edge carrying several features appears in each of its layers. Untouched layers such as `theaters`
-  and `boundaries` survive a load/export round-trip verbatim.
-- **`hexFeatures`** — `{"CCRR": ["city", ...]}` in-hex point features.
+Legacy grids omit `grid_version` or set `grid_version: 1`. Every column has the same row count (`n_rows`, or derived from `image_full` and pitch).
 
-Internally hexsides are per-edge feature arrays; the grouped shape is the export contract.
+Cell center in image pixels:
 
-## Bring your own game
+```
+x = x_intercept_col0 + col * col_pitch_x
+y = y_intercept_row0 + row * row_pitch_y + (col even ? even_col_down_offset : 0)
+```
 
-Hexwright is data-contract driven. To onboard a new game you provide a grid JSON, a palette JSON, and a project manifest.
+Flat-top circumradius: `col_pitch_x / 1.5`.
 
-- **Grid contract (`hexgrid`)**: include the flat-top even-q calibration fields Hexwright reads (`x_model.x_intercept_col0`, `x_model.col_pitch_x`, `y_model.y_intercept_row0`, `y_model.row_pitch_y`, `y_model.even_col_down_offset`, or equivalent legacy aliases) plus `image_full` when available.
-- **Palette contract**: define `terrain`, `hexFeatures`, and `hexsideFeatures` in JSON. Each hexside feature needs `key`, `kind` (`edge` or `crossing`), color, and optional `exportLayer`/aliases.
-- **Manifest contract**: `name`, `map`, `hexgrid`, `terrain`, optional `hexsides`, optional `traces`, optional `imageFull`, optional `palette`.
+Required calibration fields (modern or legacy aliases): `x_model.x_intercept_col0`, `x_model.col_pitch_x`, `y_model.y_intercept_row0`, `y_model.row_pitch_y`, `y_model.even_col_down_offset`, plus `image_full: [width, height]`.
 
-Manifest example:
+### Version 2 (jagged rows)
+
+Set `grid_version: 2` when even and odd columns hold different row counts (common on maps whose printed columns stagger).
+
+```
+rowCount(col) = (col % 2 === 0) ? row_counts_by_parity.even : row_counts_by_parity.odd
+isValidCell(col, row) = row >= 0 && row < rowCount(col)
+```
+
+Centers use `odd_col_y_offset` on odd columns instead of v1 even-column offset:
+
+```
+x = x_intercept_col0 + col * col_pitch_x
+y = y_intercept_row0 + row * row_pitch_y + (col odd ? odd_col_y_offset : 0)
+```
+
+A v2 grid without `row_counts_by_parity` fails load with an explicit error (no silent truncation).
+
+## Hexside layers and class-split export
+
+Internally, hexsides are stored per canonical edge key (`"a|b"` with `a < b`) as an array of palette feature keys. An edge can carry several features (river plus road, primary plus secondary river, etc.).
+
+**Export** regroups edges into named layers for back-compatibility: `{"rivers": [{a,b}, ...], "roads": [...], ...}`. Each feature's `exportLayer` in the palette names its bucket. Edges with multiple features appear in every relevant layer.
+
+**Class-split layers** (for example `rivers-primary` / `rivers-secondary`) map through `hexsideAliases` to distinct palette keys. On load, grouped v1 bundles populate `loadedHexsides`; export merges edited internal state back without duplicating pairs. Dual-perspective keys (`a|b` and `b|a`) and non-canonical ordering are normalized on export.
+
+**Kind** controls rendering: `edge` features draw along the shared side; `crossing` features draw a short rung across the midpoint (roads, rails, bridges).
+
+## Project manifests
+
+A manifest JSON lists paths relative to the served root (typically the parent of this repo):
 
 ```json
 {
-  "name": "My Game",
-  "map": "assets/board-web.jpg",
+  "name": "My board",
+  "map": "../my-game/assets/board.jpg",
   "imageFull": [5000, 3200],
-  "hexgrid": "data/hexgrid.json",
-  "terrain": "data/terrain.json",
-  "hexsides": "data/hexsides.json",
-  "palette": "palettes/my-game.json"
+  "hexgrid": "local/my-game/hexgrid.json",
+  "terrain": "local/my-game/terrain.json",
+  "hexsides": "local/my-game/hexsides.json",
+  "features": "local/my-game/features.json",
+  "palette": "local/palettes/my-game.json",
+  "blankLattice": false,
+  "traces": [
+    { "name": "rivers", "img": "local/my-game/traces/rivers.png", "layer": "rivers" }
+  ]
 }
 ```
 
-Load a manifest directly at boot with `?project=<manifest-url>`, for example:
+| Field | Role |
+| --- | --- |
+| `name` | Display name and autosave slot key |
+| `map` | Board raster (downscaled web JPEG or path to full-res sibling repo) |
+| `imageFull` | Full-resolution `[width, height]` for overlay export scaling |
+| `hexgrid` | Grid calibration JSON |
+| `terrain` | `{"terrain": {"CCRR": "key", ...}}` |
+| `hexsides` | Grouped v1 bundle or v2 internal shape (loader migrates) |
+| `features` | Point-feature document (see below) |
+| `palette` | Palette JSON (terrain, hexFeatures, hexsideFeatures, aliases) |
+| `blankLattice` | When `true`, show every valid grid cell even if terrain is empty (hexside-only projects) |
+| `traces` | Optional reference PNG overlays with opacity control |
 
-- [http://localhost:8000/hexwright/?project=samples/twu-project.json](http://localhost:8000/hexwright/?project=samples/twu-project.json)
-
-## WMP pipeline (auto-guess, then refine)
-
-[wargame-map-parser](https://github.com/lerugray/wargame-map-parser) can classify hex-fill terrain
-from a scan. Its output already uses the same CCRR addressing:
-
-```
-python -m parser.export_hexwright wmp-terrain.json -o gota-terrain.hexwright.json
-```
-
-In Hexwright, **Import WMP draft** loads that file, marks every imported hex as an unconfirmed *draft*
-(visible in the Anomaly overlay), and you refine + confirm from there. The full loop:
-scan -> WMP rough classify -> Hexwright hand-refine -> canonical export.
-
-## TWU pipeline (rivers + rail)
-
-TWU on-ramp scope is intentionally narrow: rivers + rail only (no fortress import/export path).
-
-1. Keep `hexwright` and `twu-deluxe-digital` as sibling checkouts.
-2. Start the server from the parent directory so sibling paths resolve:
-
-   ```
-   cd ..
-   python3 -m http.server 8000
-   ```
-
-3. Open Hexwright with the TWU template manifest:
-
-   ```
-   http://localhost:8000/hexwright/?project=samples/twu-project.json
-   ```
-
-4. Update `samples/twu-project.json` paths to match your local TWU repo layout.
-5. Use **Import TWU layer** for each source file (`rivers.json`, then `rail.json`).
-6. Refine by hand with edge paint.
-7. Use **Export -> TWU rivers+rail** to write:
-   - `rivers.json`: `_comment` + `hexsides: [["a","b"], ...]`
-   - `rail.json`: `_comment` + `links: [["a","b"], ...]` + `hexes` endpoint union
-
-Validation is strict and loud: wrong-shaped TWU files fail import with an explicit status error and no data changes.
-
-## Testing
+Boot directly:
 
 ```
-npm test               # headless Playwright suites: load / assign / export / round-trip / UI / autosave
+http://localhost:8000/hexwright/?project=local/my-game/project.json
 ```
+
+**Launcher pattern:** copy `Launch Hexwright.command`, serve from the parent directory, and open a fixed `?project=` URL. Keep per-game launchers and all of `local/` out of version control; the generic launcher opens the start screen (or a local default manifest if you add one).
+
+## Palette schema
+
+Palettes live in JSON. A neutral example ships at `palettes/default.json`.
+
+```json
+{
+  "name": "Default",
+  "terrain": [{ "key": "clear", "label": "Clear", "color": "#c8b88a" }],
+  "hexFeatures": [{
+    "key": "city",
+    "label": "City",
+    "glyph": "◎",
+    "attrs": [{ "key": "vp", "label": "VP", "type": "number" }]
+  }],
+  "hexsideFeatures": [{
+    "key": "river",
+    "label": "River",
+    "color": "#2878ff",
+    "kind": "edge",
+    "exportLayer": "rivers"
+  }, {
+    "key": "road",
+    "label": "Road",
+    "color": "#b96b1f",
+    "kind": "crossing",
+    "dash": true,
+    "exportLayer": "roads"
+  }],
+  "terrainAliases": { "forest": "woods" },
+  "hexsideAliases": { "rivers": "river", "impassible": "impassable" }
+}
+```
+
+- **terrain**: base fill per hex; `color` drives Classification view and overlay export.
+- **hexFeatures**: point markers; optional `attrs` define inspector fields (`type: "number"` today).
+- **hexsideFeatures**: `kind` is `edge` or `crossing`; optional `dash`; `exportLayer` names the v1 export bucket.
+- **Aliases**: map legacy import names to palette keys.
+
+Hexwright loads `palettes/default.json` when a manifest omits `palette`. You can also load a palette file from the File menu.
+
+## Exports and imports
+
+**Export menu (canonical, deduped):**
+
+| Output | Shape |
+| --- | --- |
+| `hexsides.json` | Grouped layers; each pair `{a,b}` with `a < b`, once per layer |
+| `terrain.json` | `{"terrain": {"CCRR": key}}` |
+| `features.json` | `{"_comment", "features": [{code, type, name?, attrs}]}` sorted by code |
+| Classification PNG | Raster at `imageFull` resolution |
+| TWU rivers / rail | Strict pair-array contracts for games that use that on-ramp |
+
+**Import menu:**
+
+| Input | Behavior |
+| --- | --- |
+| Raw `hexsides.json` / `terrain.json` | Replace current layer data |
+| WMP draft | Classifier output with alias mapping; marks hexes `draft` until touched |
+| TWU layer | Validates shape strictly; wrong files fail loud with no mutation |
+
+Copy-to-clipboard actions use the same canonical objects as file export.
+
+## Autosave, restore, and recents
+
+Every edit debounces to `localStorage` (~1 s) keyed by project name slug. On the next visit, a restore prompt appears when a slot is newer than the manifest load. Recents on the start screen list recently opened manifests. A normal refresh reloads editor code but preserves autosaved project state.
+
+## Verify suite
+
+```
+npm test
+```
+
+Runs headless Playwright checks under `verify/`: smoke load, functional store/renderer API, UI interactions, edge and terrain paint, shift-snap, TWU import/export round-trip, blank lattice, class-layer load, hexsides export dedup, v2 terrain fill, autosave slots, per-layer clear, and point features.
+
+Checks that need operator data under `local/` print `SKIP local game data not present (...)` and exit 0 when those files are absent, so a fresh public clone passes `npm test`. With `local/` populated, the full suite runs unchanged.
+
+Run individual checks:
+
+```
+node verify/smoke.mjs
+node verify/features-check.mjs
+node verify/twu-check.mjs
+```
+
+See `verify/README.md` for the full list.
 
 ## License
 
-[MIT](LICENSE) © Ray Weiss
+MIT. See [LICENSE](LICENSE).
