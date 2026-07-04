@@ -18,7 +18,7 @@ if ! is_hexwright "$PORT"; then
     PORT=8643
   fi
   if ! is_hexwright "$PORT"; then
-    nohup python3 -m http.server "$PORT" >/dev/null 2>&1 &
+    nohup python3 "$HERE/scripts/serve_nocache.py" "$PORT" >/dev/null 2>&1 &
     disown
     sleep 1
   fi
