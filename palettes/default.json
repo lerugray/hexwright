@@ -3,6 +3,7 @@
   "terrain": [
     { "key": "clear", "label": "Clear", "color": "#c8b88a" },
     { "key": "woods", "label": "Woods", "color": "#5c7a4a" },
+    { "key": "woods_swamp", "label": "Woods+Marsh (example)", "colors": ["#5c7a4a", "#6b7a5a"] },
     { "key": "rough", "label": "Rough", "color": "#a98a5c" },
     { "key": "swamp", "label": "Swamp", "color": "#6b7a5a" },
     { "key": "water", "label": "Water", "color": "#3f78b4" },

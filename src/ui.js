@@ -1,5 +1,5 @@
 import {
-  TERRAIN_COLORS, EDITABLE_LAYERS, HEXSIDE_COLORS,
+  TERRAIN_COLORS, EDITABLE_LAYERS, HEXSIDE_COLORS, terrainSwatchBackground,
   hexCenter, hexPolygon, edgeNeighbor
 } from './geometry.js';
 
@@ -183,7 +183,7 @@ export class UI {
 
     this.els['hexed-terrain-grid'].innerHTML = terrain.map(t => `
       <button type="button" class="terr" data-terrain="${t.key}">
-        <span class="tswatch" style="background:${t.color || '#888'}"></span>
+        <span class="tswatch" style="background:${terrainSwatchBackground(t)}"></span>
         <span>${t.label || t.key}</span>
       </button>
     `).join('');
@@ -1054,7 +1054,7 @@ export class UI {
       const active = t.key === this.brushTerrain;
       const keycap = this._shortcutLabel(idx);
       return `<div class="ink terrain-ink${active ? ' is-active' : ''}" data-ink-key="${t.key}">
-        <span class="swatch" style="background:${t.color || '#888'}"></span>
+        <span class="swatch" style="background:${terrainSwatchBackground(t)}"></span>
         <span class="name">${t.label || t.key}</span>
         ${keycap ? `<span class="kbd">${keycap}</span>` : ''}
       </div>`;
@@ -1205,7 +1205,7 @@ export class UI {
   _terrainColorForCursor() {
     const palette = this.store.getPalette();
     const terrain = (palette?.terrain || []).find((t) => t.key === this.brushTerrain);
-    return terrain?.color || '#cccccc';
+    return terrain?.color || terrain?.colors?.[0] || '#cccccc';
   }
 
   _edgeColorForCursor() {
@@ -1314,6 +1314,45 @@ export class UI {
     }
   }
 
+  _setHexEditorFill(terrain) {
+    const fill = this.els['hexed-fill'];
+    if (Array.isArray(terrain?.colors) && terrain.colors.length >= 2) {
+      const svgNs = 'http://www.w3.org/2000/svg';
+      const svg = this.els['hexed-svg'];
+      let defs = svg.querySelector('defs');
+      if (!defs) {
+        defs = document.createElementNS(svgNs, 'defs');
+        svg.insertBefore(defs, svg.firstChild);
+      }
+      let grad = defs.querySelector('#hexed-fill-grad');
+      if (!grad) {
+        grad = document.createElementNS(svgNs, 'linearGradient');
+        grad.id = 'hexed-fill-grad';
+        grad.setAttribute('gradientUnits', 'objectBoundingBox');
+        grad.setAttribute('x1', '0');
+        grad.setAttribute('y1', '0');
+        grad.setAttribute('x2', '1');
+        grad.setAttribute('y2', '1');
+        for (let i = 0; i < 4; i++) grad.appendChild(document.createElementNS(svgNs, 'stop'));
+        defs.appendChild(grad);
+      }
+      const [c1, c2] = terrain.colors;
+      const stops = grad.querySelectorAll('stop');
+      stops[0].setAttribute('offset', '0%');
+      stops[0].setAttribute('stop-color', c1);
+      stops[1].setAttribute('offset', '50%');
+      stops[1].setAttribute('stop-color', c1);
+      stops[2].setAttribute('offset', '50%');
+      stops[2].setAttribute('stop-color', c2);
+      stops[3].setAttribute('offset', '100%');
+      stops[3].setAttribute('stop-color', c2);
+      fill.setAttribute('fill', 'url(#hexed-fill-grad)');
+    } else {
+      fill.setAttribute('fill', terrain?.color || '#888');
+    }
+    fill.setAttribute('fill-opacity', '0.18');
+  }
+
   _refreshInspector() {
     if (!this.inspectorHex) return;
     const code = this.inspectorHex;
@@ -1323,9 +1362,7 @@ export class UI {
     this.els['hexed-terrain-current'].textContent = terrain?.label || terrainKey;
     this.els['hexed-center-code'].textContent = code;
 
-    const terrainColor = terrain?.color || '#888';
-    this.els['hexed-fill'].setAttribute('fill', terrainColor);
-    this.els['hexed-fill'].setAttribute('fill-opacity', '0.18');
+    this._setHexEditorFill(terrain);
 
     this.els['hexed-terrain-grid'].querySelectorAll('.terr[data-terrain]').forEach(btn => {
       btn.classList.toggle('is-active', btn.dataset.terrain === terrainKey);

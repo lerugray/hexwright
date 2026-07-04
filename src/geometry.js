@@ -1,5 +1,34 @@
 // Hexwright geometry helpers
 
+/** Palette terrain entry -> canvas fill/line; optional composite `colors: [c1, c2]`. */
+export function paletteTerrainColors(entry, mode = 'overlay') {
+  if (!entry) return null;
+  const composite = Array.isArray(entry.colors) && entry.colors.length >= 2
+    ? [entry.colors[0], entry.colors[1]]
+    : null;
+  const base = entry.color || composite?.[0];
+  if (!base) return null;
+  const suffix = (alpha) => (mode === 'full' ? '' : alpha);
+  const paint = (c, alpha) => `${c}${suffix(alpha)}`;
+  if (composite) {
+    return {
+      composite: true,
+      fill: [paint(composite[0], '40'), paint(composite[1], '40')],
+      line: paint(composite[0], '73')
+    };
+  }
+  return { fill: paint(base, '40'), line: paint(base, '73') };
+}
+
+/** CSS background for terrain swatches (solid or diagonal split). */
+export function terrainSwatchBackground(entry, fallback = '#888') {
+  if (Array.isArray(entry?.colors) && entry.colors.length >= 2) {
+    const [c1, c2] = entry.colors;
+    return `linear-gradient(135deg, ${c1} 50%, ${c2} 50%)`;
+  }
+  return entry?.color || fallback;
+}
+
 export const TERRAIN_COLORS = {
   water:   { fill: 'rgba(56,112,164,0.40)', line: 'rgba(86,150,210,0.55)' },
   clear:   { fill: 'rgba(190,210,140,0.25)', line: 'rgba(210,225,165,0.45)' },

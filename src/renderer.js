@@ -1,5 +1,5 @@
 import {
-  TERRAIN_COLORS, HEXSIDE_COLORS,
+  TERRAIN_COLORS, HEXSIDE_COLORS, paletteTerrainColors,
   hexCenter, hexPolygon, sharedEdgeEndpoints, pointInPolygon,
   worldToScreen, screenToWorld, edgeNeighbor, edgeMidpoint, hexRadius, nearestEdge,
   isValidCell, parseCCRR, EDGE_HIT_TOLERANCE, EDGE_SNAP_ASSIST_TOLERANCE
@@ -767,14 +767,53 @@ export class MapRenderer {
     const palette = this.store.getPalette();
     if (palette && palette.terrain) {
       const t = palette.terrain.find(x => x.key === type);
-      if (t) {
-        const c = t.color;
-        return mode === 'full'
-          ? { fill: c, line: c }
-          : { fill: `${c}40`, line: `${c}73` };
-      }
+      const resolved = paletteTerrainColors(t, mode);
+      if (resolved) return resolved;
     }
     return TERRAIN_COLORS[type] || TERRAIN_COLORS.clear;
+  }
+
+  _traceHexPath(ctx, poly) {
+    ctx.beginPath();
+    ctx.moveTo(poly[0].x, poly[0].y);
+    for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+    ctx.closePath();
+  }
+
+  _fillHexTerrain(ctx, poly, colors) {
+    this._traceHexPath(ctx, poly);
+    if (colors.composite) {
+      const xs = poly.map(p => p.x);
+      const ys = poly.map(p => p.y);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      const [fillA, fillB] = colors.fill;
+      ctx.save();
+      ctx.clip();
+      ctx.beginPath();
+      ctx.moveTo(minX, minY);
+      ctx.lineTo(maxX, minY);
+      ctx.lineTo(minX, maxY);
+      ctx.closePath();
+      ctx.fillStyle = fillA;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(maxX, minY);
+      ctx.lineTo(maxX, maxY);
+      ctx.lineTo(minX, maxY);
+      ctx.closePath();
+      ctx.fillStyle = fillB;
+      ctx.fill();
+      ctx.restore();
+      this._traceHexPath(ctx, poly);
+    } else {
+      ctx.fillStyle = colors.fill;
+      ctx.fill();
+    }
+    ctx.strokeStyle = colors.line;
+    ctx.stroke();
   }
 
   _drawHexFills(ctx, view, mode = 'overlay') {
@@ -793,14 +832,7 @@ export class MapRenderer {
       if (!type) continue;
       const colors = this._terrainColor(type, mode);
       const poly = hexPolygon(code, grid);
-      ctx.beginPath();
-      ctx.moveTo(poly[0].x, poly[0].y);
-      for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
-      ctx.closePath();
-      ctx.fillStyle = colors.fill;
-      ctx.fill();
-      ctx.strokeStyle = colors.line;
-      ctx.stroke();
+      this._fillHexTerrain(ctx, poly, colors);
     }
     ctx.restore();
   }
