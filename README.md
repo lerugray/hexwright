@@ -20,7 +20,7 @@ and export the canonical `hexgrid` / `terrain` / `hexsides` JSON your game reads
 
 1. **Double-click** `Launch Hexwright - Napoleon at Bay.command` **or** `Launch Hexwright - TWU East Prussia.command` (in this folder). Your browser opens with the map raster and every hexside layer already loaded — nothing to import.
 2. **Pick a project** by launching the one you want; each launcher opens straight into that map. (The plain `Launch Hexwright.command` opens the start screen with no project loaded.)
-3. **Fix a hexside:** click **Edges** on the left rail, pick an ink in the Brush card (River / Road on NaB; River / Rail / Border / Impassable on TWU), then click a hexside line to add it — or **Alt-click** a line to remove it. (Or use **Inspect**: click a hex, then tap one of its 6 edges and toggle a feature.)
+3. **Fix a hexside:** click **Edges** on the left rail, pick an ink in the Brush card (Primary/Secondary River, Primary/Secondary Road, Bridge on NaB; River / Rail / Border / Impassable on TWU), then click a hexside line to add it — or **Alt-click** a line to remove it. (Or use **Inspect**: click a hex, then tap one of its 6 edges and toggle a feature.)
 4. **Export** your work: click **Export ▾** (top-right) → **hexsides.json**. Do this before closing — the exported file is your saved copy.
 5. **Where it lands:** `~/Downloads/hexsides.json`. To push your edits back into the game, run `python3 from_hexwright.py` inside that game's `tools/terrain-extraction/hexsides/` folder — it rewrites the game's river/road/rail/border/impassable files from your export.
 
