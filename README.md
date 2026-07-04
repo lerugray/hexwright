@@ -18,7 +18,7 @@ and export the canonical `hexgrid` / `terrain` / `hexsides` JSON your game reads
 
 ## Ray — open a project and touch up hexsides (start here)
 
-1. **Double-click** `Launch Hexwright - Napoleon at Bay.command` **or** `Launch Hexwright - TWU East Prussia.command` (in this folder). Your browser opens with the map raster and every hexside layer already loaded — nothing to import.
+1. **Double-click** `Launch Hexwright - Napoleon at Bay.command`, `Launch Hexwright - TWU East Prussia.command`, **or** `Launch Hexwright - Guns of the Americas.command` (in this folder). Your browser opens with the map raster and every hexside layer already loaded — nothing to import.
 2. **Pick a project** by launching the one you want; each launcher opens straight into that map. (The plain `Launch Hexwright.command` opens the start screen with no project loaded.)
 3. **Fix a hexside:** click **Edges** on the left rail, pick an ink in the Brush card (Primary/Secondary River, Primary/Secondary Road, Bridge on NaB; River / Rail / Border / Impassable on TWU), then click a hexside line to add it — or **Alt-click** a line to remove it. (Or use **Inspect**: click a hex, then tap one of its 6 edges and toggle a feature.) **Middle-mouse drag pans in any mode** — left-drag keeps painting while a paint tool is active. A hexside on the map's outer edge has no hex on the other side and can't carry a feature; the status bar says so if you click one.
 4. **Export** your work: click **Export ▾** (top-right) → **hexsides.json**. Do this before closing — the exported file is your durable copy. The editor also autosaves about a second after every change (any project with terrain **or** hexside content) and offers to restore on the next launch; a regular browser refresh is safe and always loads current editor code.
@@ -87,6 +87,25 @@ The sample loader needs the local server for `fetch`; the file pickers work eith
 - **Reference trace overlays** with opacity control, brush drag-assign, edge-paint drag-assign, undo/redo, and a palette-driven legend.
 - **Session autosave** — your work persists to `localStorage` on every change and restores on the next
   visit, so an accidental reload never loses hand-assignment work.
+- **grid_version 2 (jagged grids)** — supports lattices whose row length varies by parity (even/odd
+  rows have different column counts), for maps whose true column count isn't uniform; the loader
+  fails loud rather than silently truncating a short row.
+- **Per-layer clear** — a confirm-gated × next to each layer in the Layers panel wipes just that
+  layer's edges, without touching the others.
+- **Shift-to-snap edge drawing** — hold Shift while edge-painting to snap the cursor to the nearest
+  valid hexside (cyan preview), useful at low zoom or on blurry scans.
+- **Terrain click-toggle parity** — clicking a hex already painted with the active terrain clears it
+  back to unset, matching hexside toggle behavior.
+- **Alt-click erase-all** — Alt-click a hexside to strip every feature it carries in one action, not
+  just the active ink.
+- **Hexside stroke-opacity slider** — fade hexside line strength independently of the terrain-fill
+  wash, for scans where the trace overlay competes with thin printed ink.
+- **Terrain/grid display on raw loads** — a project loaded straight from its source files (not
+  through a saved autosave) reliably shows its terrain fill and grid overlay now; a prior gate
+  silently blanked both when no autosave existed yet.
+- **Per-project launchers** — double-click `.command` files boot straight into Napoleon at Bay, TWU
+  East Prussia, or Guns of the Americas with the map + every layer preloaded; no manual project
+  picking.
 
 - **Overlay opacity slider** — fade the terrain-fill wash in Both view so the scan stays
   traceable underneath; hexsides, grid, and traces keep full strength. Dragging it from any
