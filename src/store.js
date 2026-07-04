@@ -24,6 +24,30 @@ function todayStamp() {
   return new Date().toISOString().slice(0, 10);
 }
 
+export function validateNamesDocument(data, label = 'names') {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(`Expected ${label} shape: {"names":{"code":"Name",...}}.`);
+  }
+  if (!data.names || typeof data.names !== 'object' || Array.isArray(data.names)) {
+    throw new Error(`Expected ${label}.names to be an object.`);
+  }
+  for (const [code, name] of Object.entries(data.names)) {
+    if (typeof name !== 'string') {
+      throw new Error(`${label}.names[${JSON.stringify(code)}] must be a string.`);
+    }
+  }
+  return data;
+}
+
+function namesDocumentToState(data) {
+  const state = {};
+  for (const [code, name] of Object.entries(data.names || {})) {
+    const trimmed = String(name).trim();
+    if (trimmed) state[String(code).trim()] = trimmed;
+  }
+  return state;
+}
+
 export function validateFeaturesDocument(data, label = 'features') {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     throw new Error(`Expected ${label} shape: {"features":[{"code","type","name?","attrs"},...]}.`);
@@ -164,6 +188,7 @@ export class ProjectStore {
       grid: null,
       terrain: { terrain: {} },
       features: {},
+      names: {},
       hexFeatures: {},
       hexsides: emptyHexsidesState(),
       provenance: {},
@@ -241,6 +266,7 @@ export class ProjectStore {
       grid: project.grid || null,
       terrain: { terrain: deepClone(migrated.terrain || {}) },
       features: deepClone(migrated.features || {}),
+      names: deepClone(migrated.names || {}),
       hexFeatures: deepClone(migrated.hexFeatures || {}),
       hexsides: deepClone(migrated.hexsides || emptyHexsidesState()),
       provenance: deepClone(migrated.provenance || {}),
@@ -352,7 +378,20 @@ export class ProjectStore {
       }
     }
 
-    return { terrain, features, hexFeatures, hexsides, provenance };
+    const names = {};
+    if (project.names) {
+      if (typeof project.names === 'object' && !Array.isArray(project.names)) {
+        if (project.names.names && typeof project.names.names === 'object' && !Array.isArray(project.names.names)) {
+          Object.assign(names, namesDocumentToState(validateNamesDocument(project.names)));
+        } else if (!project.names.features) {
+          for (const [code, name] of Object.entries(project.names)) {
+            if (typeof name === 'string' && String(name).trim()) names[String(code).trim()] = String(name).trim();
+          }
+        }
+      }
+    }
+
+    return { terrain, features, names, hexFeatures, hexsides, provenance };
   }
 
   setProject(patch) {
@@ -421,6 +460,7 @@ export class ProjectStore {
     const snap = {
       terrain: deepClone(this.state.terrain),
       features: deepClone(this.state.features),
+      names: deepClone(this.state.names || {}),
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance)
@@ -464,6 +504,7 @@ export class ProjectStore {
     this.redoStack.push({
       terrain: deepClone(this.state.terrain),
       features: deepClone(this.state.features),
+      names: deepClone(this.state.names || {}),
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance)
@@ -480,6 +521,7 @@ export class ProjectStore {
     this.undoStack.push({
       terrain: deepClone(this.state.terrain),
       features: deepClone(this.state.features),
+      names: deepClone(this.state.names || {}),
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance)
@@ -493,6 +535,7 @@ export class ProjectStore {
   applySnap(snap) {
     this.state.terrain = snap.terrain;
     this.state.features = snap.features || {};
+    this.state.names = snap.names || {};
     this.state.hexFeatures = snap.hexFeatures;
     this.state.hexsides = snap.hexsides;
     this.state.provenance = snap.provenance;
@@ -662,6 +705,50 @@ export class ProjectStore {
 
   exportFeaturesJson() {
     return JSON.stringify(this.exportFeaturesObject(), null, 2);
+  }
+
+  getHexName(code) {
+    return this.state.names?.[code] || '';
+  }
+
+  setHexName(code, name) {
+    const trimmed = name != null ? String(name).trim() : '';
+    const current = this.state.names?.[code] || '';
+    if (current === trimmed) return;
+    this.pushUndo();
+    if (!this.state.names) this.state.names = {};
+    if (trimmed) this.state.names[code] = trimmed;
+    else delete this.state.names[code];
+    this.notify('names');
+  }
+
+  importNames(input) {
+    const data = typeof input === 'string' ? JSON.parse(input) : input;
+    validateNamesDocument(data);
+    const imported = namesDocumentToState(data);
+    this.pushUndo();
+    if (!this.state.names) this.state.names = {};
+    for (const code of Object.keys(imported)) {
+      this.state.names[code] = imported[code];
+    }
+    this.notify('names');
+    return Object.keys(imported).length;
+  }
+
+  exportNamesObject() {
+    const source = this.state.names || {};
+    const names = {};
+    for (const code of Object.keys(source).sort((a, b) => a.localeCompare(b))) {
+      names[code] = source[code];
+    }
+    return {
+      _comment: `edited in Hexwright v2.1 ${todayStamp()}`,
+      names
+    };
+  }
+
+  exportNamesJson() {
+    return JSON.stringify(this.exportNamesObject(), null, 2);
   }
 
   // ----------------- hexsides (per-edge arrays) -----------------
@@ -1039,6 +1126,7 @@ export class ProjectStore {
       grid: deepClone(this.state.grid),
       terrain: this.exportTerrainObject(),
       features: this.exportFeaturesObject(),
+      names: this.exportNamesObject(),
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance),

@@ -857,7 +857,14 @@ export class MapRenderer {
 
     const grid = this.store.state.grid;
     const terrain = this.store.state.terrain.terrain || {};
+    const names = this.store.state.names || {};
     const palette = this.store.getPalette();
+    const centers = this.store.centers || {};
+    const codes = new Set(Object.keys(terrain));
+    for (const code of Object.keys(names)) {
+      if (names[code] && centers[code]) codes.add(code);
+    }
+
     ctx.save();
     ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
@@ -865,26 +872,36 @@ export class MapRenderer {
     ctx.textBaseline = 'middle';
     if (fade < 1) ctx.globalAlpha = fade;
 
-    for (const code of Object.keys(terrain)) {
-      const type = terrain[code];
-      if (!type) continue;
-      const entry = palette?.terrain?.find((x) => x.key === type);
-      const abbr = terrainAbbrForKey(type, entry);
-      if (!abbr) continue;
-
-      const center = hexCenter(code, grid);
-      const r = hexRadius(grid);
-      const labelPx = Math.max(8, Math.min(14, r * 0.38 * s));
-      if (labelPx < 6) continue;
-
-      const x = center.x;
-      const y = center.y - r * 0.33;
-      ctx.font = `600 ${labelPx / s}px var(--font-data, monospace)`;
+    const drawLabelText = (text, x, y, fontPx, weight = 600) => {
+      ctx.font = `${weight} ${fontPx / s}px var(--font-data, monospace)`;
       ctx.lineWidth = 3 / s;
       ctx.strokeStyle = INK_CASING;
       ctx.fillStyle = '#1a1a1a';
-      ctx.strokeText(abbr, x, y);
-      ctx.fillText(abbr, x, y);
+      ctx.strokeText(text, x, y);
+      ctx.fillText(text, x, y);
+    };
+
+    for (const code of codes) {
+      const type = terrain[code];
+      const entry = type ? palette?.terrain?.find((x) => x.key === type) : null;
+      const abbr = type ? terrainAbbrForKey(type, entry) : '';
+      const name = names[code]?.trim() || '';
+      if (!abbr && !name) continue;
+
+      const center = hexCenter(code, grid);
+      const r = hexRadius(grid);
+      const abbrPx = Math.max(8, Math.min(14, r * 0.38 * s));
+      const namePx = Math.max(7, Math.min(11, r * 0.28 * s));
+      if (abbr && abbrPx < 6 && !name) continue;
+
+      const x = center.x;
+      if (abbr) {
+        drawLabelText(abbr, x, center.y - r * 0.33, abbrPx, 600);
+      }
+      if (name) {
+        const nameY = abbr ? center.y - r * 0.08 : center.y - r * 0.33;
+        drawLabelText(name, x, nameY, namePx, 500);
+      }
     }
     ctx.restore();
   }

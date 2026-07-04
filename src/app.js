@@ -1,4 +1,4 @@
-import { ProjectStore } from './store.js';
+import { ProjectStore, validateNamesDocument } from './store.js';
 import { MapRenderer } from './renderer.js';
 import { UI } from './ui.js';
 import * as geo from './geometry.js';
@@ -249,6 +249,7 @@ function makeBlankProject({ grid = null, blankLattice = false } = {}) {
     traces: [],
     hexFeatures: {},
     features: {},
+    names: {},
     provenance: {},
     ...(blankLattice ? { blankLattice: true } : {})
   };
@@ -348,16 +349,18 @@ async function loadProjectFromManifest(manifestUrl) {
   const terrainUrl = new URL(manifest.terrain, base).href;
   const sidesUrl = manifest.hexsides ? new URL(manifest.hexsides, base).href : null;
   const featuresUrl = manifest.features ? new URL(manifest.features, base).href : null;
+  const namesUrl = manifest.names ? new URL(manifest.names, base).href : null;
   const paletteUrl = typeof manifest.palette === 'string'
     ? new URL(manifest.palette, base).href
     : null;
 
-  const [mapImg, grid, terrain, hexsides, features, palette] = await Promise.all([
+  const [mapImg, grid, terrain, hexsides, features, names, palette] = await Promise.all([
     loadImage(mapUrl),
     fetch(gridUrl).then(r => r.json()),
     fetch(terrainUrl).then(r => r.json()),
     sidesUrl ? fetch(sidesUrl).then(r => r.json()) : Promise.resolve(null),
     featuresUrl ? fetch(featuresUrl).then(r => r.json()) : Promise.resolve(null),
+    namesUrl ? fetch(namesUrl).then(r => r.json()) : Promise.resolve(null),
     paletteUrl ? fetch(paletteUrl).then(r => r.json()) : Promise.resolve(manifest.palette && typeof manifest.palette === 'object' ? manifest.palette : null)
   ]);
 
@@ -386,6 +389,7 @@ async function loadProjectFromManifest(manifestUrl) {
     terrain,
     hexsides,
     features,
+    names,
     palette,
     traces,
     blankLattice: manifest.blankLattice === true
@@ -576,6 +580,31 @@ async function main() {
           restored.features = restoredFeatures;
         }
       }
+      if (project.names) {
+        let manifestNames = null;
+        try {
+          manifestNames = validateNamesDocument(
+            project.names.names && typeof project.names.names === 'object'
+              ? project.names
+              : { names: project.names }
+          ).names;
+        } catch (err) {
+          console.warn('hexwright: manifest names skipped:', err.message);
+        }
+        if (manifestNames) {
+          const restoredDoc = restored.names;
+          const restoredNames = restoredDoc?.names && typeof restoredDoc.names === 'object'
+            ? { ...restoredDoc.names }
+            : (restoredDoc && typeof restoredDoc === 'object' && !Array.isArray(restoredDoc)
+              ? { ...restoredDoc }
+              : {});
+          for (const [code, name] of Object.entries(manifestNames)) {
+            if (restoredNames[code]) continue;
+            restoredNames[code] = name;
+          }
+          restored.names = restoredNames;
+        }
+      }
       await loadAndRender(restored);
       renderer.setViewMode('both');
       ui.setProjectSource(manifestLabel);
@@ -663,6 +692,11 @@ async function main() {
       } catch (err) {
         ui.status(`TWU import failed: ${err.message}`, 7000);
       }
+    },
+    importNames: async (file) => {
+      const text = await readFile(file);
+      const count = store.importNames(text);
+      ui.status(`Imported names.json (${count} hexes)`, 2000);
     },
     exportTwu: async () => {
       const rivers = store.exportTwuRiversObject();
@@ -819,7 +853,8 @@ async function main() {
         const land = Object.keys(store.state.terrain.terrain || {}).length;
         const sides = Object.keys(store.state.hexsides || {}).length;
         const feats = countPointFeatures(store.exportProjectObject());
-        if (land > 0 || sides > 0 || feats > 0) {
+        const named = Object.keys(store.state.names || {}).length;
+        if (land > 0 || sides > 0 || feats > 0 || named > 0) {
           const project = store.exportProjectObject();
           localStorage.setItem(
             sessionKeyForName(project.name),

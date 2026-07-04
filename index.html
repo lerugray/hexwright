@@ -54,6 +54,10 @@
             <span>Import terrain</span>
             <input type="file" id="import-terrain" accept=".json,application/json" hidden />
           </label>
+          <label class="file-btn" title="Import names.json">
+            <span>Import names</span>
+            <input type="file" id="import-names" accept=".json,application/json" hidden />
+          </label>
           <label class="file-btn" title="Import a wargame-map-parser terrain classification as an editable DRAFT (all imported hexes marked unconfirmed until you touch them)">
             <span>Import WMP draft</span>
             <input type="file" id="import-wmp" accept=".json,application/json" hidden />
@@ -78,6 +82,8 @@
           <button id="export-terrain-copy" type="button">Copy terrain</button>
           <button id="export-features-file" type="button">Export features.json</button>
           <button id="export-features-copy" type="button">Copy features</button>
+          <button id="export-names-file" type="button">Export names.json</button>
+          <button id="export-names-copy" type="button">Copy names</button>
           <button id="export-twu" type="button">TWU rivers+rail</button>
           <button id="export-overlay" type="button" title="Export classification PNG">Classification PNG</button>
         </div>
@@ -184,6 +190,13 @@
     </div>
 
     <div class="sect" style="border-top: 0;">
+      <label class="field-row">
+        <span class="lbl">Name</span>
+        <input id="hexed-name" type="text" class="field-input" placeholder="Location name" />
+      </label>
+    </div>
+
+    <div class="sect">
       <div class="sect-t"><span>Terrain</span><span class="hx-data" id="hexed-terrain-current"></span></div>
       <div class="terr-grid" id="hexed-terrain-grid"></div>
     </div>

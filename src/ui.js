@@ -73,13 +73,13 @@ export class UI {
       'map-dim', 'map-dim-value',
       'canvas-wrap',
       'export-overlay', 'toggle-anomaly', 'anomaly-count', 'load-palette', 'anomaly-status',
-      'import-sides', 'import-terrain', 'import-wmp', 'file-btn', 'file-popover', 'export-btn', 'export-popover',
+      'import-sides', 'import-terrain', 'import-names', 'import-wmp', 'file-btn', 'file-popover', 'export-btn', 'export-popover',
       'import-twu',
       'export-sides-file', 'export-sides-copy', 'export-terrain-file', 'export-terrain-copy',
-      'export-features-file', 'export-features-copy', 'export-twu',
+      'export-features-file', 'export-features-copy', 'export-names-file', 'export-names-copy', 'export-twu',
       'feature-inspector', 'feat-insp-close', 'feat-insp-title', 'feat-insp-name', 'feat-insp-attrs',
       'feat-insp-delete', 'feat-insp-save',
-      'hex-editor', 'hexed-close', 'hexed-title', 'hexed-terrain-current', 'hexed-terrain-grid',
+      'hex-editor', 'hexed-close', 'hexed-title', 'hexed-name', 'hexed-terrain-current', 'hexed-terrain-grid',
       'hexed-feat-count', 'hexed-featrow', 'hexed-edges-meta', 'hexed-svg', 'hexed-fill',
       'hexed-edges', 'hexed-edge-labels', 'hexed-center-code', 'hexed-on-edge-label',
       'hexed-edchips', 'hexed-inkgrid',
@@ -371,6 +371,10 @@ export class UI {
     this.els['undo'].addEventListener('click', () => this.store.undo());
     this.els['clear-select'].addEventListener('click', () => this.closeInspector());
     this.els['hexed-close'].addEventListener('click', () => this.closeInspector());
+    this.els['hexed-name'].addEventListener('change', () => {
+      if (!this.inspectorHex) return;
+      this.store.setHexName(this.inspectorHex, this.els['hexed-name'].value);
+    });
     this.els['feat-insp-close'].addEventListener('click', () => this.closeFeatureInspector());
     this.els['feat-insp-save'].addEventListener('click', () => this._saveFeatureInspector());
     this.els['feat-insp-delete'].addEventListener('click', () => this._deleteFeatureInspector());
@@ -439,6 +443,8 @@ export class UI {
     this.els['export-terrain-copy'].addEventListener('click', () => this._copy(this.store.exportTerrainJson(), 'terrain.json'));
     this.els['export-features-file'].addEventListener('click', () => this._download('features.json', this.store.exportFeaturesJson()));
     this.els['export-features-copy'].addEventListener('click', () => this._copy(this.store.exportFeaturesJson(), 'features.json'));
+    this.els['export-names-file'].addEventListener('click', () => this._download('names.json', this.store.exportNamesJson()));
+    this.els['export-names-copy'].addEventListener('click', () => this._copy(this.store.exportNamesJson(), 'names.json'));
     this.els['export-twu'].addEventListener('click', () => {
       if (this.loadHandlers?.exportTwu) this.loadHandlers.exportTwu();
     });
@@ -560,6 +566,7 @@ export class UI {
     this.els['load-sides'].addEventListener('change', (e) => handlers.sides(e.target.files[0]));
     this.els['import-sides'].addEventListener('change', (e) => handlers.importSides(e.target.files[0]));
     this.els['import-terrain'].addEventListener('change', (e) => handlers.importTerrain(e.target.files[0]));
+    this.els['import-names'].addEventListener('change', (e) => handlers.importNames(e.target.files[0]));
     this.els['import-wmp'].addEventListener('change', (e) => handlers.importWmp(e.target.files[0]));
     this.els['import-twu'].addEventListener('change', (e) => handlers.importTwu(e.target.files[0]));
   }
@@ -1326,7 +1333,7 @@ export class UI {
   openInspector(code) {
     this.inspectorHex = code;
     this.hexedSelectedEdge = null;
-    this.els['hexed-title'].textContent = `Hex ${code}`;
+    this._updateInspectorTitle(code);
     this.els['hex-editor'].hidden = false;
     this.els['layers-panel'].hidden = true;
     this._refreshInspector();
@@ -1336,6 +1343,11 @@ export class UI {
         break;
       }
     }
+  }
+
+  _updateInspectorTitle(code) {
+    const name = this.store.getHexName(code);
+    this.els['hexed-title'].textContent = name ? `Hex ${code} — ${name}` : `Hex ${code}`;
   }
 
   _setHexEditorFill(terrain) {
@@ -1380,11 +1392,13 @@ export class UI {
   _refreshInspector() {
     if (!this.inspectorHex) return;
     const code = this.inspectorHex;
+    this._updateInspectorTitle(code);
     const palette = this.store.getPalette();
     const terrainKey = this.store.state.terrain.terrain[code] || 'clear';
     const terrain = (palette?.terrain || []).find(t => t.key === terrainKey);
     this.els['hexed-terrain-current'].textContent = terrain?.label || terrainKey;
     this.els['hexed-center-code'].textContent = code;
+    this.els['hexed-name'].value = this.store.getHexName(code);
 
     this._setHexEditorFill(terrain);
 
