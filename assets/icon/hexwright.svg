@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <style>
+      .bg    { fill: #2b2b33; }
+      .paper { fill: #e8dcc0; }
+      .ink   { fill: none; stroke: #2b2b33; stroke-width: 3.5%; stroke-linejoin: round; }
+      .grid  { fill: none; stroke: #2b2b33; stroke-width: 1.8%; stroke-linejoin: round; opacity: 0.30; }
+    </style>
+  </defs>
+
+  <!-- dark rounded-square app-icon backing -->
+  <rect class="bg" x="0" y="0" width="1024" height="1024" rx="184" ry="184"/>
+
+  <!-- main pointy-top hexagon (parchment fill + dark edge) -->
+  <path class="paper"
+        d="M 512,132
+           L 841.1,322
+           L 841.1,702
+           L 512,892
+           L 182.9,702
+           L 182.9,322
+           Z"/>
+  <path class="ink"
+        d="M 512,132
+           L 841.1,322
+           L 841.1,702
+           L 512,892
+           L 182.9,702
+           L 182.9,322
+           Z"/>
+
+  <!-- subtle 3-hex grid fragment inside the big cell -->
+  <path class="grid"
+        d="M 312,402 L 407.3,457 L 407.3,567 L 312,622 L 216.7,567 L 216.7,457 Z
+           M 512,402 L 607.3,457 L 607.3,567 L 512,622 L 416.7,567 L 416.7,457 Z
+           M 712,402 L 807.3,457 L 807.3,567 L 712,622 L 616.7,567 L 616.7,457 Z"/>
+</svg>

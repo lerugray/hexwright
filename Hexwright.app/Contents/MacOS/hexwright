@@ -1,0 +1,38 @@
+#!/bin/bash
+# Hexwright.app launcher — serves the parent of the repo so sibling projects
+# are reachable via ../<repo>/, then opens the editor in the default browser.
+# Safe to launch repeatedly; an existing Hexwright server is detected and reused.
+
+APP_BIN="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$APP_BIN/../../.." && pwd)"
+REPO_NAME="$(basename "$REPO_ROOT")"
+
+cd "$REPO_ROOT/.."
+
+PORT=8642
+
+is_hexwright() {
+  curl -s -m 1 "http://localhost:$1/$REPO_NAME/" | grep -qi hexwright
+}
+
+if ! is_hexwright "$PORT"; then
+  # Another process (or an old single-repo server) on the port? Step once.
+  if curl -s -m 1 -o /dev/null "http://localhost:$PORT"; then
+    PORT=8643
+  fi
+  if ! is_hexwright "$PORT"; then
+    nohup python3 "$REPO_ROOT/scripts/serve_nocache.py" "$PORT" >/dev/null 2>&1 &
+    disown
+    sleep 1
+  fi
+fi
+
+URL="http://localhost:$PORT/$REPO_NAME/"
+# Open the plain editor; project selection is handled by Recents/restore or a
+# ?project= launcher. No project may be hardcoded here (tracked, public file).
+
+open "$URL"
+echo ""
+echo "  Hexwright is running at $URL"
+echo "  You can close this window — the editor stays available."
+echo ""
