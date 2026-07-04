@@ -4,7 +4,9 @@ import {
   worldToScreen, screenToWorld, edgeNeighbor, hexRadius, nearestEdge
 } from './geometry.js';
 
-const INK_CASING = 'rgba(247,242,226,0.82)';
+// Solid near-white casing: traced ink must pop off BOTH the cream paper and the
+// map's own printed features (blue-on-blue rivers were unreadable at 0.82 parchment).
+const INK_CASING = 'rgba(255,255,255,0.95)';
 
 export class MapRenderer {
   constructor(canvas, store) {
@@ -574,7 +576,7 @@ export class MapRenderer {
       if (f) {
         return {
           stroke: f.color,
-          width: f.key === 'rail' ? 3.0 : 3.5,
+          width: f.key === 'rail' ? 3.0 : 4.2,
           dash: f.dash ? [6, 5] : []
         };
       }
@@ -647,8 +649,11 @@ export class MapRenderer {
       if (crossFeats.length) {
         const mx = (ep.a.x + ep.b.x) / 2;
         const my = (ep.a.y + ep.b.y) / 2;
-        const rung = Math.min(len * 0.30, 11 / s);
-        const cSpacing = 4.5 / s;
+        const rungBase = Math.min(len * 0.30, 11 / s);
+        // Wide separation so stacked crossings (road + bridge) read as two
+        // distinct rungs; the bridge rung draws LONGER so "the bridge spans"
+        // is legible at a glance next to its road.
+        const cSpacing = 9.0 / s;
         const offBaseC = -((crossFeats.length - 1) * cSpacing) / 2;
         const crossLines = crossFeats.map((featureKey, idx) => {
           const style = this._hexsideStyle(featureKey);
@@ -656,9 +661,10 @@ export class MapRenderer {
           const cx = mx + tx * along;
           const cy = my + ty * along;
           const coreWidth = style.width + 0.6;
-          return { style, cx, cy, coreWidth };
+          const rung = featureKey === 'bridge' ? rungBase * 1.5 : rungBase;
+          return { style, cx, cy, coreWidth, rung };
         });
-        crossLines.forEach(({ cx, cy, coreWidth }) => {
+        crossLines.forEach(({ cx, cy, coreWidth, rung }) => {
           ctx.beginPath();
           ctx.strokeStyle = INK_CASING;
           ctx.lineWidth = (coreWidth * 2) / s;
@@ -668,7 +674,7 @@ export class MapRenderer {
           ctx.lineTo(cx + ux * rung, cy + uy * rung);
           ctx.stroke();
         });
-        crossLines.forEach(({ style, cx, cy, coreWidth }) => {
+        crossLines.forEach(({ style, cx, cy, coreWidth, rung }) => {
           ctx.beginPath();
           ctx.strokeStyle = style.stroke;
           ctx.lineWidth = coreWidth / s;
