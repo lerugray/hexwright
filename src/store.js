@@ -283,7 +283,16 @@ export class ProjectStore {
       return;
     }
     this.centers = buildLandIndex(this.state.terrain, this.state.grid);
-    if (this.state.blankLattice && this.state.grid) {
+    // A valid grid must always show its editable cells. buildLandIndex is empty
+    // for hexside-only / fresh projects (no terrain codes yet), so enumerate the
+    // full lattice whenever it is explicitly requested OR there is no land to
+    // draw at all — otherwise the grid + terrain layer silently renders nothing
+    // when the blankLattice manifest flag is absent or lost (e.g. NaB loaded via
+    // raw hexgrid/terrain/hexsides files, v1 rectangular or v2 jagged). Both
+    // _drawGrid and _drawHexFills iterate store.centers, so an empty index draws
+    // an empty screen.
+    const noLand = Object.keys(this.centers).length === 0;
+    if ((this.state.blankLattice || noLand) && this.state.grid) {
       const lattice = enumerateGridLattice(this.state.grid);
       for (const code of Object.keys(lattice)) {
         if (!this.centers[code]) this.centers[code] = lattice[code];
