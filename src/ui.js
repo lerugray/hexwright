@@ -417,6 +417,13 @@ export class UI {
     });
 
     this.els['feature-layer-rows'].addEventListener('click', (e) => {
+      const clearBtn = e.target.closest('.layer-clear[data-feature-key]');
+      if (clearBtn) {
+        const row = clearBtn.closest('.layer-row');
+        const label = row?.querySelector('.name')?.textContent?.trim() || clearBtn.dataset.featureKey;
+        this.clearHexsideLayer(clearBtn.dataset.featureKey, label);
+        return;
+      }
       const eye = e.target.closest('.eye[data-feature-key]');
       if (!eye) return;
       this.toggleHexsideLayerVisibility(eye.dataset.featureKey);
@@ -815,6 +822,15 @@ export class UI {
     this.renderer.draw();
   }
 
+  clearHexsideLayer(featureKey, label) {
+    if (!featureKey) return;
+    const count = this._featureCounts()[featureKey] || 0;
+    if (count === 0) return;
+    const name = label || featureKey;
+    if (!confirm(`Clear ${name} (${count} entries)? This cannot be undone except by autosave restore.`)) return;
+    this.store.clearHexsideFeatureLayer(featureKey);
+  }
+
   _traceColor(trace) {
     const palette = this.store.getPalette();
     const feature = (palette?.hexsideFeatures || []).find((f) => f.key === trace.layer || f.exportLayer === trace.layer);
@@ -830,13 +846,18 @@ export class UI {
 
     featureRows.innerHTML = features.map((f) => {
       const on = this._featureVisible(f.key);
+      const n = counts[f.key] || 0;
+      const clearBtn = n > 0
+        ? `<button type="button" class="layer-clear" data-feature-key="${f.key}" aria-label="Clear ${f.label || f.key}" title="Clear layer">×</button>`
+        : '';
       return `<div class="layer-row${on ? '' : ' dimmed'}">
         <button type="button" class="eye${on ? '' : ' off'}" data-feature-key="${f.key}" aria-label="Toggle ${f.label || f.key}">
           ${on ? EYE_OPEN_SVG : EYE_OFF_SVG}
         </button>
         <span class="swatch" style="background:${this._hexsideFeatureColor(f)}"></span>
         <span class="name">${f.label || f.key}</span>
-        <span class="count">${counts[f.key] || 0}</span>
+        <span class="count">${n}</span>
+        ${clearBtn}
       </div>`;
     }).join('');
 

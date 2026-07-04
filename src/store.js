@@ -504,6 +504,33 @@ export class ProjectStore {
     this.notify('hexsides');
   }
 
+  countHexsideFeature(featureKey) {
+    const canonical = this._toFeatureKey(featureKey);
+    if (!canonical) return 0;
+    let count = 0;
+    for (const arr of Object.values(this.state.hexsides || {})) {
+      if (Array.isArray(arr) && arr.includes(canonical)) count++;
+    }
+    return count;
+  }
+
+  clearHexsideFeatureLayer(featureKey) {
+    const canonical = this._toFeatureKey(featureKey);
+    if (!canonical) return 0;
+    const count = this.countHexsideFeature(canonical);
+    if (count === 0) return 0;
+    this.pushUndo();
+    for (const [key, arr] of Object.entries(this.state.hexsides || {})) {
+      if (!Array.isArray(arr) || !arr.includes(canonical)) continue;
+      const next = arr.filter((k) => k !== canonical);
+      if (next.length === 0) delete this.state.hexsides[key];
+      else this.state.hexsides[key] = next;
+    }
+    this.rebuildIndex();
+    this.notify('hexsides');
+    return count;
+  }
+
   toggleHexsideFeature(a, b, featureKey) {
     const pair = normalizePair(a, b);
     const key = pairKey(pair.a, pair.b);
