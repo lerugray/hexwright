@@ -553,6 +553,29 @@ async function main() {
       const manifestLand = countLandHexes(project);
       const restoredLand = countLandHexes(restored);
       if (manifestLand > restoredLand) restored.terrain = project.terrain;
+      // Manifest point features merge UNDER the autosave's: a (code,type) the
+      // operator placed always wins; manifest-only entries (e.g. generated
+      // route/paint-guide markers) still appear.
+      if (project.features) {
+        const manifestFeatures = Array.isArray(project.features?.features)
+          ? project.features.features
+          : (Array.isArray(project.features) ? project.features : null);
+        if (manifestFeatures) {
+          const restoredFeatures = restored.features || {};
+          for (const entry of manifestFeatures) {
+            const code = String(entry.code || '').trim();
+            const type = String(entry.type || '').trim();
+            if (!code || !type) continue;
+            if (restoredFeatures[code] && restoredFeatures[code][type]) continue;
+            if (!restoredFeatures[code]) restoredFeatures[code] = {};
+            restoredFeatures[code][type] = {
+              name: entry.name != null ? String(entry.name) : '',
+              attrs: JSON.parse(JSON.stringify(entry.attrs || {}))
+            };
+          }
+          restored.features = restoredFeatures;
+        }
+      }
       await loadAndRender(restored);
       renderer.setViewMode('both');
       ui.setProjectSource(manifestLabel);
