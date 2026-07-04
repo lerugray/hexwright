@@ -1,0 +1,58 @@
+{
+  "name": "Default",
+  "terrain": [
+    { "key": "clear", "label": "Clear", "color": "#c8b88a" },
+    { "key": "woods", "label": "Woods", "color": "#5c7a4a" },
+    { "key": "rough", "label": "Rough", "color": "#a98a5c" },
+    { "key": "swamp", "label": "Swamp", "color": "#6b7a5a" },
+    { "key": "water", "label": "Water", "color": "#3f78b4" },
+    { "key": "urban", "label": "Urban", "color": "#9a9a9a" }
+  ],
+  "hexFeatures": [
+    {
+      "key": "city",
+      "label": "City",
+      "glyph": "\u25c9",
+      "attrs": [
+        { "key": "vp", "label": "VP", "type": "number" },
+        { "key": "bp", "label": "BP", "type": "number" }
+      ]
+    },
+    {
+      "key": "fort",
+      "label": "Fort",
+      "glyph": "\u2726",
+      "attrs": [
+        { "key": "strength", "label": "Strength", "type": "number" }
+      ]
+    },
+    {
+      "key": "objective",
+      "label": "Objective",
+      "glyph": "\u2605",
+      "attrs": [
+        { "key": "vp", "label": "VP", "type": "number" }
+      ]
+    }
+  ],
+  "hexsideFeatures": [
+    { "key": "river", "label": "River", "color": "#2878ff", "kind": "edge", "exportLayer": "rivers" },
+    { "key": "road", "label": "Road", "color": "#b96b1f", "kind": "crossing", "exportLayer": "roads" },
+    { "key": "rail", "label": "Rail", "color": "#7a4fa3", "kind": "crossing", "dash": true, "exportLayer": "rails" },
+    { "key": "ridge", "label": "Ridge", "color": "#c2333b", "kind": "edge", "exportLayer": "mountains" },
+    { "key": "impassable", "label": "Impassable", "color": "#3a3f4a", "kind": "edge", "dash": true, "exportLayer": "impassible" },
+    { "key": "bridge", "label": "Bridge", "color": "#e0c060", "kind": "crossing", "exportLayer": "bridges" }
+  ],
+  "terrainAliases": {
+    "forest": "woods",
+    "lake": "water"
+  },
+  "hexsideAliases": {
+    "mountains": "ridge",
+    "impassible": "impassable",
+    "rivers": "river",
+    "roads": "road",
+    "rails": "rail",
+    "bridges": "bridge"
+  }
+}
