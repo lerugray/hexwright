@@ -707,41 +707,62 @@ export class ProjectStore {
 
   // ----------------- export -----------------
 
+  _exportLayerMaps() {
+    const exportLayerFor = new Map();
+    const regeneratableLayers = new Set(V1_EXPORT_LAYERS);
+    for (const f of (this.palette?.hexsideFeatures || [])) {
+      const layer = f.exportLayer || f.key;
+      exportLayerFor.set(f.key, layer);
+      regeneratableLayers.add(layer);
+    }
+    return { exportLayerFor, regeneratableLayers };
+  }
+
   exportHexsidesObject() {
-    // Preserve any untouched keys (version, counts, theaters, boundaries),
-    // but drop internal edge keys since we regenerate grouped layers.
+    const { exportLayerFor, regeneratableLayers } = this._exportLayerMaps();
+
+    // Preserve metadata (version, counts, theaters, boundaries). Edge-layer
+    // arrays are always regenerated — including palette class-split layers
+    // (rivers-primary etc.) that are outside V1_EXPORT_LAYERS.
     const base = {};
     for (const [k, v] of Object.entries(this.state.loadedHexsides || {})) {
-      if (!k.includes('|')) base[k] = deepClone(v);
+      if (k.includes('|')) continue;
+      if (regeneratableLayers.has(k) && Array.isArray(v)) continue;
+      base[k] = deepClone(v);
     }
 
-    // Clear all editable export layers we will regenerate.
-    for (const layer of V1_EXPORT_LAYERS) {
+    for (const layer of regeneratableLayers) {
       base[layer] = [];
     }
 
-    const palette = this.palette || {};
-    const features = palette.hexsideFeatures || [];
-    const exportLayerFor = new Map();
-    for (const f of features) {
-      if (f.exportLayer) exportLayerFor.set(f.key, f.exportLayer);
+    const seenByLayer = new Map();
+    for (const layer of regeneratableLayers) {
+      seenByLayer.set(layer, new Set());
     }
 
     for (const [edgeKey, arr] of Object.entries(this.state.hexsides || {})) {
-      const [a, b] = edgeKey.split('|');
-      if (!a || !b) continue;
-      const seen = new Set();
+      const parts = edgeKey.split('|');
+      if (parts.length !== 2) continue;
+      const pair = normalizePair(parts[0], parts[1]);
+      const canonicalEdge = pairKey(pair.a, pair.b);
+      const seenFeatures = new Set();
       for (const featureKey of (arr || [])) {
         const layer = exportLayerFor.get(featureKey);
-        if (!layer || seen.has(layer)) continue;
-        seen.add(layer);
+        if (!layer || seenFeatures.has(layer)) continue;
+        seenFeatures.add(layer);
+        const layerSeen = seenByLayer.get(layer);
+        if (!layerSeen) {
+          seenByLayer.set(layer, new Set());
+        }
+        const bucket = seenByLayer.get(layer);
+        if (bucket.has(canonicalEdge)) continue;
+        bucket.add(canonicalEdge);
         if (!base[layer]) base[layer] = [];
-        base[layer].push({ a, b });
+        base[layer].push({ a: pair.a, b: pair.b });
       }
     }
 
-    // Sort each layer for deterministic output.
-    for (const layer of V1_EXPORT_LAYERS) {
+    for (const layer of regeneratableLayers) {
       if (Array.isArray(base[layer])) {
         base[layer].sort((p1, p2) =>
           (p1.a < p2.a ? -1 : p1.a > p2.a ? 1 : p1.b < p2.b ? -1 : 1)
@@ -758,12 +779,17 @@ export class ProjectStore {
 
   _exportPairsForFeature(featureKey) {
     const canonical = this._toFeatureKey(featureKey);
+    const seen = new Set();
     const pairs = [];
     for (const [edgeKey, features] of Object.entries(this.state.hexsides || {})) {
       if (!Array.isArray(features) || !features.includes(canonical)) continue;
-      const [a, b] = edgeKey.split('|');
-      if (!a || !b) continue;
-      pairs.push([a, b]);
+      const parts = edgeKey.split('|');
+      if (parts.length !== 2) continue;
+      const pair = normalizePair(parts[0], parts[1]);
+      const canonicalEdge = pairKey(pair.a, pair.b);
+      if (seen.has(canonicalEdge)) continue;
+      seen.add(canonicalEdge);
+      pairs.push([pair.a, pair.b]);
     }
     return sortPairArrays(pairs);
   }
