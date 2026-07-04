@@ -207,6 +207,28 @@ try {
     rec('edge to missing neighbor is not paintable', true, 'probe hex had no missing neighbors');
   }
 
+  // middle-button drag must pan WITHOUT painting while edge-paint is ON
+  const beforeMidPan = await page.evaluate(() => ({
+    pan: { ...window.hexwright.renderer.view },
+    sides: JSON.stringify(window.hexwright.store.state.hexsides)
+  }));
+  await page.mouse.move(pCenter.x, pCenter.y);
+  await page.mouse.down({ button: 'middle' });
+  await page.mouse.move(pCenter.x + 80, pCenter.y + 45, { steps: 8 });
+  await page.mouse.up({ button: 'middle' });
+  await sleep(120);
+  const afterMidPan = await page.evaluate(() => ({
+    pan: { ...window.hexwright.renderer.view },
+    sides: JSON.stringify(window.hexwright.store.state.hexsides)
+  }));
+  const midPanned = Math.hypot(
+    afterMidPan.pan.panX - beforeMidPan.pan.panX,
+    afterMidPan.pan.panY - beforeMidPan.pan.panY
+  ) > 10;
+  rec('middle-drag pans while edge-paint is ON', midPanned,
+    `d=(${(afterMidPan.pan.panX - beforeMidPan.pan.panX).toFixed(1)},${(afterMidPan.pan.panY - beforeMidPan.pan.panY).toFixed(1)})`);
+  rec('middle-drag paints nothing', beforeMidPan.sides === afterMidPan.sides);
+
   // edge-paint OFF: pan + inspect behavior should work as before
   await page.keyboard.press('i');
   await sleep(120);

@@ -156,7 +156,22 @@ export class MapRenderer {
   _bindPointer() {
     const wrap = this.canvas.parentElement;
 
+    // Middle-click must never trigger the browser's autoscroll/paste-scroll.
+    wrap.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
+
     wrap.addEventListener('pointerdown', (e) => {
+      if (e.button === 1) {
+        // Middle-button drag pans in EVERY mode — paint modes own left-drag,
+        // so this is the only way to move the map without leaving the tool.
+        e.preventDefault();
+        this.middlePan = true;
+        this.isDragging = true;
+        this.clickMoved = false;
+        this.dragStart = { x: e.clientX, y: e.clientY };
+        this.panStart = { x: this.view.panX, y: this.view.panY };
+        wrap.setPointerCapture(e.pointerId);
+        return;
+      }
       if (e.button !== 0) return;
       if (this.nudgeMode) {
         this.isDragging = true;
@@ -191,6 +206,14 @@ export class MapRenderer {
     });
 
     wrap.addEventListener('pointermove', (e) => {
+      if (this.middlePan && this.isDragging) {
+        const dx = e.clientX - this.dragStart.x;
+        const dy = e.clientY - this.dragStart.y;
+        this.view.panX = this.panStart.x + dx;
+        this.view.panY = this.panStart.y + dy;
+        this.draw();
+        return;
+      }
       if (this.nudgeMode) {
         if (!this.isDragging || !this.nudgeDrag) return;
         const s = this.view.baseScale * this.view.zoom;
@@ -254,6 +277,10 @@ export class MapRenderer {
       if (!this.isDragging) return;
       this.isDragging = false;
       wrap.releasePointerCapture(e.pointerId);
+      if (this.middlePan) {
+        this.middlePan = false;
+        return;
+      }
       if (this.nudgeMode) {
         this.nudgeDrag = null;
         return;
