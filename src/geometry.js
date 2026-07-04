@@ -20,6 +20,8 @@ export const HEXSIDE_COLORS = {
 
 export const EDITABLE_LAYERS = ['rivers', 'mountains', 'impassible', 'roads', 'rails', 'border'];
 export const ADJACENCY_THRESHOLD = 160;
+export const EDGE_HIT_TOLERANCE = 0.35;
+export const EDGE_SNAP_ASSIST_TOLERANCE = 0.65;
 
 export function parseCCRR(code) {
   const s = String(code);
@@ -294,7 +296,7 @@ export function nearestEdge(px, py, opts = {}) {
     grid,
     centers,
     hexAtScreen,
-    toleranceFactor = 0.35
+    toleranceFactor = EDGE_HIT_TOLERANCE
   } = opts;
   if (!grid || !centers || typeof hexAtScreen !== 'function' || !view) return null;
 
@@ -318,9 +320,13 @@ export function nearestEdge(px, py, opts = {}) {
   const candidates = new Map();
 
   const addHexCandidates = (code) => {
+    const { col, row } = parseCCRR(code);
+    if (!isValidCell(col, row, grid)) return;
     for (let edgeIndex = 0; edgeIndex < 6; edgeIndex++) {
       const neighbor = edgeNeighborCode(code, edgeIndex, grid);
       if (!neighbor || !centers[neighbor]) continue;
+      const nbCell = parseCCRR(neighbor);
+      if (!isValidCell(nbCell.col, nbCell.row, grid)) continue;
       const pair = normalizePair(code, neighbor);
       const edgeKey = pairKey(pair.a, pair.b);
       if (candidates.has(edgeKey)) continue;

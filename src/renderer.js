@@ -2,12 +2,13 @@ import {
   TERRAIN_COLORS, HEXSIDE_COLORS,
   hexCenter, hexPolygon, sharedEdgeEndpoints, pointInPolygon,
   worldToScreen, screenToWorld, edgeNeighbor, edgeMidpoint, hexRadius, nearestEdge,
-  isValidCell, parseCCRR
+  isValidCell, parseCCRR, EDGE_HIT_TOLERANCE, EDGE_SNAP_ASSIST_TOLERANCE
 } from './geometry.js';
 
 // Solid near-white casing: traced ink must pop off BOTH the cream paper and the
 // map's own printed features (blue-on-blue rivers were unreadable at 0.82 parchment).
 const INK_CASING = 'rgba(255,255,255,0.95)';
+const SNAP_PREVIEW_STROKE = '#00c8e8';
 
 export class MapRenderer {
   constructor(canvas, store) {
@@ -40,6 +41,10 @@ export class MapRenderer {
     };
     this.edgePaintStroke = null;
 
+    this.shiftHeld = false;
+    this.lastPointerPt = null;
+    this.snapPreview = null;
+
     this.isDragging = false;
     this.dragStart = null;
     this.panStart = null;
@@ -49,6 +54,7 @@ export class MapRenderer {
     window.addEventListener('resize', () => this.resize());
 
     this._bindPointer();
+    this._bindShiftSnap();
   }
 
   resize() {
@@ -124,16 +130,80 @@ export class MapRenderer {
     if (!this.edgePaint.active) {
       this.edgePaintStroke = null;
       this.clearHighlight();
+      this._setSnapPreview(null);
     }
   }
 
-  nearestEdgeAtScreen(pt) {
+  _edgeSnapAssistActive(e = null) {
+    if (!this.edgePaint.active) return false;
+    if (e && 'shiftKey' in e) return !!e.shiftKey;
+    return this.shiftHeld;
+  }
+
+  nearestEdgeAtScreen(pt, { assist = false } = {}) {
+    const snapAssist = assist || this._edgeSnapAssistActive();
     return nearestEdge(pt.x, pt.y, {
       view: this.view,
       grid: this.store.state.grid,
       centers: this.store.centers,
       hexAtScreen: (screenPt) => this.hexAtScreen(screenPt),
-      toleranceFactor: 0.35
+      toleranceFactor: snapAssist ? EDGE_SNAP_ASSIST_TOLERANCE : EDGE_HIT_TOLERANCE
+    });
+  }
+
+  _setSnapPreview(hit) {
+    const nextKey = hit?.edgeKey ?? null;
+    if ((this.snapPreview?.edgeKey ?? null) === nextKey) return;
+    this.snapPreview = hit
+      ? {
+          hex: hit.hex,
+          edgeIndex: hit.edgeIndex,
+          neighbor: hit.neighbor,
+          edgeKey: hit.edgeKey,
+          a: hit.a,
+          b: hit.b
+        }
+      : null;
+    this.draw();
+  }
+
+  _updateEdgePaintHover(pt, e = null) {
+    if (e && 'shiftKey' in e) this.shiftHeld = !!e.shiftKey;
+    const assist = this._edgeSnapAssistActive(e);
+    const hit = this.nearestEdgeAtScreen(pt, { assist });
+    if (assist) {
+      this._setSnapPreview(hit);
+      if (this.highlighted.hex) {
+        this.highlighted = { hex: null, edge: null, neighbor: null };
+        this.draw();
+      }
+    } else {
+      if (this.snapPreview) this._setSnapPreview(null);
+      if (hit) this.setHighlight(hit.hex, hit.edgeIndex, hit.neighbor);
+      else this.clearHighlight();
+    }
+    return hit;
+  }
+
+  _bindShiftSnap() {
+    const syncShift = (down) => {
+      if (this.shiftHeld === down) return;
+      this.shiftHeld = down;
+      if (!down) this._setSnapPreview(null);
+      if (this.edgePaint.active && this.lastPointerPt) {
+        this._updateEdgePaintHover(this.lastPointerPt);
+      }
+    };
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Shift') syncShift(true);
+    });
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'Shift') syncShift(false);
+    });
+    window.addEventListener('blur', () => syncShift(false));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') syncShift(false);
     });
   }
 
@@ -214,9 +284,8 @@ export class MapRenderer {
           touched: new Set()
         };
         const pt = this._eventToScreen(e);
-        const hit = this.nearestEdgeAtScreen(pt);
-        if (hit) this.setHighlight(hit.hex, hit.edgeIndex, hit.neighbor);
-        else this.clearHighlight();
+        this.lastPointerPt = pt;
+        this._updateEdgePaintHover(pt, e);
         wrap.setPointerCapture(e.pointerId);
         return;
       }
@@ -248,9 +317,8 @@ export class MapRenderer {
       }
       if (this.edgePaint.active) {
         const pt = this._eventToScreen(e);
-        const hit = this.nearestEdgeAtScreen(pt);
-        if (hit) this.setHighlight(hit.hex, hit.edgeIndex, hit.neighbor);
-        else this.clearHighlight();
+        this.lastPointerPt = pt;
+        const hit = this._updateEdgePaintHover(pt, e);
 
         if (!this.isDragging) return;
 
@@ -310,9 +378,13 @@ export class MapRenderer {
       }
       if (this.edgePaint.active) {
         const pt = this._eventToScreen(e);
-        const hit = this.nearestEdgeAtScreen(pt);
-        if (hit) this.setHighlight(hit.hex, hit.edgeIndex, hit.neighbor);
-        else this.clearHighlight();
+        this.lastPointerPt = pt;
+        if (e && 'shiftKey' in e) this.shiftHeld = !!e.shiftKey;
+        const hit = this.nearestEdgeAtScreen(pt, { assist: this._edgeSnapAssistActive(e) });
+        if (!this._edgeSnapAssistActive(e)) {
+          if (hit) this.setHighlight(hit.hex, hit.edgeIndex, hit.neighbor);
+          else this.clearHighlight();
+        }
         const session = this.edgePaintStroke;
         this.edgePaintStroke = null;
         if (session) {
@@ -403,15 +475,12 @@ export class MapRenderer {
 
   _hoverAt(e) {
     const pt = this._eventToScreen(e);
+    this.lastPointerPt = pt;
     if (this.edgePaint.active) {
-      const hit = this.nearestEdgeAtScreen(pt);
-      if (hit) {
-        this.setHighlight(hit.hex, hit.edgeIndex, hit.neighbor);
-        this.canvas.title = `${hit.a}|${hit.b}`;
-      } else {
-        this.clearHighlight();
-        this.canvas.title = '';
-      }
+      this._updateEdgePaintHover(pt, e);
+      const hit = this.nearestEdgeAtScreen(pt, { assist: this._edgeSnapAssistActive(e) });
+      if (hit) this.canvas.title = `${hit.a}|${hit.b}`;
+      else this.canvas.title = '';
       return;
     }
     const world = screenToWorld(pt, this.view);
@@ -527,6 +596,7 @@ export class MapRenderer {
 
     this._drawSelection(ctx, this.view);
     this._drawHighlights(ctx, this.view);
+    this._drawSnapPreview(ctx, this.view);
 
     if (this.anomalyMode) {
       this._drawAnomalies(ctx, this.view);
@@ -851,6 +921,26 @@ export class MapRenderer {
     }
   }
 
+  _drawSnapPreview(ctx, view) {
+    const snap = this.snapPreview;
+    if (!snap || !snap.a || !snap.b) return;
+    const grid = this.store.state.grid;
+    const ep = sharedEdgeEndpoints(snap.a, snap.b, grid);
+    if (!ep) return;
+    const s = view.baseScale * view.zoom;
+    ctx.save();
+    ctx.translate(view.panX, view.panY);
+    ctx.scale(s, s);
+    ctx.beginPath();
+    ctx.moveTo(ep.a.x, ep.a.y);
+    ctx.lineTo(ep.b.x, ep.b.y);
+    ctx.strokeStyle = SNAP_PREVIEW_STROKE;
+    ctx.lineWidth = 6 / s;
+    ctx.setLineDash([10 / s, 6 / s]);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // ----------------- anomaly overlay -----------------
 
   computeAnomalies() {
@@ -1046,6 +1136,10 @@ export class MapRenderer {
   clearHighlight() {
     this.highlighted = { hex: null, edge: null, neighbor: null };
     this.draw();
+  }
+
+  clearSnapPreview() {
+    this._setSnapPreview(null);
   }
 
   closeInspector() {
