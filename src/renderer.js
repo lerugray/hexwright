@@ -1,7 +1,8 @@
 import {
   TERRAIN_COLORS, HEXSIDE_COLORS,
   hexCenter, hexPolygon, sharedEdgeEndpoints, pointInPolygon,
-  worldToScreen, screenToWorld, edgeNeighbor, edgeMidpoint, hexRadius, nearestEdge
+  worldToScreen, screenToWorld, edgeNeighbor, edgeMidpoint, hexRadius, nearestEdge,
+  isValidCell, parseCCRR
 } from './geometry.js';
 
 // Solid near-white casing: traced ink must pop off BOTH the cream paper and the
@@ -456,10 +457,14 @@ export class MapRenderer {
       const poly = hexPolygon(nearest, grid);
       if (pointInPolygon(worldPt, poly)) return nearest;
     }
-    // fallback full scan
+    // fallback full scan, restricted to valid cells so phantom jagged-row
+    // hexes are never clickable.
     for (const code of codes) {
       const poly = hexPolygon(code, grid);
-      if (pointInPolygon(worldPt, poly)) return code;
+      if (pointInPolygon(worldPt, poly)) {
+        const { col, row } = parseCCRR(code);
+        if (isValidCell(col, row, grid)) return code;
+      }
     }
     return null;
   }

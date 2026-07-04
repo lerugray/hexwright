@@ -40,14 +40,23 @@ try {
 
   const latticeInfo = await page.evaluate(() => {
     const s = window.hexwright.store;
+    const g = s.state.grid;
+    const { geo } = window.hexwright;
     return {
       blankLattice: s.state.blankLattice,
       centerCount: s.centers ? Object.keys(s.centers).length : 0,
-      land: Object.keys(s.state.terrain.terrain || {}).length
+      land: Object.keys(s.state.terrain.terrain || {}).length,
+      gridVersion: g ? (g.grid_version || 1) : null,
+      rowCountsByParity: g ? g.row_counts_by_parity : null,
+      rowCountChecks: g ? {
+        v1Even: geo.rowCount(0, g),
+        v1Odd: geo.rowCount(1, g)
+      } : null
     };
   });
   rec('blankLattice flag set', latticeInfo.blankLattice === true, JSON.stringify(latticeInfo));
   rec('lattice centers populated', latticeInfo.centerCount > 100, `centers=${latticeInfo.centerCount}`);
+  rec('lattice rowCount matches rectangular v1 grid', latticeInfo.gridVersion === 1 && latticeInfo.rowCountChecks.v1Even === latticeInfo.rowCountChecks.v1Odd, JSON.stringify(latticeInfo.rowCountChecks));
 
   const gridShot = await page.locator('#map-canvas').screenshot({ path: VER + '/blank-lattice-grid.png' });
   rec('grid lattice visible (non-trivial screenshot)', gridShot.length > 8000, `bytes=${gridShot.length}`);

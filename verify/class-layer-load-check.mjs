@@ -73,6 +73,55 @@ try {
   }
   const dropWarns = warns.filter((w) => w.includes('NOT loaded'));
   rec('no layers dropped with a warning', dropWarns.length === 0, dropWarns.join(' | '));
+
+  // v2 jagged-row regression assertions against the live NaB grid.
+  const nabGrid = JSON.parse(readFileSync(resolve(REPO, 'local/nab/hexgrid.json'), 'utf8'));
+  const jagged = await page.evaluate((gridJson) => {
+    const geo = window.hexwright.geo;
+    const grid = JSON.parse(gridJson);
+    // Inject a synthetic v2 jagged schema with the same dimensions as the real
+    // migrated grid will use, so we exercise the code path without modifying
+    // the bundled data file.
+    const v2 = {
+      ...grid,
+      grid_version: 2,
+      n_cols: 77,
+      max_rows: 54,
+      row_counts_by_parity: { even: 54, odd: 53 }
+    };
+    delete v2.n_rows;
+    return {
+      '0,53': geo.isValidCell(0, 53, v2),
+      '1,53': geo.isValidCell(1, 53, v2),
+      '75,53': geo.isValidCell(75, 53, v2),
+      '76,53': geo.isValidCell(76, 53, v2),
+      evenCount: geo.rowCount(0, v2),
+      oddCount: geo.rowCount(1, v2)
+    };
+  }, JSON.stringify(nabGrid));
+
+  rec('v2 jagged (0,53) valid', jagged['0,53'] === true, JSON.stringify(jagged));
+  rec('v2 jagged (1,53) invalid', jagged['1,53'] === false, JSON.stringify(jagged));
+  rec('v2 jagged (76,53) valid', jagged['76,53'] === true, JSON.stringify(jagged));
+  rec('v2 jagged (75,53) invalid', jagged['75,53'] === false, JSON.stringify(jagged));
+  rec('v2 parity row counts', jagged.evenCount === 54 && jagged.oddCount === 53, JSON.stringify(jagged));
+
+  // Fail-loud check: v2 grid missing row_counts_by_parity throws.
+  const loud = await page.evaluate((gridJson) => {
+    const geo = window.hexwright.geo;
+    const grid = JSON.parse(gridJson);
+    const bad = { ...grid, grid_version: 2 };
+    delete bad.n_rows;
+    delete bad.row_counts_by_parity;
+    try {
+      geo.rowCount(0, bad);
+      return { threw: false };
+    } catch (e) {
+      return { threw: true, message: e.message };
+    }
+  }, JSON.stringify(nabGrid));
+  rec('v2 without row_counts_by_parity fails loud', loud.threw === true, loud.message);
+
   rec('no uncaught console/page errors', errors.length === 0, errors.slice(0, 4).join(' | '));
 } catch (err) {
   rec('class-layer harness completed', false, err.message);

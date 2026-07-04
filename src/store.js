@@ -1,4 +1,4 @@
-import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency, enumerateGridLattice } from './geometry.js';
+import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency, enumerateGridLattice, validateGrid } from './geometry.js';
 
 const MAX_UNDO = 64;
 const DEFAULT_PALETTE_URL = 'palettes/gota.json';
@@ -159,6 +159,10 @@ export class ProjectStore {
     const terrAliases = palette.terrainAliases || {};
     const sideAliases = palette.hexsideAliases || {};
 
+    if (project?.grid) {
+      validateGrid(project.grid, { source: 'loadProject' });
+    }
+
     const migrated = this.migrateToV2(project, terrAliases, sideAliases);
 
     this.state = {
@@ -262,6 +266,9 @@ export class ProjectStore {
   }
 
   setProject(patch) {
+    if (patch?.grid) {
+      validateGrid(patch.grid, { source: 'setProject' });
+    }
     this.pushUndo();
     Object.assign(this.state, patch);
     this.rebuildIndex();

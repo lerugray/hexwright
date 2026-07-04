@@ -30,15 +30,72 @@ export function formatCCRR(col, row) {
   return String(col).padStart(2, '0') + String(row).padStart(2, '0');
 }
 
+export function gridVersion(grid) {
+  if (!grid || typeof grid !== 'object') return 1;
+  const v = Number(grid.grid_version);
+  if (Number.isFinite(v) && v >= 1) return v;
+  // Legacy grids have no grid_version field.
+  return 1;
+}
+
+export function getRowCountsByParity(grid) {
+  if (!grid || typeof grid !== 'object') return null;
+  const rcbp = grid.row_counts_by_parity;
+  if (rcbp && typeof rcbp === 'object' && Number.isFinite(rcbp.even) && Number.isFinite(rcbp.odd)) {
+    return rcbp;
+  }
+  return null;
+}
+
+export function rowCount(col, grid) {
+  const v = gridVersion(grid);
+  const nCols = grid.n_cols ?? grid.x_model?.n_cols;
+  if (Number.isFinite(nCols) && nCols > 0) {
+    if (col < 0 || col >= nCols) return 0;
+  }
+  if (v >= 2) {
+    const rcbp = getRowCountsByParity(grid);
+    if (!rcbp) {
+      throw new Error(
+        'grid_version >= 2 requires "row_counts_by_parity" with even/odd counts (jagged-row schema).'
+      );
+    }
+    return col % 2 === 0 ? rcbp.even : rcbp.odd;
+  }
+  // v1 rectangular grids use n_rows; legacy grids without it get a safe
+  // upper bound (image bounds act as the real gate in enumerateGridLattice).
+  const nRows = grid.n_rows ?? grid.y_model?.n_rows;
+  if (Number.isFinite(nRows) && nRows > 0) return nRows;
+  return 99;
+}
+
+export function colCount(grid) {
+  const nCols = grid?.n_cols ?? grid?.x_model?.n_cols;
+  if (Number.isFinite(nCols) && nCols > 0) return nCols;
+  return 99;
+}
+
+export function isValidCell(col, row, grid) {
+  if (row < 0) return false;
+  return row < rowCount(col, grid);
+}
+
 export function hexCenter(code, grid) {
   const { col, row } = parseCCRR(code);
   const xIntercept = grid.x_model?.x_intercept_col0 ?? grid.x_intercept_col0 ?? 0;
   const yIntercept = grid.y_model?.y_intercept_row0 ?? grid.y_intercept_row0 ?? 0;
   const colPitch = grid.col_pitch_x ?? grid.x_model?.col_pitch_x ?? 1;
   const rowPitch = grid.row_pitch_y ?? grid.y_model?.row_pitch_y ?? 1;
-  const evenOffset = grid.even_col_y_offset ?? grid.y_model?.even_col_down_offset ?? (rowPitch / 2);
+  // v2 uses odd_col_y_offset; v1 uses even_col_y_offset / even_col_down_offset.
+  let offset = 0;
+  if (gridVersion(grid) >= 2) {
+    const oddOffset = grid.odd_col_y_offset ?? (rowPitch / 2);
+    if (col % 2 === 1) offset = oddOffset;
+  } else {
+    const evenOffset = grid.even_col_y_offset ?? grid.y_model?.even_col_down_offset ?? (rowPitch / 2);
+    if (col % 2 === 0) offset = evenOffset;
+  }
   const x = xIntercept + col * colPitch;
-  const offset = (col % 2 === 0) ? evenOffset : 0;
   const y = yIntercept + row * rowPitch + offset;
   return { x, y };
 }
@@ -78,8 +135,18 @@ const EVEN_UP_EDGE_OFFSETS = {
 
 function edgeOffsetsForCode(code, grid) {
   const { col } = parseCCRR(code);
-  const evenColOffset = grid?.even_col_y_offset ?? grid?.y_model?.even_col_down_offset ?? 0;
-  const scheme = evenColOffset >= 0 ? EVEN_DOWN_EDGE_OFFSETS : EVEN_UP_EDGE_OFFSETS;
+  const v = gridVersion(grid);
+  // Which parity is shifted down? v1 = even; v2 = odd. If the offset value is
+  // negative the shift is up, which inverts the neighbor table.
+  let evenShiftedDown;
+  if (v >= 2) {
+    const oddOffset = grid?.odd_col_y_offset ?? 0;
+    evenShiftedDown = oddOffset < 0; // odd-down == even-up
+  } else {
+    const evenColOffset = grid?.even_col_y_offset ?? grid?.y_model?.even_col_down_offset ?? 0;
+    evenShiftedDown = evenColOffset >= 0;
+  }
+  const scheme = evenShiftedDown ? EVEN_DOWN_EDGE_OFFSETS : EVEN_UP_EDGE_OFFSETS;
   return (col % 2 === 0) ? scheme.even : scheme.odd;
 }
 
@@ -122,6 +189,18 @@ export function buildLandIndex(terrain, grid) {
   return centers;
 }
 
+export function validateGrid(grid, { source = 'grid' } = {}) {
+  if (!grid || typeof grid !== 'object') return;
+  const v = gridVersion(grid);
+  if (v >= 2) {
+    if (!getRowCountsByParity(grid)) {
+      throw new Error(
+        `${source}: grid_version ${v} requires "row_counts_by_parity" with even/odd counts (jagged-row schema).`
+      );
+    }
+  }
+}
+
 export function enumerateGridLattice(grid) {
   if (!grid) return {};
   const imageFull = grid.image_full;
@@ -130,16 +209,20 @@ export function enumerateGridLattice(grid) {
   const rowPitch = grid.row_pitch_y ?? grid.y_model?.row_pitch_y ?? 0;
   if (colPitch <= 0 || rowPitch <= 0) return {};
 
+  validateGrid(grid, { source: 'enumerateGridLattice' });
+
   const imgW = imageFull[0];
   const imgH = imageFull[1];
   const xMin = -colPitch / 2;
   const xMax = imgW + colPitch / 2;
   const yMin = -rowPitch / 2;
   const yMax = imgH + rowPitch / 2;
+  const nCols = colCount(grid);
 
   const centers = {};
-  for (let col = 0; col <= 99; col++) {
-    for (let row = 0; row <= 99; row++) {
+  for (let col = 0; col < nCols; col++) {
+    const maxRow = rowCount(col, grid);
+    for (let row = 0; row < maxRow; row++) {
       const code = formatCCRR(col, row);
       const c = hexCenter(code, grid);
       if (c.x < xMin || c.x > xMax || c.y < yMin || c.y > yMax) continue;

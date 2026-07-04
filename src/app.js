@@ -211,7 +211,7 @@ function formatRelativeTime(ts) {
 
 function sniffJsonKind(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
-  if (obj.col_pitch_x !== undefined || obj.x_model !== undefined) return 'grid';
+  if (obj.grid_version !== undefined || obj.col_pitch_x !== undefined || obj.x_model !== undefined) return 'grid';
   if (obj.terrain !== undefined) return 'terrain';
   if (Array.isArray(obj.rivers) || Array.isArray(obj.mountains)) return 'sides';
   if (Object.keys(obj).some((k) => /^[a-f0-9]{4}$/i.test(k))) return 'sides';

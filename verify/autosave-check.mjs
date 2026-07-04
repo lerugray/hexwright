@@ -232,4 +232,85 @@ async function restoreNewestRecent(page) {
   await ctx.close();
 }
 
+// Case 5: v2 jagged grid autosaves correctly and produces only valid cells.
+{
+  const errors = [];
+  const ctx = await b.newContext();
+  const page = await makePage(ctx, errors);
+  await page.goto(`http://localhost:${PORT}/`,{waitUntil:'load'});
+  await page.waitForFunction(()=>!!window.hexwright,{timeout:15000});
+
+  const v2Grid = {
+    image_full: [3413, 2707],
+    col_pitch_x: 43.999,
+    row_pitch_y: 49.998,
+    x_intercept_col0: 34.324,
+    y_intercept_row0: 27.028,
+    odd_col_y_offset: 24.999,
+    orientation: 'flat-top',
+    grid_version: 2,
+    n_cols: 77,
+    max_rows: 54,
+    row_counts_by_parity: { even: 54, odd: 53 }
+  };
+
+  await page.evaluate((grid)=>{
+    return window.hexwright.store.loadProject({
+      schemaVersion: 2,
+      name: 'NaB v2 Jagged',
+      mapImage: null,
+      imageFull: grid.image_full,
+      grid,
+      terrain: { terrain: {} },
+      hexFeatures: {},
+      hexsides: {},
+      provenance: {},
+      blankLattice: true
+    });
+  }, v2Grid);
+
+  const latticeCounts = await page.evaluate(()=>{
+    const s = window.hexwright.store;
+    const codes = Object.keys(s.centers || {});
+    const cols = new Set();
+    let oddColMaxRow = -1;
+    let evenColMaxRow = -1;
+    for (const code of codes) {
+      const { col, row } = window.hexwright.geo.parseCCRR(code);
+      cols.add(col);
+      if (col % 2 === 0) evenColMaxRow = Math.max(evenColMaxRow, row);
+      else oddColMaxRow = Math.max(oddColMaxRow, row);
+    }
+    return {
+      total: codes.length,
+      cols: cols.size,
+      evenColMaxRow,
+      oddColMaxRow,
+      hasPhantom53: codes.includes('0153'),
+      state: { blankLattice: s.state.blankLattice, hasGrid: !!s.state.grid, gridVersion: s.state.grid?.grid_version || 1 }
+    };
+  });
+
+  rec('v2 blank lattice enumerates only valid cells',
+    latticeCounts.evenColMaxRow === 53 && latticeCounts.oddColMaxRow === 52 && !latticeCounts.hasPhantom53,
+    JSON.stringify(latticeCounts));
+
+  await page.evaluate(()=>{
+    window.hexwright.store.setHexsideFeature('0000','0100','river');
+  });
+  await sleep(1400);
+  const jaggedSlotRaw = await page.evaluate(()=>localStorage.getItem('hexwright.session.nab-v2-jagged'));
+  let jaggedSlotOk = false, jaggedNote = 'no slot written';
+  if (jaggedSlotRaw) {
+    const parsed = JSON.parse(jaggedSlotRaw);
+    const sides = Object.keys(parsed.project?.hexsides || {}).length;
+    const grid = parsed.project?.grid;
+    jaggedSlotOk = sides === 1 && grid?.grid_version === 2 && grid?.row_counts_by_parity;
+    jaggedNote = `sides=${sides} grid_version=${grid?.grid_version}`;
+  }
+  rec('v2 jagged grid autosaves hexside-only project', jaggedSlotOk, jaggedNote);
+  rec('case 5 has no console/page errors', errors.length===0, errors.slice(0,2).join(' | '));
+  await ctx.close();
+}
+
 await b.close(); srv.kill(); const fails=results.filter(x=>!x).length; console.log(`\n=== ${results.length-fails}/${results.length} passed ===`); process.exit(fails?1:0);
