@@ -134,6 +134,11 @@ function countLandHexes(project) {
   return Object.keys(terrain).length;
 }
 
+function countHexsideEdges(project) {
+  if (!project || !project.hexsides) return 0;
+  return Object.keys(project.hexsides).length;
+}
+
 function parseSessionRecord(raw) {
   if (!raw) return null;
   const parsed = JSON.parse(raw);
@@ -152,7 +157,8 @@ function parseSessionRecord(raw) {
   return {
     project,
     savedAt,
-    land: countLandHexes(project)
+    land: countLandHexes(project),
+    sides: countHexsideEdges(project)
   };
 }
 
@@ -478,7 +484,7 @@ async function main() {
       name.textContent = slot.project.name || 'untitled';
       const detail = document.createElement('span');
       detail.className = 'detail hx-data';
-      detail.textContent = `${slot.land} hexes · ${formatRelativeTime(slot.savedAt)}`;
+      detail.textContent = `${slot.land > 0 ? `${slot.land} hexes` : `${slot.sides} edges`} · ${formatRelativeTime(slot.savedAt)}`;
       row.append(name, detail);
       row.addEventListener('click', () => restoreFromSlot(slot));
       recentList.appendChild(row);
@@ -513,7 +519,7 @@ async function main() {
     const manifestLabel = String(manifestUrl || '').split('/').pop() || '';
     const project = await loadProjectFromManifest(manifestUrl);
     const slot = getSessionSlotForName(project.name);
-    if (slot && slot.land > 0 && await promptRestore(slot, 'project')) {
+    if (slot && (slot.land > 0 || slot.sides > 0) && await promptRestore(slot, 'project')) {
       const restored = slot.project;
       restored.mapImage = project.mapImage;
       restored.traces = project.traces || [];
@@ -766,8 +772,12 @@ async function main() {
     clearTimeout(_autosaveTimer);
     _autosaveTimer = setTimeout(() => {
       try {
+        // Content = terrain OR hexsides. Hexside-only projects (NaB) were
+        // previously gated on land>0 and NEVER autosaved — edits silently
+        // lived only in the tab (ate Ray's edge fixes, 2026-07-04).
         const land = Object.keys(store.state.terrain.terrain || {}).length;
-        if (land > 0) {
+        const sides = Object.keys(store.state.hexsides || {}).length;
+        if (land > 0 || sides > 0) {
           const project = store.exportProjectObject();
           localStorage.setItem(
             sessionKeyForName(project.name),
@@ -780,8 +790,8 @@ async function main() {
     }, 800);
   });
 
-  // Warn before closing if there are unsaved edits (projects with no terrain
-  // layer don't autosave, so the exported file is the only durable copy).
+  // Warn before closing if there are unsaved edits (a project with NO content
+  // at all doesn't autosave, so the exported file is the only durable copy).
   window.addEventListener('beforeunload', (e) => {
     if (store.canUndo()) {
       e.preventDefault();

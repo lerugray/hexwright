@@ -196,4 +196,40 @@ async function restoreNewestRecent(page) {
   await ctx.close();
 }
 
+// Case 4: HEXSIDE-ONLY project (no terrain — the NaB shape) must still autosave.
+// Regression guard: the old land>0 gate meant hexside-only projects NEVER
+// autosaved and edits lived only in the tab (2026-07-04).
+{
+  const errors = [];
+  const ctx = await b.newContext();
+  const page = await makePage(ctx, errors);
+  await page.goto(`http://localhost:${PORT}/`,{waitUntil:'load'});
+  await page.waitForFunction(()=>!!window.hexwright,{timeout:15000});
+  await page.evaluate(()=>{
+    window.hexwright.store.loadProject({
+      schemaVersion: 2,
+      name: 'Sides Only',
+      mapImage: null,
+      imageFull: [100, 100],
+      grid: null,
+      terrain: { terrain: {} },
+      hexFeatures: {},
+      hexsides: { '0101|0102': ['river'] },
+      provenance: {}
+    });
+  });
+  await sleep(1400); // > 800ms debounce
+  const slotRaw = await page.evaluate(()=>localStorage.getItem('hexwright.session.sides-only'));
+  let slotOk = false, note = 'no slot written';
+  if (slotRaw) {
+    const parsed = JSON.parse(slotRaw);
+    const sides = Object.keys(parsed.project?.hexsides || {}).length;
+    slotOk = sides === 1;
+    note = `slot sides=${sides}`;
+  }
+  rec('hexside-only project autosaves (no terrain)', slotOk, note);
+  rec('case 4 has no console/page errors', errors.length===0, errors.slice(0,2).join(' | '));
+  await ctx.close();
+}
+
 await b.close(); srv.kill(); const fails=results.filter(x=>!x).length; console.log(`\n=== ${results.length-fails}/${results.length} passed ===`); process.exit(fails?1:0);
