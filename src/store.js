@@ -24,6 +24,74 @@ function todayStamp() {
   return new Date().toISOString().slice(0, 10);
 }
 
+export function validateFeaturesDocument(data, label = 'features') {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(`Expected ${label} shape: {"features":[{"code","type","name?","attrs"},...]}.`);
+  }
+  if (!Array.isArray(data.features)) {
+    throw new Error(`Expected ${label}.features to be an array.`);
+  }
+  data.features.forEach((entry, idx) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error(`${label}.features[${idx}] must be an object.`);
+    }
+    if (typeof entry.code !== 'string' || !String(entry.code).trim()) {
+      throw new Error(`${label}.features[${idx}].code must be a non-empty string.`);
+    }
+    if (typeof entry.type !== 'string' || !String(entry.type).trim()) {
+      throw new Error(`${label}.features[${idx}].type must be a non-empty string.`);
+    }
+    if (entry.name !== undefined && typeof entry.name !== 'string') {
+      throw new Error(`${label}.features[${idx}].name must be a string when present.`);
+    }
+    if (entry.attrs !== undefined && (typeof entry.attrs !== 'object' || Array.isArray(entry.attrs) || entry.attrs === null)) {
+      throw new Error(`${label}.features[${idx}].attrs must be an object when present.`);
+    }
+  });
+  return data;
+}
+
+function featuresArrayToState(features) {
+  const state = {};
+  for (const entry of features) {
+    const code = String(entry.code).trim();
+    const type = String(entry.type).trim();
+    if (!code || !type) continue;
+    if (!state[code]) state[code] = {};
+    state[code][type] = {
+      name: entry.name != null ? String(entry.name) : '',
+      attrs: deepClone(entry.attrs || {})
+    };
+  }
+  return state;
+}
+
+function exportFeaturesArrayFromState(featuresState) {
+  const out = [];
+  const codes = Object.keys(featuresState || {}).sort((a, b) => a.localeCompare(b));
+  for (const code of codes) {
+    const byType = featuresState[code];
+    if (!byType || typeof byType !== 'object') continue;
+    for (const type of Object.keys(byType).sort((a, b) => a.localeCompare(b))) {
+      const rec = byType[type];
+      if (!rec) continue;
+      const item = { code, type, attrs: deepClone(rec.attrs || {}) };
+      if (rec.name) item.name = rec.name;
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+function defaultAttrsFromSchema(attrSchema) {
+  const attrs = {};
+  for (const a of attrSchema || []) {
+    if (!a || !a.key) continue;
+    attrs[a.key] = a.type === 'number' ? 0 : '';
+  }
+  return attrs;
+}
+
 function parseTwuPairArrayEntry(entry, label, index) {
   if (!Array.isArray(entry) || entry.length !== 2) {
     throw new Error(`${label} index ${index} must be a 2-element [a,b] array.`);
@@ -95,6 +163,7 @@ export class ProjectStore {
       imageFull: [0, 0],
       grid: null,
       terrain: { terrain: {} },
+      features: {},
       hexFeatures: {},
       hexsides: emptyHexsidesState(),
       provenance: {},
@@ -171,6 +240,7 @@ export class ProjectStore {
       imageFull: project.imageFull || [0, 0],
       grid: project.grid || null,
       terrain: { terrain: deepClone(migrated.terrain || {}) },
+      features: deepClone(migrated.features || {}),
       hexFeatures: deepClone(migrated.hexFeatures || {}),
       hexsides: deepClone(migrated.hexsides || emptyHexsidesState()),
       provenance: deepClone(migrated.provenance || {}),
@@ -190,6 +260,7 @@ export class ProjectStore {
   migrateToV2(project, terrAliases, sideAliases) {
     if (!project) return {};
     const terrain = {};
+    const features = {};
     const hexFeatures = {};
     const hexsides = {};
     const provenance = {};
@@ -262,7 +333,26 @@ export class ProjectStore {
       }
     }
 
-    return { terrain, hexFeatures, hexsides, provenance };
+    // Point features load on BOTH paths: a manifest project can pair v1 grouped
+    // hexsides (which route through the branch above) with a features.json
+    // document — the TWU bundle does exactly that.
+    if (project.features) {
+      if (Array.isArray(project.features)) {
+        Object.assign(features, featuresArrayToState(validateFeaturesDocument({ features: project.features }).features));
+      } else if (typeof project.features === 'object') {
+        if (Array.isArray(project.features.features)) {
+          Object.assign(features, featuresArrayToState(validateFeaturesDocument(project.features).features));
+        } else {
+          for (const code of Object.keys(project.features)) {
+            const byType = project.features[code];
+            if (!byType || typeof byType !== 'object' || Array.isArray(byType)) continue;
+            features[code] = deepClone(byType);
+          }
+        }
+      }
+    }
+
+    return { terrain, features, hexFeatures, hexsides, provenance };
   }
 
   setProject(patch) {
@@ -330,6 +420,7 @@ export class ProjectStore {
   pushUndo() {
     const snap = {
       terrain: deepClone(this.state.terrain),
+      features: deepClone(this.state.features),
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance)
@@ -372,6 +463,7 @@ export class ProjectStore {
     const snap = this.undoStack.pop();
     this.redoStack.push({
       terrain: deepClone(this.state.terrain),
+      features: deepClone(this.state.features),
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance)
@@ -387,6 +479,7 @@ export class ProjectStore {
     const snap = this.redoStack.pop();
     this.undoStack.push({
       terrain: deepClone(this.state.terrain),
+      features: deepClone(this.state.features),
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance)
@@ -399,6 +492,7 @@ export class ProjectStore {
 
   applySnap(snap) {
     this.state.terrain = snap.terrain;
+    this.state.features = snap.features || {};
     this.state.hexFeatures = snap.hexFeatures;
     this.state.hexsides = snap.hexsides;
     this.state.provenance = snap.provenance;
@@ -479,6 +573,95 @@ export class ProjectStore {
     if (i >= 0) arr.splice(i, 1);
     else arr.push(key);
     this.setHexFeatures(code, arr);
+  }
+
+  _paletteFeatureType(type) {
+    const palette = this.palette || {};
+    return (palette.hexFeatures || []).find((f) => f.key === type) || null;
+  }
+
+  getPointFeature(code, type) {
+    const rec = this.state.features?.[code]?.[type];
+    return rec ? deepClone(rec) : null;
+  }
+
+  getPointFeaturesAt(code) {
+    const byType = this.state.features?.[code];
+    if (!byType) return [];
+    return Object.keys(byType).map((type) => ({ type, ...deepClone(byType[type]) }));
+  }
+
+  _pointFeatureEqual(a, b) {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    return a.name === b.name && JSON.stringify(a.attrs || {}) === JSON.stringify(b.attrs || {});
+  }
+
+  setPointFeature(code, type, { name = '', attrs } = {}) {
+    const paletteFeature = this._paletteFeatureType(type);
+    const nextAttrs = attrs != null
+      ? deepClone(attrs)
+      : defaultAttrsFromSchema(paletteFeature?.attrs);
+    const next = { name: name != null ? String(name) : '', attrs: nextAttrs };
+    const current = this.state.features?.[code]?.[type];
+    if (current && this._pointFeatureEqual(current, next)) return;
+    this.pushUndo();
+    if (!this.state.features) this.state.features = {};
+    if (!this.state.features[code]) this.state.features[code] = {};
+    this.state.features[code][type] = next;
+    this.notify('features');
+  }
+
+  deletePointFeature(code, type) {
+    const bucket = this.state.features?.[code];
+    if (!bucket || !bucket[type]) return;
+    this.pushUndo();
+    delete bucket[type];
+    if (!Object.keys(bucket).length) delete this.state.features[code];
+    this.notify('features');
+  }
+
+  countPointFeatureType(type) {
+    let count = 0;
+    for (const byType of Object.values(this.state.features || {})) {
+      if (byType && byType[type]) count++;
+    }
+    return count;
+  }
+
+  clearPointFeatureType(type) {
+    const count = this.countPointFeatureType(type);
+    if (count === 0) return 0;
+    this.pushUndo();
+    for (const code of Object.keys(this.state.features || {})) {
+      const bucket = this.state.features[code];
+      if (!bucket || !bucket[type]) continue;
+      delete bucket[type];
+      if (!Object.keys(bucket).length) delete this.state.features[code];
+    }
+    this.notify('features');
+    return count;
+  }
+
+  importFeatures(input) {
+    const data = typeof input === 'string' ? JSON.parse(input) : input;
+    validateFeaturesDocument(data);
+    const imported = featuresArrayToState(data.features);
+    this.pushUndo();
+    this.state.features = imported;
+    this.notify('features');
+    return data.features.length;
+  }
+
+  exportFeaturesObject() {
+    return {
+      _comment: `edited in Hexwright v2.1 ${todayStamp()}`,
+      features: exportFeaturesArrayFromState(this.state.features)
+    };
+  }
+
+  exportFeaturesJson() {
+    return JSON.stringify(this.exportFeaturesObject(), null, 2);
   }
 
   // ----------------- hexsides (per-edge arrays) -----------------
@@ -855,6 +1038,7 @@ export class ProjectStore {
       imageFull: deepClone(this.state.imageFull),
       grid: deepClone(this.state.grid),
       terrain: this.exportTerrainObject(),
+      features: this.exportFeaturesObject(),
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance),

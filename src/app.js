@@ -139,6 +139,24 @@ function countHexsideEdges(project) {
   return Object.keys(project.hexsides).length;
 }
 
+function countPointFeatures(project) {
+  const features = project?.features;
+  if (!features) return 0;
+  if (Array.isArray(features.features)) return features.features.length;
+  if (typeof features === 'object' && !Array.isArray(features)) {
+    let count = 0;
+    for (const code of Object.keys(features)) {
+      if (code === '_comment') continue;
+      const byType = features[code];
+      if (byType && typeof byType === 'object' && !Array.isArray(byType)) {
+        count += Object.keys(byType).length;
+      }
+    }
+    return count;
+  }
+  return 0;
+}
+
 function parseSessionRecord(raw) {
   if (!raw) return null;
   const parsed = JSON.parse(raw);
@@ -230,6 +248,7 @@ function makeBlankProject({ grid = null, blankLattice = false } = {}) {
     palette: null,
     traces: [],
     hexFeatures: {},
+    features: {},
     provenance: {},
     ...(blankLattice ? { blankLattice: true } : {})
   };
@@ -328,15 +347,17 @@ async function loadProjectFromManifest(manifestUrl) {
   const gridUrl = new URL(manifest.hexgrid, base).href;
   const terrainUrl = new URL(manifest.terrain, base).href;
   const sidesUrl = manifest.hexsides ? new URL(manifest.hexsides, base).href : null;
+  const featuresUrl = manifest.features ? new URL(manifest.features, base).href : null;
   const paletteUrl = typeof manifest.palette === 'string'
     ? new URL(manifest.palette, base).href
     : null;
 
-  const [mapImg, grid, terrain, hexsides, palette] = await Promise.all([
+  const [mapImg, grid, terrain, hexsides, features, palette] = await Promise.all([
     loadImage(mapUrl),
     fetch(gridUrl).then(r => r.json()),
     fetch(terrainUrl).then(r => r.json()),
     sidesUrl ? fetch(sidesUrl).then(r => r.json()) : Promise.resolve(null),
+    featuresUrl ? fetch(featuresUrl).then(r => r.json()) : Promise.resolve(null),
     paletteUrl ? fetch(paletteUrl).then(r => r.json()) : Promise.resolve(manifest.palette && typeof manifest.palette === 'object' ? manifest.palette : null)
   ]);
 
@@ -364,6 +385,7 @@ async function loadProjectFromManifest(manifestUrl) {
     grid,
     terrain,
     hexsides,
+    features,
     palette,
     traces,
     blankLattice: manifest.blankLattice === true
@@ -782,7 +804,8 @@ async function main() {
         // lived only in the tab (ate Ray's edge fixes, 2026-07-04).
         const land = Object.keys(store.state.terrain.terrain || {}).length;
         const sides = Object.keys(store.state.hexsides || {}).length;
-        if (land > 0 || sides > 0) {
+        const feats = countPointFeatures(store.exportProjectObject());
+        if (land > 0 || sides > 0 || feats > 0) {
           const project = store.exportProjectObject();
           localStorage.setItem(
             sessionKeyForName(project.name),

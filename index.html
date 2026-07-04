@@ -77,6 +77,8 @@
           <button id="export-sides-copy" type="button">Copy hexsides</button>
           <button id="export-terrain-file" type="button">Export terrain.json</button>
           <button id="export-terrain-copy" type="button">Copy terrain</button>
+          <button id="export-features-file" type="button">Export features.json</button>
+          <button id="export-features-copy" type="button">Copy features</button>
           <button id="export-twu" type="button">TWU rivers+rail</button>
           <button id="export-overlay" type="button" title="Export classification PNG">Classification PNG</button>
         </div>
@@ -99,6 +101,10 @@
       <span class="glyph"><svg viewBox="0 0 24 24"><path d="M5 17 L17 5 M14 5 h3 v3"/></svg></span>
       <span class="lbl">Edges</span><span class="kbd">E</span>
     </button>
+    <button id="tool-features" class="tool" type="button" role="radio" aria-checked="false" data-mode="features">
+      <span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 2 l2.2 6.7 H21 l-5.5 4 2.1 6.6 L12 15.8 6.4 19.3 l2.1 -6.6 L3 8.7 h6.8 z"/></svg></span>
+      <span class="lbl">Features</span><span class="kbd">P</span>
+    </button>
     <button id="tool-nudge" class="tool" type="button" role="radio" aria-checked="false" data-mode="nudge">
       <span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 4 v16 M4 12 h16 M12 4 l-2.5 3 M12 4 l2.5 3 M12 20 l-2.5 -3 M12 20 l2.5 -3"/></svg></span>
       <span class="lbl">Nudge</span><span class="kbd">N</span>
@@ -120,6 +126,10 @@
     </div>
 
     <div id="feature-layer-rows"></div>
+    <div id="point-feature-layer-wrap" hidden>
+      <div class="layer-section-label">Point features</div>
+      <div id="point-feature-layer-rows"></div>
+    </div>
 
     <div id="terrain-layer-wrap">
       <div id="terrain-fill-row" class="layer-row">
@@ -204,6 +214,24 @@
     </div>
   </aside>
 
+  <aside id="feature-inspector" class="panel feature-insp hx-ui" hidden aria-label="Feature inspector">
+    <div class="head">
+      <span class="title" id="feat-insp-title">Feature</span>
+      <button type="button" id="feat-insp-close" class="collapse hx-data" aria-label="Close feature inspector">×</button>
+    </div>
+    <div class="sect" style="border-top: 0;">
+      <label class="field-row">
+        <span class="lbl">Name</span>
+        <input id="feat-insp-name" type="text" class="field-input" placeholder="Optional label" />
+      </label>
+      <div id="feat-insp-attrs" class="feat-insp-attrs"></div>
+    </div>
+    <div class="feat-insp-actions">
+      <button type="button" id="feat-insp-delete" class="btn danger">Delete</button>
+      <button type="button" id="feat-insp-save" class="btn primary">Save</button>
+    </div>
+  </aside>
+
   <main class="workspace">
     <div id="canvas-wrap" class="canvas-wrap">
       <canvas id="map-canvas" role="img" aria-label="Map canvas"></canvas>
@@ -227,6 +255,7 @@
           <div class="helprow"><span>Inspect</span><span class="keys"><span class="kbd">I</span></span></div>
           <div class="helprow"><span>Terrain brush</span><span class="keys"><span class="kbd">B</span></span></div>
           <div class="helprow"><span>Edge paint</span><span class="keys"><span class="kbd">E</span></span></div>
+          <div class="helprow"><span>Point features</span><span class="keys"><span class="kbd">P</span></span></div>
           <div class="helprow"><span>Nudge map</span><span class="keys"><span class="kbd">N</span></span></div>
           <div class="helprow"><span>Cycle view</span><span class="keys"><span class="kbd">V</span></span></div>
           <div class="helprow"><span>Close</span><span class="keys"><span class="kbd">Esc</span></span></div>
@@ -250,7 +279,7 @@
           <div class="helprow"><span>Undo</span><span class="keys"><span class="kbd">Ctrl</span><span class="kbd">Z</span></span></div>
           <div class="helprow"><span>Redo</span><span class="keys"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">Z</span></span></div>
           <div class="helprow"><span>Autosave</span><span class="keys plain">every change</span></div>
-          <div class="helprow"><span>Export ▾</span><span class="keys plain">hexgrid / terrain / hexsides / hexFeatures JSON</span></div>
+          <div class="helprow"><span>Export ▾</span><span class="keys plain">terrain / hexsides / features JSON</span></div>
         </div>
       </div>
       <p class="help-footer hx-data">Getting loaded: use <strong>File ▾</strong> pickers, drag &amp; drop files, or open with <code>?project=&lt;manifest-url&gt;</code> (e.g. <code>?project=samples/gota-project.json</code>).</p>

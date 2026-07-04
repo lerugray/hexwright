@@ -38,6 +38,9 @@ export class UI {
     this.lastBrushScreen = null;
     this.edgePaintActive = false;
     this.edgePaintFeature = null;
+    this.featurePaintActive = false;
+    this.featurePaintType = null;
+    this.featureInspector = null;
     this._edgeWipeCount = 0;
     this.nudgeActive = false;
     this.anomalyActive = false;
@@ -50,6 +53,7 @@ export class UI {
     this._loadViewSettings();
     this._setupBrush();
     this._setupEdgePaint();
+    this._setupFeaturePaint();
     this.setMode('inspect');
     this.updateUI();
   }
@@ -59,9 +63,10 @@ export class UI {
       'strip-project-name', 'strip-project-sub', 'mode-hint', 'save-state',
       'load-map', 'load-grid', 'load-terrain', 'load-sides', 'load-sample',
       'fit-view', 'undo', 'clear-select', 'toggle-help',
-      'view-mode', 'tool-rail', 'tool-inspect', 'tool-terrain', 'tool-edges', 'tool-nudge',
+      'view-mode', 'tool-rail', 'tool-inspect', 'tool-terrain', 'tool-edges', 'tool-features', 'tool-nudge',
       'brush-card', 'brush-mode-tag', 'brush-ink-list',
-      'layers-panel', 'feature-layer-rows', 'terrain-layer-wrap', 'terrain-fill-row', 'terrain-fill-eye', 'terrain-fill-count',
+      'layers-panel', 'feature-layer-rows', 'point-feature-layer-wrap', 'point-feature-layer-rows',
+      'terrain-layer-wrap', 'terrain-fill-row', 'terrain-fill-eye', 'terrain-fill-count',
       'trace-layer-wrap', 'trace-layer-rows',
       'trace-opacity', 'trace-opacity-value', 'overlay-opacity', 'overlay-opacity-value',
       'hexside-stroke-opacity', 'hexside-stroke-opacity-value',
@@ -70,7 +75,10 @@ export class UI {
       'export-overlay', 'toggle-anomaly', 'anomaly-count', 'load-palette', 'anomaly-status',
       'import-sides', 'import-terrain', 'import-wmp', 'file-btn', 'file-popover', 'export-btn', 'export-popover',
       'import-twu',
-      'export-sides-file', 'export-sides-copy', 'export-terrain-file', 'export-terrain-copy', 'export-twu',
+      'export-sides-file', 'export-sides-copy', 'export-terrain-file', 'export-terrain-copy',
+      'export-features-file', 'export-features-copy', 'export-twu',
+      'feature-inspector', 'feat-insp-close', 'feat-insp-title', 'feat-insp-name', 'feat-insp-attrs',
+      'feat-insp-delete', 'feat-insp-save',
       'hex-editor', 'hexed-close', 'hexed-title', 'hexed-terrain-current', 'hexed-terrain-grid',
       'hexed-feat-count', 'hexed-featrow', 'hexed-edges-meta', 'hexed-svg', 'hexed-fill',
       'hexed-edges', 'hexed-edge-labels', 'hexed-center-code', 'hexed-on-edge-label',
@@ -274,7 +282,10 @@ export class UI {
           this.toggleHelp(false);
           return;
         }
-        if (!typing) this.closeInspector();
+        if (!typing) {
+          if (this.featureInspector) this.closeFeatureInspector();
+          else this.closeInspector();
+        }
         return;
       }
 
@@ -291,6 +302,7 @@ export class UI {
       if (e.key.toLowerCase() === 'i') this.setMode('inspect');
       if (e.key.toLowerCase() === 'b') this.setMode('terrain');
       if (e.key.toLowerCase() === 'e') this.setMode('edges');
+      if (e.key.toLowerCase() === 'p') this.setMode('features');
       if (e.key.toLowerCase() === 'n') this.setMode('nudge');
       if (this.nudgeActive && e.key.startsWith('Arrow')) {
         e.preventDefault();
@@ -306,6 +318,7 @@ export class UI {
       if (/^[0-9]$/.test(e.key)) {
         const idx = e.key === '0' ? 9 : parseInt(e.key, 10) - 1;
         if (this.mode === 'edges') this._selectEdgeFeatureByIndex(idx);
+        else if (this.mode === 'features') this._selectPointFeatureByIndex(idx);
         else this._selectTerrainByIndex(idx);
       }
       if (e.key.toLowerCase() === 'f') {
@@ -326,6 +339,15 @@ export class UI {
       this.updateUI(reason);
     });
     this.renderer.onHexSelect = (code, screenPt) => {
+      if (this.featurePaintActive && code && this.featurePaintType) {
+        const existing = this.store.getPointFeature(code, this.featurePaintType);
+        if (existing) this.openFeatureInspector(code, this.featurePaintType);
+        else {
+          this.store.setPointFeature(code, this.featurePaintType, { name: '', attrs: undefined });
+          this.status(`Placed ${this._activePointFeatureLabel()} on ${code}`, 1800);
+        }
+        return;
+      }
       if (code) this.openInspector(code, screenPt);
       else this.closeInspector();
     };
@@ -348,6 +370,12 @@ export class UI {
     this.els['undo'].addEventListener('click', () => this.store.undo());
     this.els['clear-select'].addEventListener('click', () => this.closeInspector());
     this.els['hexed-close'].addEventListener('click', () => this.closeInspector());
+    this.els['feat-insp-close'].addEventListener('click', () => this.closeFeatureInspector());
+    this.els['feat-insp-save'].addEventListener('click', () => this._saveFeatureInspector());
+    this.els['feat-insp-delete'].addEventListener('click', () => this._deleteFeatureInspector());
+    ['pointerdown', 'pointerup', 'mousedown', 'mouseup'].forEach((evt) => {
+      this.els['feature-inspector']?.addEventListener(evt, (e) => e.stopPropagation());
+    });
     this.els['toggle-help'].addEventListener('click', () => this.toggleHelp());
     this.els['close-help'].addEventListener('click', () => this.toggleHelp(false));
     this.els['help-overlay'].addEventListener('click', (e) => {
@@ -408,6 +436,8 @@ export class UI {
     this.els['export-sides-copy'].addEventListener('click', () => this._copy(this.store.exportHexsidesJson(), 'hexsides.json'));
     this.els['export-terrain-file'].addEventListener('click', () => this._download('terrain.json', this.store.exportTerrainJson()));
     this.els['export-terrain-copy'].addEventListener('click', () => this._copy(this.store.exportTerrainJson(), 'terrain.json'));
+    this.els['export-features-file'].addEventListener('click', () => this._download('features.json', this.store.exportFeaturesJson()));
+    this.els['export-features-copy'].addEventListener('click', () => this._copy(this.store.exportFeaturesJson(), 'features.json'));
     this.els['export-twu'].addEventListener('click', () => {
       if (this.loadHandlers?.exportTwu) this.loadHandlers.exportTwu();
     });
@@ -418,6 +448,7 @@ export class UI {
       if (!row) return;
       const key = row.dataset.inkKey;
       if (this.mode === 'edges') this.setEdgePaintFeature(key);
+      else if (this.mode === 'features') this.setFeaturePaintType(key);
       else this.setBrushTerrain(key);
     });
 
@@ -432,6 +463,14 @@ export class UI {
       const eye = e.target.closest('.eye[data-feature-key]');
       if (!eye) return;
       this.toggleHexsideLayerVisibility(eye.dataset.featureKey);
+    });
+
+    this.els['point-feature-layer-rows'].addEventListener('click', (e) => {
+      const clearBtn = e.target.closest('.layer-clear[data-point-feature-key]');
+      if (!clearBtn) return;
+      const row = clearBtn.closest('.layer-row');
+      const label = row?.querySelector('.name')?.textContent?.trim() || clearBtn.dataset.pointFeatureKey;
+      this.clearPointFeatureLayer(clearBtn.dataset.pointFeatureKey, label);
     });
 
     this.els['terrain-fill-eye'].addEventListener('click', () => {
@@ -596,14 +635,25 @@ export class UI {
   }
 
   setMode(mode) {
-    if (!['inspect', 'terrain', 'edges', 'nudge'].includes(mode)) return;
+    if (!['inspect', 'terrain', 'edges', 'features', 'nudge'].includes(mode)) return;
     this.mode = mode;
     this.brushActive = mode === 'terrain';
     this.edgePaintActive = mode === 'edges';
+    this.featurePaintActive = mode === 'features';
     this.nudgeActive = mode === 'nudge';
+
+    if (mode !== 'features') this.closeFeatureInspector();
+
+    if (this.featurePaintActive) {
+      const pFeatures = this.store.getPalette()?.hexFeatures || [];
+      if (pFeatures.length && !pFeatures.some((f) => f.key === this.featurePaintType)) {
+        this.featurePaintType = pFeatures[0].key;
+      }
+    }
 
     this._setupBrush();
     this._setupEdgePaint();
+    this._setupFeaturePaint();
     this.renderer.setNudgeMode(this.nudgeActive);
 
     if (this.nudgeActive && this.renderer.viewMode !== 'both') {
@@ -615,6 +665,7 @@ export class UI {
     this._updateModeHint();
     this._reflectBrush();
     this._reflectEdgePaint();
+    this._reflectFeaturePaint();
     this._renderBrushCard();
     this._renderLayersPanel();
     this._updateCanvasCursor();
@@ -650,6 +701,10 @@ export class UI {
     }
     if (this.mode === 'edges') {
       hint.innerHTML = `<b>Edge paint · ${this._edgeFeatureLabel()}</b> — click edge to toggle · drag to paint<span class="hint-extra"> · <span class="kbd">⌥</span> wipe all layers on edge · <span class="kbd">1</span>–<span class="kbd">0</span> switch ink</span>`;
+      return;
+    }
+    if (this.mode === 'features') {
+      hint.innerHTML = `<b>Features · ${this._activePointFeatureLabel()}</b> — click hex to place · click again to edit<span class="hint-extra"> · <span class="kbd">P</span> features · <span class="kbd">1</span>–<span class="kbd">0</span> switch type</span>`;
       return;
     }
     if (this.mode === 'nudge') {
@@ -770,6 +825,138 @@ export class UI {
     this._updateModeHint();
   }
 
+  toggleFeaturePaint() {
+    this.setMode('features');
+  }
+
+  _activePointFeatureLabel() {
+    const palette = this.store.getPalette();
+    const feature = (palette?.hexFeatures || []).find((f) => f.key === this.featurePaintType);
+    return feature?.label || feature?.key || 'Feature';
+  }
+
+  setFeaturePaintType(key) {
+    this.featurePaintType = key;
+    this._setupFeaturePaint();
+    this._reflectFeaturePaint();
+    this._renderBrushCard();
+    this._updateCanvasCursor();
+  }
+
+  _setupFeaturePaint() {
+    this.renderer.setFeaturePaint({
+      active: this.featurePaintActive,
+      featureType: this.featurePaintType
+    });
+  }
+
+  _reflectFeaturePaint() {
+    const btn = this.els['tool-features'];
+    const palette = this.store.getPalette();
+    const feature = (palette?.hexFeatures || []).find((f) => f.key === this.featurePaintType);
+    if (btn) btn.title = `Features mode (P)${feature ? ` — ${feature.label || feature.key}` : ''}`;
+    this._updateModeHint();
+  }
+
+  _selectPointFeatureByIndex(idx) {
+    const palette = this.store.getPalette();
+    const feature = palette?.hexFeatures?.[idx];
+    if (!feature) return;
+    this.setFeaturePaintType(feature.key);
+    this.status(`Feature ${idx + 1}: ${feature.label || feature.key}`, 1200);
+  }
+
+  _pointFeatureCounts() {
+    const counts = {};
+    for (const byType of Object.values(this.store.state.features || {})) {
+      if (!byType || typeof byType !== 'object') continue;
+      for (const type of Object.keys(byType)) counts[type] = (counts[type] || 0) + 1;
+    }
+    return counts;
+  }
+
+  clearPointFeatureLayer(type, label) {
+    if (!type) return;
+    const count = this.store.countPointFeatureType(type);
+    if (count === 0) return;
+    const name = label || type;
+    if (!confirm(`Clear ${name} (${count} entries)? This cannot be undone except by autosave restore.`)) return;
+    this.store.clearPointFeatureType(type);
+  }
+
+  openFeatureInspector(code, type) {
+    const palette = this.store.getPalette();
+    const pf = (palette?.hexFeatures || []).find((f) => f.key === type);
+    const rec = this.store.getPointFeature(code, type);
+    if (!rec) return;
+    this.featureInspector = { code, type };
+    this.els['feat-insp-title'].textContent = `${pf?.label || type} · ${code}`;
+    this.els['feat-insp-name'].value = rec.name || '';
+    this._renderFeatureInspectorAttrs(pf, rec);
+    this.els['feature-inspector'].hidden = false;
+    this.els['layers-panel'].hidden = true;
+    if (this.inspectorHex) this.closeInspector();
+  }
+
+  _renderFeatureInspectorAttrs(paletteFeature, rec) {
+    const wrap = this.els['feat-insp-attrs'];
+    const schema = paletteFeature?.attrs || [];
+    if (!schema.length) {
+      wrap.innerHTML = '<p class="hx-data dimmed">No attributes for this type.</p>';
+      return;
+    }
+    wrap.innerHTML = schema.map((a) => {
+      const val = rec.attrs?.[a.key];
+      const inputType = a.type === 'number' ? 'number' : 'text';
+      const shown = val != null ? val : (a.type === 'number' ? 0 : '');
+      return `<label class="field-row">
+        <span class="lbl">${a.label || a.key}</span>
+        <input type="${inputType}" class="field-input feat-attr" data-attr-key="${a.key}" data-attr-type="${a.type || 'text'}" value="${shown}" />
+      </label>`;
+    }).join('');
+  }
+
+  _collectFeatureInspectorValues() {
+    const attrs = {};
+    this.els['feat-insp-attrs'].querySelectorAll('.feat-attr[data-attr-key]').forEach((input) => {
+      const key = input.dataset.attrKey;
+      if (input.dataset.attrType === 'number') {
+        const n = Number(input.value);
+        attrs[key] = Number.isFinite(n) ? n : 0;
+      } else {
+        attrs[key] = input.value;
+      }
+    });
+    return {
+      name: this.els['feat-insp-name'].value.trim(),
+      attrs
+    };
+  }
+
+  _saveFeatureInspector() {
+    if (!this.featureInspector) return;
+    const { code, type } = this.featureInspector;
+    const values = this._collectFeatureInspectorValues();
+    this.store.setPointFeature(code, type, values);
+    this.status(`Updated ${type} on ${code}`, 1800);
+    this.closeFeatureInspector();
+  }
+
+  _deleteFeatureInspector() {
+    if (!this.featureInspector) return;
+    const { code, type } = this.featureInspector;
+    if (!confirm(`Delete ${type} on ${code}?`)) return;
+    this.store.deletePointFeature(code, type);
+    this.status(`Deleted ${type} on ${code}`, 1800);
+    this.closeFeatureInspector();
+  }
+
+  closeFeatureInspector() {
+    this.featureInspector = null;
+    if (this.els['feature-inspector']) this.els['feature-inspector'].hidden = true;
+    if (!this.inspectorHex) this.els['layers-panel'].hidden = false;
+  }
+
   _selectTerrainByIndex(idx) {
     const palette = this.store.getPalette();
     const t = palette?.terrain?.[idx];
@@ -812,12 +999,35 @@ export class UI {
     const list = this.els['brush-ink-list'];
     if (!card || !list) return;
 
-    const show = this.mode === 'terrain' || this.mode === 'edges';
+    const show = this.mode === 'terrain' || this.mode === 'edges' || this.mode === 'features';
     card.style.display = show ? '' : 'none';
     if (!show) return;
 
     const palette = this.store.getPalette() || {};
-    this.els['brush-mode-tag'].textContent = this.mode === 'edges' ? 'Edge paint' : 'Terrain';
+    this.els['brush-mode-tag'].textContent = this.mode === 'edges'
+      ? 'Edge paint'
+      : (this.mode === 'features' ? 'Features' : 'Terrain');
+
+    if (this.mode === 'features') {
+      const counts = this._pointFeatureCounts();
+      const features = palette.hexFeatures || [];
+      if (features.length && !features.some((f) => f.key === this.featurePaintType)) {
+        this.featurePaintType = features[0].key;
+        this._setupFeaturePaint();
+      }
+      list.innerHTML = features.map((f, idx) => {
+        const active = f.key === this.featurePaintType;
+        const keycap = this._shortcutLabel(idx);
+        const glyph = f.glyph ? `<span class="hx-data">${f.glyph}</span>` : '';
+        return `<div class="ink${active ? ' is-active' : ''}" data-ink-key="${f.key}">
+          ${glyph}
+          <span class="name">${f.label || f.key}</span>
+          <span class="count">${counts[f.key] || 0}</span>
+          ${keycap ? `<span class="kbd">${keycap}</span>` : ''}
+        </div>`;
+      }).join('');
+      return;
+    }
 
     if (this.mode === 'edges') {
       const counts = this._featureCounts();
@@ -935,6 +1145,26 @@ export class UI {
       </div>`;
     }).join('');
 
+    const pointFeatures = palette.hexFeatures || [];
+    const pointCounts = this._pointFeatureCounts();
+    const pointWrap = this.els['point-feature-layer-wrap'];
+    const pointRows = this.els['point-feature-layer-rows'];
+    if (pointWrap && pointRows) {
+      pointWrap.hidden = pointFeatures.length === 0;
+      pointRows.innerHTML = pointFeatures.map((f) => {
+        const n = pointCounts[f.key] || 0;
+        const clearBtn = n > 0
+          ? `<button type="button" class="layer-clear" data-point-feature-key="${f.key}" aria-label="Clear ${f.label || f.key}" title="Clear layer">×</button>`
+          : '';
+        return `<div class="layer-row">
+          <span class="swatch point-feat-glyph hx-data">${f.glyph || '•'}</span>
+          <span class="name">${f.label || f.key}</span>
+          <span class="count">${n}</span>
+          ${clearBtn}
+        </div>`;
+      }).join('');
+    }
+
     const terrainFillOn = this.renderer.terrainFillVisible !== false;
     this.els['terrain-fill-row'].classList.toggle('dimmed', !terrainFillOn);
     this.els['terrain-fill-eye'].classList.toggle('off', !terrainFillOn);
@@ -998,6 +1228,10 @@ export class UI {
     if (!wrap) return;
     if (this.mode === 'nudge') {
       wrap.style.cursor = 'move';
+      return;
+    }
+    if (this.mode === 'features') {
+      wrap.style.cursor = 'crosshair';
       return;
     }
     if (this.mode === 'inspect') {
@@ -1132,7 +1366,7 @@ export class UI {
     this.inspectorHex = null;
     this.hexedSelectedEdge = null;
     this.els['hex-editor'].hidden = true;
-    this.els['layers-panel'].hidden = false;
+    if (!this.featureInspector) this.els['layers-panel'].hidden = false;
     this.renderer.closeInspector();
   }
 
@@ -1227,6 +1461,7 @@ export class UI {
       this._lastPalette = palette;
       this._rebuildHexEditorPalette();
       this._setupEdgePaint();
+      this._setupFeaturePaint();
       if (this.inspectorHex) this._refreshInspector();
     }
     this._renderBrushCard();
@@ -1239,6 +1474,7 @@ export class UI {
     this._updateModeHint();
     this._reflectBrush();
     this._reflectEdgePaint();
+    this._reflectFeaturePaint();
     this._updateCanvasCursor();
 
     if (this.inspectorHex && !paletteChanged) {

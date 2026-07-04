@@ -49,6 +49,12 @@ export class MapRenderer {
       onStrokeEnd: null
     };
     this.edgePaintStroke = null;
+    this.featurePaint = {
+      active: false,
+      featureType: null,
+      onPlace: null,
+      onEdit: null
+    };
 
     this.shiftHeld = false;
     this.altHeld = false;
@@ -144,6 +150,14 @@ export class MapRenderer {
       this.clearHighlight();
       this._setSnapPreview(null);
     }
+  }
+
+  setFeaturePaint(config) {
+    const next = { ...this.featurePaint, ...config };
+    // Preserve callbacks when toggling active/type only.
+    if (config.onPlace === undefined && this.featurePaint.onPlace) next.onPlace = this.featurePaint.onPlace;
+    if (config.onEdit === undefined && this.featurePaint.onEdit) next.onEdit = this.featurePaint.onEdit;
+    this.featurePaint = next;
   }
 
   _edgeSnapAssistActive(e = null) {
@@ -336,6 +350,13 @@ export class MapRenderer {
         wrap.setPointerCapture(e.pointerId);
         return;
       }
+      if (this.featurePaint.active) {
+        this.isDragging = true;
+        this.clickMoved = false;
+        this.dragStart = { x: e.clientX, y: e.clientY };
+        wrap.setPointerCapture(e.pointerId);
+        return;
+      }
       this.isDragging = true;
       this.clickMoved = false;
       this.dragStart = { x: e.clientX, y: e.clientY };
@@ -415,6 +436,14 @@ export class MapRenderer {
             if (this.brush.onPaint) this.brush.onPaint(hex);
           }
         }
+        return;
+      }
+      if (this.featurePaint.active) {
+        const pt = this._eventToScreen(e);
+        if (!this.isDragging) return;
+        const dx = e.clientX - this.dragStart.x;
+        const dy = e.clientY - this.dragStart.y;
+        if (Math.hypot(dx, dy) > 3) this.clickMoved = true;
         return;
       }
       if (!this.isDragging) {
@@ -498,12 +527,23 @@ export class MapRenderer {
         }
         return;
       }
+      if (this.featurePaint.active) {
+        const pt = this._eventToScreen(e);
+        const hex = this.hexAtScreen(pt);
+        if (hex) {
+          this.selectedHex = hex;
+          this.draw();
+          this.onHexSelect?.(hex, pt);
+        }
+        return;
+      }
       if (!this.clickMoved) {
         this._clickAt(e);
       }
     });
 
-    wrap.addEventListener('pointerleave', () => {
+    wrap.addEventListener('pointerleave', (e) => {
+      if (e && wrap.hasPointerCapture?.(e.pointerId)) return;
       this.isDragging = false;
       if (this.edgePaint.active) {
         const session = this.edgePaintStroke;
@@ -909,43 +949,107 @@ export class MapRenderer {
     ctx.restore();
   }
 
+  _firstNumericAttr(attrs, attrSchema) {
+    if (!attrs || typeof attrs !== 'object') return null;
+    const keys = (attrSchema || []).filter((a) => a && a.type === 'number').map((a) => a.key);
+    const scan = keys.length ? keys : Object.keys(attrs);
+    for (const key of scan) {
+      const val = attrs[key];
+      if (typeof val === 'number' && Number.isFinite(val)) return val;
+    }
+    return null;
+  }
+
   _drawFeatureGlyphs(ctx, view) {
     const s = view.baseScale * view.zoom;
     const grid = this.store.state.grid;
     const palette = this.store.getPalette();
     if (!palette || !palette.hexFeatures) return;
+    const featureTypes = palette.hexFeatures || [];
     ctx.save();
     ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#1a1a1a';
 
+    for (const [code, byType] of Object.entries(this.store.state.features || {})) {
+      if (!byType || typeof byType !== 'object') continue;
+      const center = hexCenter(code, grid);
+      const r = hexRadius(grid);
+      const entries = Object.keys(byType).map((type) => {
+        const pf = featureTypes.find((x) => x.key === type);
+        return { type, rec: byType[type], pf };
+      }).filter((e) => e.pf && e.pf.glyph);
+      if (!entries.length) continue;
+
+      const fontPx = Math.max(10, Math.min(26, r * 0.65 * s));
+      const labelPx = Math.max(8, Math.min(14, r * 0.38 * s));
+      const step = fontPx / s;
+      ctx.font = `${fontPx}px serif`;
+
+      const drawLabel = (text, x, y) => {
+        if (text == null || text === '') return;
+        ctx.font = `600 ${labelPx}px var(--font-data, monospace)`;
+        ctx.lineWidth = 3 / s;
+        ctx.strokeStyle = INK_CASING;
+        ctx.fillStyle = '#1a1a1a';
+        ctx.strokeText(String(text), x, y + step * 0.55);
+        ctx.fillText(String(text), x, y + step * 0.55);
+        ctx.font = `${fontPx}px serif`;
+      };
+
+      if (entries.length <= 3) {
+        const n = entries.length;
+        const startX = -(n - 1) * step * 0.5;
+        entries.forEach((entry, i) => {
+          const x = center.x + startX + i * step;
+          const y = center.y;
+          ctx.fillStyle = '#1a1a1a';
+          ctx.fillText(entry.pf.glyph, x, y);
+          const num = this._firstNumericAttr(entry.rec?.attrs, entry.pf.attrs);
+          if (num != null) drawLabel(num, x, y);
+        });
+      } else {
+        const n = entries.length;
+        const startY = -(n - 1) * step * 0.5;
+        entries.forEach((entry, i) => {
+          const x = center.x;
+          const y = center.y + startY + i * step;
+          ctx.fillStyle = '#1a1a1a';
+          ctx.fillText(entry.pf.glyph, x, y);
+          const num = this._firstNumericAttr(entry.rec?.attrs, entry.pf.attrs);
+          if (num != null) drawLabel(num, x, y);
+        });
+      }
+    }
+
+    // Legacy hexFeatures tags (glyph-only, no attrs)
     for (const [code, keys] of Object.entries(this.store.state.hexFeatures || {})) {
       if (!Array.isArray(keys) || !keys.length) continue;
+      if (this.store.state.features?.[code]) continue;
       const center = hexCenter(code, grid);
       const r = hexRadius(grid);
       const fontPx = Math.max(10, Math.min(26, r * 0.65 * s));
       const step = fontPx / s;
       ctx.font = `${fontPx}px serif`;
-
       const glyphs = [];
       for (const key of keys) {
-        const f = palette.hexFeatures.find(x => x.key === key);
+        const f = featureTypes.find(x => x.key === key);
         if (f && f.glyph) glyphs.push(f.glyph);
       }
       if (!glyphs.length) continue;
-
       if (glyphs.length <= 3) {
         const n = glyphs.length;
         const startX = -(n - 1) * step * 0.5;
         glyphs.forEach((g, i) => {
+          ctx.fillStyle = '#1a1a1a';
           ctx.fillText(g, center.x + startX + i * step, center.y);
         });
       } else {
         const n = glyphs.length;
         const startY = -(n - 1) * step * 0.5;
         glyphs.forEach((g, i) => {
+          ctx.fillStyle = '#1a1a1a';
           ctx.fillText(g, center.x, center.y + startY + i * step);
         });
       }
