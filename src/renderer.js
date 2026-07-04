@@ -740,12 +740,15 @@ export class MapRenderer {
   _drawHexFills(ctx, view, mode = 'overlay') {
     const s = view.baseScale * view.zoom;
     const grid = this.store.state.grid;
-    const terrain = this.store.state.terrain.terrain;
+    const terrain = this.store.state.terrain.terrain || {};
     ctx.save();
     ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
     ctx.lineWidth = 1.2 / s;
-    for (const code of Object.keys(this.store.centers)) {
+    // Paint every terrain code — do not gate on store.centers. Hexsides already
+    // use grid geometry directly; terrain must render when centers is lattice-only
+    // (hexside-tracing autosave) or enumerateGridLattice returned {}.
+    for (const code of Object.keys(terrain)) {
       const type = terrain[code];
       if (!type) continue;
       const colors = this._terrainColor(type, mode);

@@ -526,6 +526,11 @@ async function main() {
       if (!restored.imageFull || !restored.imageFull[0]) restored.imageFull = project.imageFull;
       if (!restored.grid) restored.grid = project.grid;
       if (project.palette) restored.palette = project.palette;
+      // Hexside-only autosaves (common during GotA tracing) must not discard the
+      // manifest's production terrain layer on restore.
+      const manifestLand = countLandHexes(project);
+      const restoredLand = countLandHexes(restored);
+      if (manifestLand > restoredLand) restored.terrain = project.terrain;
       await loadAndRender(restored);
       renderer.setViewMode('both');
       ui.setProjectSource(manifestLabel);

@@ -49,6 +49,42 @@ export function getRowCountsByParity(grid) {
   return null;
 }
 
+function latticeImageSize(grid) {
+  const imageFull = grid?.image_full;
+  if (!Array.isArray(imageFull) || imageFull.length < 2) return null;
+  const [imgW, imgH] = imageFull;
+  if (!Number.isFinite(imgW) || !Number.isFinite(imgH) || imgW <= 0 || imgH <= 0) return null;
+  return { imgW, imgH };
+}
+
+// When n_cols / n_rows are absent (legacy v1 grids like GotA), derive iteration
+// bounds from image_full + pitch + intercept so enumerateGridLattice is not
+// capped at the arbitrary 99×99 fallback. Per-cell image_full clipping remains
+// the authoritative gate for off-map phantom hexes.
+function colCountFromImage(grid) {
+  const size = latticeImageSize(grid);
+  const colPitch = grid?.col_pitch_x ?? grid?.x_model?.col_pitch_x;
+  if (!size || !colPitch || colPitch <= 0) return null;
+  const xIntercept = grid.x_model?.x_intercept_col0 ?? grid.x_intercept_col0 ?? 0;
+  const margin = colPitch / 2;
+  return Math.max(1, Math.floor((size.imgW + margin - xIntercept) / colPitch) + 1);
+}
+
+function rowCountFromImage(grid) {
+  const size = latticeImageSize(grid);
+  const rowPitch = grid?.row_pitch_y ?? grid?.y_model?.row_pitch_y;
+  if (!size || !rowPitch || rowPitch <= 0) return null;
+  const yIntercept = grid.y_model?.y_intercept_row0 ?? grid.y_intercept_row0 ?? 0;
+  let parityOffset = rowPitch / 2;
+  if (gridVersion(grid) >= 2) {
+    parityOffset = Math.abs(grid.odd_col_y_offset ?? rowPitch / 2);
+  } else {
+    parityOffset = Math.abs(grid.even_col_y_offset ?? grid.y_model?.even_col_down_offset ?? rowPitch / 2);
+  }
+  const margin = rowPitch / 2;
+  return Math.max(1, Math.floor((size.imgH + margin - yIntercept - parityOffset) / rowPitch) + 1);
+}
+
 export function rowCount(col, grid) {
   const v = gridVersion(grid);
   const nCols = grid.n_cols ?? grid.x_model?.n_cols;
@@ -64,17 +100,16 @@ export function rowCount(col, grid) {
     }
     return col % 2 === 0 ? rcbp.even : rcbp.odd;
   }
-  // v1 rectangular grids use n_rows; legacy grids without it get a safe
-  // upper bound (image bounds act as the real gate in enumerateGridLattice).
+  // v1 rectangular grids use n_rows; else derive from image_full; 99 is last resort.
   const nRows = grid.n_rows ?? grid.y_model?.n_rows;
   if (Number.isFinite(nRows) && nRows > 0) return nRows;
-  return 99;
+  return rowCountFromImage(grid) ?? 99;
 }
 
 export function colCount(grid) {
   const nCols = grid?.n_cols ?? grid?.x_model?.n_cols;
   if (Number.isFinite(nCols) && nCols > 0) return nCols;
-  return 99;
+  return colCountFromImage(grid) ?? 99;
 }
 
 export function isValidCell(col, row, grid) {

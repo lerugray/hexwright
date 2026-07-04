@@ -284,6 +284,12 @@ export class ProjectStore {
     }
     const previousCenters = this.centers ? { ...this.centers } : {};
     this.centers = buildLandIndex(this.state.terrain, this.state.grid);
+    // Terrain codes always anchor centers for hit-testing and grid outlines,
+    // even when lattice merge is skipped (manifest projects with land data).
+    const terrainMap = this.state.terrain?.terrain || {};
+    for (const code of Object.keys(terrainMap)) {
+      if (!this.centers[code]) this.centers[code] = hexCenter(code, this.state.grid);
+    }
     // A valid grid must always show its editable cells. buildLandIndex is empty
     // for hexside-only / fresh projects (no terrain codes yet), so enumerate the
     // full lattice whenever it is explicitly requested OR there is no land to
