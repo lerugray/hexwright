@@ -12,6 +12,8 @@ const LAYER_LABELS = {
   border: 'border'
 };
 
+const VIEW_SETTINGS_KEY = 'hexwright.view';
+
 const EDGE_NAMES = ['E', 'NE', 'NW', 'W', 'SW', 'SE'];
 const EYE_OPEN_SVG = '<svg viewBox="0 0 24 24"><path d="M2 12 s4 -6 10 -6 s10 6 10 6 s-4 6 -10 6 s-10 -6 -10 -6 z"/><circle cx="12" cy="12" r="2.6"/></svg>';
 const EYE_OFF_SVG = '<svg viewBox="0 0 24 24"><path d="M4 4 l16 16 M2 12 s4 -6 10 -6 c2 0 3.8 0.7 5.3 1.6 M22 12 s-4 6 -10 6 c-2 0 -3.8 -0.7 -5.3 -1.6"/></svg>';
@@ -36,6 +38,7 @@ export class UI {
     this.lastBrushScreen = null;
     this.edgePaintActive = false;
     this.edgePaintFeature = null;
+    this._edgeWipeCount = 0;
     this.nudgeActive = false;
     this.anomalyActive = false;
     this.helpOpen = false;
@@ -44,6 +47,7 @@ export class UI {
     this.buildHexEditor();
     this.bindGlobal();
     this.bindControls();
+    this._loadViewSettings();
     this._setupBrush();
     this._setupEdgePaint();
     this.setMode('inspect');
@@ -60,6 +64,7 @@ export class UI {
       'layers-panel', 'feature-layer-rows', 'terrain-layer-wrap', 'terrain-fill-row', 'terrain-fill-eye', 'terrain-fill-count',
       'trace-layer-wrap', 'trace-layer-rows',
       'trace-opacity', 'trace-opacity-value', 'overlay-opacity', 'overlay-opacity-value',
+      'hexside-stroke-opacity', 'hexside-stroke-opacity-value',
       'map-dim', 'map-dim-value',
       'canvas-wrap',
       'export-overlay', 'toggle-anomaly', 'anomaly-count', 'load-palette', 'anomaly-status',
@@ -431,6 +436,7 @@ export class UI {
 
     this.els['terrain-fill-eye'].addEventListener('click', () => {
       this.renderer.terrainFillVisible = !this.renderer.terrainFillVisible;
+      this._saveViewSettings();
       this._renderLayersPanel();
       this.renderer.draw();
     });
@@ -462,12 +468,21 @@ export class UI {
       this.renderer.overlayAlpha = parseFloat(e.target.value);
       this.els['overlay-opacity-value'].textContent = `${Math.round(this.renderer.overlayAlpha * 100)}%`;
       this.els['terrain-fill-count'].textContent = `${Math.round(this.renderer.overlayAlpha * 100)}%`;
+      this._saveViewSettings();
+      this.renderer.draw();
+    });
+
+    this.els['hexside-stroke-opacity'].addEventListener('input', (e) => {
+      this.renderer.hexsideStrokeAlpha = parseFloat(e.target.value);
+      this.els['hexside-stroke-opacity-value'].textContent = `${Math.round(this.renderer.hexsideStrokeAlpha * 100)}%`;
+      this._saveViewSettings();
       this.renderer.draw();
     });
 
     this.els['map-dim'].addEventListener('input', (e) => {
       this.renderer.mapDim = parseFloat(e.target.value);
       this.els['map-dim-value'].textContent = `${Math.round(this.renderer.mapDim * 100)}%`;
+      this._saveViewSettings();
       this.renderer.draw();
     });
 
@@ -634,7 +649,7 @@ export class UI {
       return;
     }
     if (this.mode === 'edges') {
-      hint.innerHTML = `<b>Edge paint · ${this._edgeFeatureLabel()}</b> — click edge to toggle · drag to paint<span class="hint-extra"> · <span class="kbd">⌥</span> erase · <span class="kbd">1</span>–<span class="kbd">0</span> switch ink</span>`;
+      hint.innerHTML = `<b>Edge paint · ${this._edgeFeatureLabel()}</b> — click edge to toggle · drag to paint<span class="hint-extra"> · <span class="kbd">⌥</span> wipe all layers on edge · <span class="kbd">1</span>–<span class="kbd">0</span> switch ink</span>`;
       return;
     }
     if (this.mode === 'nudge') {
@@ -711,16 +726,35 @@ export class UI {
     this.renderer.setEdgePaint({
       active: this.edgePaintActive,
       featureKey: this.edgePaintFeature,
-      onStrokeStart: () => this.store.beginStroke(),
-      onStrokeEnd: () => this.store.endStroke(),
+      onStrokeStart: () => {
+        this._edgeWipeCount = 0;
+        this.store.beginStroke();
+      },
+      onStrokeEnd: () => {
+        this.store.endStroke();
+        if (this._edgeWipeCount > 0) {
+          const n = this._edgeWipeCount;
+          this.status(`Wiped ${n} edge${n === 1 ? '' : 's'}`, 2500);
+          this._edgeWipeCount = 0;
+        }
+      },
       onToggle: (hit) => {
         if (!this.edgePaintFeature) return;
         this.store.toggleHexsideFeature(hit.a, hit.b, this.edgePaintFeature);
       },
       onSet: (hit, opts = {}) => {
         if (!this.edgePaintFeature) return;
-        const erase = !!opts.erase;
-        this.store.setHexsideFeature(hit.a, hit.b, this.edgePaintFeature, !erase);
+        if (opts.eraseAll) {
+          const removed = this.store.clearAllEdgeFeatures(hit.a, hit.b);
+          if (removed <= 0) return;
+          if (this.store.strokeActive) {
+            this._edgeWipeCount++;
+          } else {
+            this.status(`Wiped 1 edge (${removed} feature${removed === 1 ? '' : 's'})`, 2500);
+          }
+          return;
+        }
+        this.store.setHexsideFeature(hit.a, hit.b, this.edgePaintFeature, true);
       },
       onBoundary: () => {
         this.status('That hexside faces off-map — no hex on the other side, so it cannot carry a feature. Map-edge roads/rivers need no tracing; the game handles entry/exit by hex, not hexside.', 6000);
@@ -831,6 +865,37 @@ export class UI {
     this.renderer.draw();
   }
 
+  _loadViewSettings() {
+    try {
+      const raw = localStorage.getItem(VIEW_SETTINGS_KEY);
+      if (!raw) return;
+      const v = JSON.parse(raw);
+      if (Number.isFinite(v.overlayAlpha)) {
+        this.renderer.overlayAlpha = Math.max(0, Math.min(1, v.overlayAlpha));
+      }
+      if (Number.isFinite(v.hexsideStrokeAlpha)) {
+        this.renderer.hexsideStrokeAlpha = Math.max(0, Math.min(1, v.hexsideStrokeAlpha));
+      }
+      if (Number.isFinite(v.mapDim)) {
+        this.renderer.mapDim = Math.max(0, Math.min(0.85, v.mapDim));
+      }
+      if (typeof v.terrainFillVisible === 'boolean') {
+        this.renderer.terrainFillVisible = v.terrainFillVisible;
+      }
+    } catch (_) { /* ignore corrupt view settings */ }
+  }
+
+  _saveViewSettings() {
+    try {
+      localStorage.setItem(VIEW_SETTINGS_KEY, JSON.stringify({
+        overlayAlpha: this.renderer.overlayAlpha,
+        hexsideStrokeAlpha: this.renderer.hexsideStrokeAlpha,
+        mapDim: this.renderer.mapDim,
+        terrainFillVisible: this.renderer.terrainFillVisible !== false
+      }));
+    } catch (_) { /* quota */ }
+  }
+
   clearHexsideLayer(featureKey, label) {
     if (!featureKey) return;
     const count = this._featureCounts()[featureKey] || 0;
@@ -879,6 +944,10 @@ export class UI {
     this.els['overlay-opacity'].value = String(overlayOpacity);
     this.els['overlay-opacity-value'].textContent = `${Math.round(overlayOpacity * 100)}%`;
     this.els['terrain-fill-count'].textContent = `${Math.round(overlayOpacity * 100)}%`;
+
+    const hexsideStrokeOpacity = Math.max(0, Math.min(1, this.renderer.hexsideStrokeAlpha ?? 1));
+    this.els['hexside-stroke-opacity'].value = String(hexsideStrokeOpacity);
+    this.els['hexside-stroke-opacity-value'].textContent = `${Math.round(hexsideStrokeOpacity * 100)}%`;
 
     const traces = this.store.state.traces || [];
     this.els['trace-layer-wrap'].hidden = traces.length === 0;

@@ -590,6 +590,19 @@ export class ProjectStore {
     return true;
   }
 
+  /** Remove every feature on an edge. Returns feature count removed (0 if already empty). */
+  clearAllEdgeFeatures(a, b) {
+    const pair = normalizePair(a, b);
+    const key = pairKey(pair.a, pair.b);
+    const current = this.edgeFeatures(pair.a, pair.b);
+    if (!current.length) return 0;
+    this.pushUndo();
+    delete this.state.hexsides[key];
+    this.rebuildIndex();
+    this.notify('hexsides');
+    return current.length;
+  }
+
   _importHexsidePairs(featureKey, pairs, opts = {}) {
     const canonicalFeature = this._toFeatureKey(featureKey);
     if (!canonicalFeature) throw new Error(`Unknown hexside feature: ${featureKey}`);

@@ -172,16 +172,104 @@ try {
   rec('idempotent drag still paints new edges', idem.has2, setup.paintable[1].edgeKey);
   rec('idempotent drag remains one undo batch', idem.undoDelta === 1, `undo delta=${idem.undoDelta}`);
 
-  // alt-click erase
+  // alt-click wipe-all (every feature on edge, not just active brush)
+  const stackInfo = await page.evaluate(({ edgeKey, featureKey }) => {
+    const { store } = window.hexwright;
+    const palette = store.getPalette();
+    const extra = (palette?.hexsideFeatures || []).find((f) => f.key !== featureKey);
+    const [a, b] = edgeKey.split('|');
+    if (extra) store.setHexsideFeature(a, b, extra.key, true);
+    const arr = store.state.hexsides[edgeKey] || [];
+    return { stacked: arr.length >= 2, extraKey: extra?.key || null, keys: [...arr] };
+  }, { edgeKey: setup.paintable[0].edgeKey, featureKey: setup.featureKey });
+  rec('probe edge stacks multiple features', stackInfo.stacked, stackInfo.keys.join('+'));
+
   await page.keyboard.down('Alt');
   await page.mouse.click(p1.x, p1.y);
   await page.keyboard.up('Alt');
-  await sleep(100);
-  const altErase = await page.evaluate(({ edgeKey, featureKey }) => {
-    const arr = window.hexwright.store.state.hexsides[edgeKey] || [];
-    return !arr.includes(featureKey);
-  }, { edgeKey: setup.paintable[0].edgeKey, featureKey: setup.featureKey });
-  rec('alt-click erases painted edge', altErase, setup.paintable[0].edgeKey);
+  await sleep(150);
+  const altWipeAll = await page.evaluate(({ edgeKey, otherEdgeKey, featureKey }) => {
+    const sides = window.hexwright.store.state.hexsides || {};
+    const status = document.getElementById('status')?.textContent || '';
+    return {
+      wiped: !sides[edgeKey] || sides[edgeKey].length === 0,
+      otherIntact: (sides[otherEdgeKey] || []).includes(featureKey),
+      status
+    };
+  }, {
+    edgeKey: setup.paintable[0].edgeKey,
+    otherEdgeKey: setup.paintable[1].edgeKey,
+    featureKey: setup.featureKey
+  });
+  rec('alt-click wipes every feature on edge', altWipeAll.wiped, setup.paintable[0].edgeKey);
+  rec('alt-click leaves other edges intact', altWipeAll.otherIntact, setup.paintable[1].edgeKey);
+  rec('alt-click reports wiped edge in status bar', /wiped\s+1\s+edge/i.test(altWipeAll.status), altWipeAll.status.slice(0, 80));
+
+  // blur must not leave alt erase latched
+  await page.keyboard.down('Alt');
+  await sleep(60);
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await page.keyboard.up('Alt');
+  await sleep(80);
+  const altBlurClears = await page.evaluate(() => !window.hexwright.renderer.altHeld);
+  rec('window blur clears alt erase state', altBlurClears);
+
+  // hexside stroke opacity slider fades painted ink (pixel sample)
+  await page.keyboard.press('i');
+  await sleep(120);
+  await page.$eval('#hexside-stroke-opacity', (el) => {
+    el.value = '1';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await sleep(120);
+  const opacitySample = await page.evaluate(({ edgeKey, featureKey }) => {
+    const { store, renderer, geo } = window.hexwright;
+    renderer.clearHighlight();
+    renderer.selectedHex = null;
+    const [a, b] = edgeKey.split('|');
+    store.setHexsideFeature(a, b, featureKey, true);
+    renderer.setViewMode('classification');
+
+    const grid = store.state.grid;
+    const ep = geo.sharedEdgeEndpoints(a, b, grid);
+    const samplePt = {
+      x: ep.a.x + (ep.b.x - ep.a.x) * 0.35,
+      y: ep.a.y + (ep.b.y - ep.a.y) * 0.35
+    };
+    const zoom = 3;
+    const s = zoom;
+    renderer.view = {
+      baseScale: 1, zoom,
+      panX: renderer.width / 2 - samplePt.x * s,
+      panY: renderer.height / 2 - samplePt.y * s
+    };
+
+    const sampleAt = (alpha) => {
+      renderer.hexsideStrokeAlpha = alpha;
+      renderer.draw();
+      const sp = renderer.worldToScreen(samplePt);
+      const dpr = renderer.canvas.width / renderer.width;
+      const d = renderer.ctx.getImageData(Math.round(sp.x * dpr), Math.round(sp.y * dpr), 1, 1).data;
+      return [d[0], d[1], d[2]];
+    };
+
+    const full = sampleAt(1);
+    const dim = sampleAt(0.35);
+    const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+    return {
+      full,
+      dim,
+      delta: dist(full, dim),
+      closerToParchment: dist(dim, [234, 221, 207]) < dist(full, [234, 221, 207])
+    };
+  }, { edgeKey: setup.paintable[1].edgeKey, featureKey: setup.featureKey });
+  await page.$eval('#hexside-stroke-opacity', (el) => {
+    el.value = '0.35';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  rec('hexside stroke opacity slider changes rendered stroke alpha',
+    opacitySample.delta > 8 && opacitySample.closerToParchment,
+    `full=${JSON.stringify(opacitySample.full)} dim=${JSON.stringify(opacitySample.dim)} delta=${opacitySample.delta.toFixed(1)}`);
 
   // missing-neighbor edge cannot be painted
   if (pMissing) {

@@ -23,6 +23,7 @@ export class MapRenderer {
     this.viewMode = 'both';          // 'map' | 'classification' | 'both'
     this.overlayAlpha = 1;           // Both-view terrain-fill opacity (UI slider)
     this.terrainFillVisible = true;  // View-only toggle: terrain fill layer
+    this.hexsideStrokeAlpha = 1;     // View-only painted hexside ink opacity (UI slider)
     this.hexsideVisibility = {};     // View-only per-feature visibility map
     this.mapDim = 0;                 // View-only raster dimming in both/map modes
     this.nudgeMode = false;          // drag/arrow-key the scan under the grid
@@ -50,6 +51,7 @@ export class MapRenderer {
     this.edgePaintStroke = null;
 
     this.shiftHeld = false;
+    this.altHeld = false;
     this.lastPointerPt = null;
     this.snapPreview = null;
 
@@ -63,6 +65,7 @@ export class MapRenderer {
 
     this._bindPointer();
     this._bindShiftSnap();
+    this._bindAltErase();
   }
 
   resize() {
@@ -149,6 +152,12 @@ export class MapRenderer {
     return this.shiftHeld;
   }
 
+  _altEraseActive(e = null) {
+    if (!this.edgePaint.active) return false;
+    if (e && 'altKey' in e) return !!e.altKey;
+    return this.altHeld;
+  }
+
   nearestEdgeAtScreen(pt, { assist = false } = {}) {
     const snapAssist = assist || this._edgeSnapAssistActive();
     return nearestEdge(pt.x, pt.y, {
@@ -213,6 +222,24 @@ export class MapRenderer {
     window.addEventListener('blur', () => syncShift(false));
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') syncShift(false);
+    });
+  }
+
+  _bindAltErase() {
+    const syncAlt = (down) => {
+      if (this.altHeld === down) return;
+      this.altHeld = down;
+    };
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Alt') syncAlt(true);
+    });
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'Alt') syncAlt(false);
+    });
+    window.addEventListener('blur', () => syncAlt(false));
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') syncAlt(false);
     });
   }
 
@@ -287,7 +314,6 @@ export class MapRenderer {
         this.clickMoved = false;
         this.dragStart = { x: e.clientX, y: e.clientY };
         this.edgePaintStroke = {
-          alt: !!e.altKey,
           moved: false,
           strokeOpened: false,
           touched: new Set()
@@ -338,6 +364,7 @@ export class MapRenderer {
       if (this.edgePaint.active) {
         const pt = this._eventToScreen(e);
         this.lastPointerPt = pt;
+        if (e && 'altKey' in e) this.altHeld = !!e.altKey;
         const hit = this._updateEdgePaintHover(pt, e);
 
         if (!this.isDragging) return;
@@ -357,7 +384,7 @@ export class MapRenderer {
           if (!session.touched.has(hit.edgeKey)) {
             session.touched.add(hit.edgeKey);
             if (this.edgePaint.onSet) {
-              this.edgePaint.onSet(hit, { erase: session.alt });
+              this.edgePaint.onSet(hit, { eraseAll: this._altEraseActive(e) });
             }
           }
         }
@@ -418,6 +445,7 @@ export class MapRenderer {
         const pt = this._eventToScreen(e);
         this.lastPointerPt = pt;
         if (e && 'shiftKey' in e) this.shiftHeld = !!e.shiftKey;
+        if (e && 'altKey' in e) this.altHeld = !!e.altKey;
         const hit = this.nearestEdgeAtScreen(pt, { assist: this._edgeSnapAssistActive(e) });
         if (!this._edgeSnapAssistActive(e)) {
           if (hit) this.setHighlight(hit.hex, hit.edgeIndex, hit.neighbor);
@@ -429,15 +457,15 @@ export class MapRenderer {
           if (session.moved) {
             if (hit && !session.touched.has(hit.edgeKey)) {
               if (this.edgePaint.onSet) {
-                this.edgePaint.onSet(hit, { erase: session.alt });
+                this.edgePaint.onSet(hit, { eraseAll: this._altEraseActive(e) });
               }
             }
             if (session.strokeOpened && this.edgePaint.onStrokeEnd) {
               this.edgePaint.onStrokeEnd();
             }
           } else if (hit) {
-            if (session.alt) {
-              if (this.edgePaint.onSet) this.edgePaint.onSet(hit, { erase: true });
+            if (this._altEraseActive(e)) {
+              if (this.edgePaint.onSet) this.edgePaint.onSet(hit, { eraseAll: true });
             } else if (this.edgePaint.onToggle) {
               this.edgePaint.onToggle(hit);
             }
@@ -770,15 +798,17 @@ export class MapRenderer {
     return HEXSIDE_COLORS[featureKey] || { stroke: '#888', width: 3.0, dash: [] };
   }
 
-  _drawHexsides(ctx, view) {
+  _drawHexsides(ctx, view, { fullOpacity = false } = {}) {
     const s = view.baseScale * view.zoom;
     const grid = this.store.state.grid;
     const palette = this.store.getPalette();
+    const strokeAlpha = fullOpacity ? 1 : Math.max(0, Math.min(1, this.hexsideStrokeAlpha ?? 1));
     const isCrossing = (key) => {
       const f = palette && palette.hexsideFeatures ? palette.hexsideFeatures.find(x => x.key === key) : null;
       return !!(f && f.kind === 'crossing');
     };
     ctx.save();
+    if (strokeAlpha < 1) ctx.globalAlpha = strokeAlpha;
     ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
     const spacing = 3.5 / s;
@@ -1168,7 +1198,7 @@ export class MapRenderer {
 
     if (state.grid && this.store.centers) {
       this._drawHexFills(octx, view, 'full');
-      this._drawHexsides(octx, view);
+      this._drawHexsides(octx, view, { fullOpacity: true });
       this._drawFeatureGlyphs(octx, view);
       this._drawGrid(octx, view);
     }
