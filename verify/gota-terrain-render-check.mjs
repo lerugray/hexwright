@@ -24,7 +24,7 @@ function sampleTerrainPixels(page) {
     renderer.setBaseScale();
     renderer.setViewMode('both');
     renderer.terrainFillVisible = true;
-    renderer.overlayAlpha = 1;
+    renderer.terrainFillAlpha = 1;
     renderer.fitView();
     renderer.draw();
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));

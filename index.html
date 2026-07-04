@@ -133,16 +133,17 @@
     <div id="terrain-layer-wrap">
       <div id="terrain-fill-row" class="layer-row">
         <button type="button" id="terrain-fill-eye" class="eye" aria-label="Toggle terrain fill visibility"></button>
+        <button type="button" id="terrain-labels-toggle" class="label-toggle" title="Terrain labels (L)" aria-label="Toggle terrain labels" aria-pressed="false">Lbl</button>
         <span class="swatch terrain-fill"></span>
         <span class="name">Terrain fill</span>
-        <span id="terrain-fill-count" class="count hx-data">100%</span>
+        <span id="terrain-fill-count" class="count hx-data">0</span>
       </div>
       <label class="slider-row">
         <span class="lbl">
           <span>Terrain fill opacity</span>
-          <span id="overlay-opacity-value" class="val">100%</span>
+          <span id="terrain-fill-opacity-value" class="val">100%</span>
         </span>
-        <input id="overlay-opacity" type="range" min="0" max="1" step="0.05" value="1" aria-label="Terrain fill opacity" />
+        <input id="terrain-fill-opacity" type="range" min="0" max="1" step="0.05" value="1" aria-label="Terrain fill opacity" />
       </label>
     </div>
 
@@ -257,6 +258,7 @@
           <div class="helprow"><span>Point features</span><span class="keys"><span class="kbd">P</span></span></div>
           <div class="helprow"><span>Nudge map</span><span class="keys"><span class="kbd">N</span></span></div>
           <div class="helprow"><span>Cycle view</span><span class="keys"><span class="kbd">V</span></span></div>
+          <div class="helprow"><span>Terrain labels</span><span class="keys"><span class="kbd">L</span></span></div>
           <div class="helprow"><span>Close</span><span class="keys"><span class="kbd">Esc</span></span></div>
         </div>
         <div>

@@ -20,6 +20,22 @@ export function paletteTerrainColors(entry, mode = 'overlay') {
   return { fill: paint(base, '40'), line: paint(base, '73') };
 }
 
+/** Short terrain label: palette `abbr` when set (empty string suppresses); else derived. */
+export function terrainAbbrForKey(key, entry) {
+  if (entry && Object.prototype.hasOwnProperty.call(entry, 'abbr')) return entry.abbr;
+  const parts = String(key || '').split('_').filter(Boolean);
+  if (parts.length > 1) {
+    return parts.map((p) => p.charAt(0).toUpperCase()).join('+');
+  }
+  const p = (parts[0] || '').toLowerCase();
+  const singles = {
+    woods: 'W', forest: 'W', swamp: 'SW', marsh: 'SW', urban: 'U',
+    mountain: 'MT', rough: 'MT', water: 'WTR', lake: 'WTR', clear: ''
+  };
+  if (Object.prototype.hasOwnProperty.call(singles, p)) return singles[p];
+  return p ? p.charAt(0).toUpperCase() : '';
+}
+
 /** CSS background for terrain swatches (solid or diagonal split). */
 export function terrainSwatchBackground(entry, fallback = '#888') {
   if (Array.isArray(entry?.colors) && entry.colors.length >= 2) {

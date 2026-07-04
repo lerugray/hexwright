@@ -66,9 +66,9 @@ export class UI {
       'view-mode', 'tool-rail', 'tool-inspect', 'tool-terrain', 'tool-edges', 'tool-features', 'tool-nudge',
       'brush-card', 'brush-mode-tag', 'brush-ink-list',
       'layers-panel', 'feature-layer-rows', 'point-feature-layer-wrap', 'point-feature-layer-rows',
-      'terrain-layer-wrap', 'terrain-fill-row', 'terrain-fill-eye', 'terrain-fill-count',
+      'terrain-layer-wrap', 'terrain-fill-row', 'terrain-fill-eye', 'terrain-fill-count', 'terrain-labels-toggle',
       'trace-layer-wrap', 'trace-layer-rows',
-      'trace-opacity', 'trace-opacity-value', 'overlay-opacity', 'overlay-opacity-value',
+      'trace-opacity', 'trace-opacity-value', 'terrain-fill-opacity', 'terrain-fill-opacity-value',
       'hexside-stroke-opacity', 'hexside-stroke-opacity-value',
       'map-dim', 'map-dim-value',
       'canvas-wrap',
@@ -315,6 +315,7 @@ export class UI {
         this.status(`Map offset: ${Math.round(off[0])}, ${Math.round(off[1])} px`, 2500);
       }
       if (e.key.toLowerCase() === 'v') this.cycleViewMode();
+      if (e.key.toLowerCase() === 'l') this.toggleTerrainLabels();
       if (/^[0-9]$/.test(e.key)) {
         const idx = e.key === '0' ? 9 : parseInt(e.key, 10) - 1;
         if (this.mode === 'edges') this._selectEdgeFeatureByIndex(idx);
@@ -480,6 +481,10 @@ export class UI {
       this.renderer.draw();
     });
 
+    this.els['terrain-labels-toggle'].addEventListener('click', () => {
+      this.toggleTerrainLabels();
+    });
+
     this.els['trace-layer-rows'].addEventListener('click', (e) => {
       const eye = e.target.closest('.eye[data-trace-index]');
       if (!eye) return;
@@ -497,16 +502,12 @@ export class UI {
       this.els['trace-opacity-value'].textContent = `${Math.round(op * 100)}%`;
     });
 
-    // Terrain-fill (classification overlay) opacity — lets the scan show
-    // through in Both view for hand-tracing; hexsides/grid stay full-strength.
-    // Dragging it in Map/Classification view switches to Both first: the
-    // slider only means something where map AND fills are drawn together, so
-    // it must never silently no-op.
-    this.els['overlay-opacity'].addEventListener('input', (e) => {
+    // Terrain-fill opacity — lets the scan show through in Both view for
+    // hand-tracing; hexsides/glyphs/grid stay full-strength.
+    this.els['terrain-fill-opacity'].addEventListener('input', (e) => {
       if (this.renderer.viewMode !== 'both') this.setViewMode('both');
-      this.renderer.overlayAlpha = parseFloat(e.target.value);
-      this.els['overlay-opacity-value'].textContent = `${Math.round(this.renderer.overlayAlpha * 100)}%`;
-      this.els['terrain-fill-count'].textContent = `${Math.round(this.renderer.overlayAlpha * 100)}%`;
+      this.renderer.terrainFillAlpha = parseFloat(e.target.value);
+      this.els['terrain-fill-opacity-value'].textContent = `${Math.round(this.renderer.terrainFillAlpha * 100)}%`;
       this._saveViewSettings();
       this.renderer.draw();
     });
@@ -1066,6 +1067,14 @@ export class UI {
     return visibility[featureKey] !== false;
   }
 
+  toggleTerrainLabels(force) {
+    const next = typeof force === 'boolean' ? force : !this.renderer.terrainLabelsVisible;
+    this.renderer.terrainLabelsVisible = next;
+    this._saveViewSettings();
+    this._renderLayersPanel();
+    this.renderer.draw();
+  }
+
   toggleHexsideLayerVisibility(featureKey) {
     if (!featureKey) return;
     if (!this.renderer.hexsideVisibility) this.renderer.hexsideVisibility = {};
@@ -1079,8 +1088,10 @@ export class UI {
       const raw = localStorage.getItem(VIEW_SETTINGS_KEY);
       if (!raw) return;
       const v = JSON.parse(raw);
-      if (Number.isFinite(v.overlayAlpha)) {
-        this.renderer.overlayAlpha = Math.max(0, Math.min(1, v.overlayAlpha));
+      if (Number.isFinite(v.terrainFillAlpha)) {
+        this.renderer.terrainFillAlpha = Math.max(0, Math.min(1, v.terrainFillAlpha));
+      } else if (Number.isFinite(v.overlayAlpha)) {
+        this.renderer.terrainFillAlpha = Math.max(0, Math.min(1, v.overlayAlpha));
       }
       if (Number.isFinite(v.hexsideStrokeAlpha)) {
         this.renderer.hexsideStrokeAlpha = Math.max(0, Math.min(1, v.hexsideStrokeAlpha));
@@ -1091,16 +1102,20 @@ export class UI {
       if (typeof v.terrainFillVisible === 'boolean') {
         this.renderer.terrainFillVisible = v.terrainFillVisible;
       }
+      if (typeof v.terrainLabelsVisible === 'boolean') {
+        this.renderer.terrainLabelsVisible = v.terrainLabelsVisible;
+      }
     } catch (_) { /* ignore corrupt view settings */ }
   }
 
   _saveViewSettings() {
     try {
       localStorage.setItem(VIEW_SETTINGS_KEY, JSON.stringify({
-        overlayAlpha: this.renderer.overlayAlpha,
+        terrainFillAlpha: this.renderer.terrainFillAlpha,
         hexsideStrokeAlpha: this.renderer.hexsideStrokeAlpha,
         mapDim: this.renderer.mapDim,
-        terrainFillVisible: this.renderer.terrainFillVisible !== false
+        terrainFillVisible: this.renderer.terrainFillVisible !== false,
+        terrainLabelsVisible: !!this.renderer.terrainLabelsVisible
       }));
     } catch (_) { /* quota */ }
   }
@@ -1169,10 +1184,19 @@ export class UI {
     this.els['terrain-fill-eye'].classList.toggle('off', !terrainFillOn);
     this.els['terrain-fill-eye'].innerHTML = terrainFillOn ? EYE_OPEN_SVG : EYE_OFF_SVG;
 
-    const overlayOpacity = Math.max(0, Math.min(1, this.renderer.overlayAlpha ?? 1));
-    this.els['overlay-opacity'].value = String(overlayOpacity);
-    this.els['overlay-opacity-value'].textContent = `${Math.round(overlayOpacity * 100)}%`;
-    this.els['terrain-fill-count'].textContent = `${Math.round(overlayOpacity * 100)}%`;
+    const labelsOn = !!this.renderer.terrainLabelsVisible;
+    const labelsBtn = this.els['terrain-labels-toggle'];
+    if (labelsBtn) {
+      labelsBtn.classList.toggle('on', labelsOn);
+      labelsBtn.setAttribute('aria-pressed', labelsOn ? 'true' : 'false');
+    }
+
+    const terrainCount = Object.keys(this.store.state.terrain?.terrain || {}).length;
+    this.els['terrain-fill-count'].textContent = String(terrainCount);
+
+    const terrainFillOpacity = Math.max(0, Math.min(1, this.renderer.terrainFillAlpha ?? 1));
+    this.els['terrain-fill-opacity'].value = String(terrainFillOpacity);
+    this.els['terrain-fill-opacity-value'].textContent = `${Math.round(terrainFillOpacity * 100)}%`;
 
     const hexsideStrokeOpacity = Math.max(0, Math.min(1, this.renderer.hexsideStrokeAlpha ?? 1));
     this.els['hexside-stroke-opacity'].value = String(hexsideStrokeOpacity);

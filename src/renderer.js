@@ -1,9 +1,12 @@
 import {
-  TERRAIN_COLORS, HEXSIDE_COLORS, paletteTerrainColors,
+  TERRAIN_COLORS, HEXSIDE_COLORS, paletteTerrainColors, terrainAbbrForKey,
   hexCenter, hexPolygon, sharedEdgeEndpoints, pointInPolygon,
   worldToScreen, screenToWorld, edgeNeighbor, edgeMidpoint, hexRadius, nearestEdge,
   isValidCell, parseCCRR, EDGE_HIT_TOLERANCE, EDGE_SNAP_ASSIST_TOLERANCE
 } from './geometry.js';
+
+const TERRAIN_LABEL_MIN_SCALE = 0.08;
+const TERRAIN_LABEL_FADE_SCALE = 0.14;
 
 // Solid near-white casing: traced ink must pop off BOTH the cream paper and the
 // map's own printed features (blue-on-blue rivers were unreadable at 0.82 parchment).
@@ -21,8 +24,9 @@ export class MapRenderer {
     this.highlighted = { hex: null, edge: null, neighbor: null };
 
     this.viewMode = 'both';          // 'map' | 'classification' | 'both'
-    this.overlayAlpha = 1;           // Both-view terrain-fill opacity (UI slider)
+    this.terrainFillAlpha = 1;       // View-only terrain fill opacity (UI slider)
     this.terrainFillVisible = true;  // View-only toggle: terrain fill layer
+    this.terrainLabelsVisible = false; // View-only terrain abbr labels (default off)
     this.hexsideStrokeAlpha = 1;     // View-only painted hexside ink opacity (UI slider)
     this.hexsideVisibility = {};     // View-only per-feature visibility map
     this.mapDim = 0;                 // View-only raster dimming in both/map modes
@@ -704,15 +708,21 @@ export class MapRenderer {
     if (this.viewMode !== 'map' && state.grid && this.store.centers) {
       const fillMode = this.viewMode === 'classification' ? 'full' : 'overlay';
       const terrainFillEnabled = fillMode === 'full' ? true : this.terrainFillVisible !== false;
-      if (terrainFillEnabled && fillMode === 'overlay') {
-        // Both view: terrain fills fade with the Overlay slider so the scan
-        // underneath stays traceable; hexsides/glyphs/grid keep full strength.
-        ctx.save();
-        ctx.globalAlpha = this.overlayAlpha;
-        this._drawHexFills(ctx, this.view, fillMode);
-        ctx.restore();
-      } else if (terrainFillEnabled) {
-        this._drawHexFills(ctx, this.view, fillMode);
+      if (terrainFillEnabled) {
+        const fillAlpha = fillMode === 'overlay'
+          ? Math.max(0, Math.min(1, this.terrainFillAlpha ?? 1))
+          : 1;
+        if (fillAlpha < 1) {
+          ctx.save();
+          ctx.globalAlpha = fillAlpha;
+          this._drawHexFills(ctx, this.view, fillMode);
+          ctx.restore();
+        } else {
+          this._drawHexFills(ctx, this.view, fillMode);
+        }
+      }
+      if (this.terrainLabelsVisible) {
+        this._drawTerrainLabels(ctx, this.view);
       }
       this._drawHexsides(ctx, this.view);
       this._drawFeatureGlyphs(ctx, this.view);
@@ -833,6 +843,48 @@ export class MapRenderer {
       const colors = this._terrainColor(type, mode);
       const poly = hexPolygon(code, grid);
       this._fillHexTerrain(ctx, poly, colors);
+    }
+    ctx.restore();
+  }
+
+  _drawTerrainLabels(ctx, view) {
+    const s = view.baseScale * view.zoom;
+    const effScale = s;
+    if (effScale < TERRAIN_LABEL_MIN_SCALE) return;
+    const fade = effScale >= TERRAIN_LABEL_FADE_SCALE
+      ? 1
+      : (effScale - TERRAIN_LABEL_MIN_SCALE) / (TERRAIN_LABEL_FADE_SCALE - TERRAIN_LABEL_MIN_SCALE);
+
+    const grid = this.store.state.grid;
+    const terrain = this.store.state.terrain.terrain || {};
+    const palette = this.store.getPalette();
+    ctx.save();
+    ctx.translate(view.panX, view.panY);
+    ctx.scale(s, s);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if (fade < 1) ctx.globalAlpha = fade;
+
+    for (const code of Object.keys(terrain)) {
+      const type = terrain[code];
+      if (!type) continue;
+      const entry = palette?.terrain?.find((x) => x.key === type);
+      const abbr = terrainAbbrForKey(type, entry);
+      if (!abbr) continue;
+
+      const center = hexCenter(code, grid);
+      const r = hexRadius(grid);
+      const labelPx = Math.max(8, Math.min(14, r * 0.38 * s));
+      if (labelPx < 6) continue;
+
+      const x = center.x;
+      const y = center.y - r * 0.33;
+      ctx.font = `600 ${labelPx / s}px var(--font-data, monospace)`;
+      ctx.lineWidth = 3 / s;
+      ctx.strokeStyle = INK_CASING;
+      ctx.fillStyle = '#1a1a1a';
+      ctx.strokeText(abbr, x, y);
+      ctx.fillText(abbr, x, y);
     }
     ctx.restore();
   }
