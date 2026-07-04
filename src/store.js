@@ -792,11 +792,27 @@ export class ProjectStore {
   }
 
   exportTerrainObject() {
-    return { terrain: deepClone(this.state.terrain.terrain || {}) };
+    const source = this.state.terrain.terrain || {};
+    const terrain = {};
+    for (const code of Object.keys(source).sort((a, b) => a.localeCompare(b))) {
+      terrain[code] = source[code];
+    }
+    return {
+      _comment: `edited in Hexwright v2.1 ${todayStamp()}`,
+      terrain
+    };
   }
 
   exportTerrainJson() {
-    return JSON.stringify(this.exportTerrainObject(), null, 2);
+    const obj = this.exportTerrainObject();
+    const codes = Object.keys(obj.terrain).sort((a, b) => a.localeCompare(b));
+    if (!codes.length) {
+      return JSON.stringify({ _comment: obj._comment, terrain: {} }, null, 2);
+    }
+    const inner = codes.map((code, i) =>
+      `    ${JSON.stringify(code)}: ${JSON.stringify(obj.terrain[code])}${i < codes.length - 1 ? ',' : ''}`
+    ).join('\n');
+    return `{\n  "_comment": ${JSON.stringify(obj._comment)},\n  "terrain": {\n${inner}\n  }\n}`;
   }
 
   exportProjectObject() {

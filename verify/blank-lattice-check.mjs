@@ -7,6 +7,7 @@ import path from 'path';
 const DIR = process.cwd();
 const VER = DIR + '/verify';
 const PORT = 8031;
+const terrainCodesInJson = (text) => [...text.matchAll(/"(\d{4})":/g)].map((m) => m[1]);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];
 const rec = (name, ok, note = '') => {
@@ -19,6 +20,16 @@ await sleep(1300);
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+let exportedTerrain = null;
+page.on('download', async (d) => {
+  try {
+    if (d.suggestedFilename() === 'terrain.json') {
+      const p = VER + '/export-terrain.json';
+      await d.saveAs(p);
+      exportedTerrain = p;
+    }
+  } catch (_) { /* ignore download capture errors */ }
+});
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
@@ -84,10 +95,57 @@ try {
   }
   rec('terrain brush paints a lattice hex', painted, `code=${paintedCode}`);
 
-  const exportTerrain = await page.evaluate(() => window.hexwright.store.exportTerrainObject());
-  const exportKeys = Object.keys(exportTerrain.terrain || {});
-  rec('exportTerrainObject contains ONLY painted hexes', exportKeys.length === 1 && exportKeys[0] === paintedCode,
-    `keys=[${exportKeys.join(',')}]`);
+  const synthetic = await page.evaluate(({ paintedCode }) => {
+    const s = window.hexwright.store;
+    const codes = Object.keys(s.centers || {}).filter((c) => c !== paintedCode).sort();
+    const second = codes[0];
+    if (!second) return null;
+    s.setTerrain(second, 'desert');
+    const expected = {};
+    for (const code of Object.keys(s.state.terrain.terrain || {}).sort()) {
+      expected[code] = s.state.terrain.terrain[code];
+    }
+    return { second, expected };
+  }, { paintedCode });
+  rec('synthetic second terrain assignment', !!synthetic?.second, synthetic ? `codes=${Object.keys(synthetic.expected).join(',')}` : 'no spare lattice hex');
+
+  const exportJson = await page.evaluate(() => window.hexwright.store.exportTerrainJson());
+  const exportObj = JSON.parse(exportJson);
+  const exportKeys = terrainCodesInJson(exportJson);
+  const keysSorted = exportKeys.every((code, i, arr) => i === 0 || arr[i - 1].localeCompare(code) <= 0);
+  rec('exportTerrainObject has _comment + sorted terrain keys',
+    typeof exportObj._comment === 'string' && exportObj._comment.length > 0 && keysSorted,
+    `_comment=${JSON.stringify(exportObj._comment?.slice(0, 40))} keys=[${exportKeys.join(',')}]`);
+  const expectedMatch = synthetic && exportKeys.length === Object.keys(synthetic.expected).length
+    && exportKeys.every((code) => exportObj.terrain[code] === synthetic.expected[code]);
+  rec('exportTerrainObject entries match assigned terrain', !!expectedMatch,
+    synthetic ? JSON.stringify(synthetic.expected) : 'no synthetic setup');
+
+  await page.click('#export-btn');
+  await sleep(300);
+  await page.click('#export-terrain-file');
+  await sleep(1200);
+  if (exportedTerrain) {
+    let downloaded = null;
+    let parseOk = false;
+    try {
+      downloaded = JSON.parse(fs.readFileSync(exportedTerrain, 'utf8'));
+      parseOk = true;
+    } catch (_) { /* parse failure handled below */ }
+    rec('export terrain.json download is parseable JSON', parseOk, exportedTerrain);
+    if (parseOk && synthetic) {
+      const rawDownload = fs.readFileSync(exportedTerrain, 'utf8');
+      const dlKeys = terrainCodesInJson(rawDownload);
+      const dlSorted = dlKeys.every((code, i, arr) => i === 0 || arr[i - 1].localeCompare(code) <= 0);
+      const dlMatch = dlKeys.length === exportKeys.length
+        && dlKeys.every((code) => downloaded.terrain[code] === exportObj.terrain[code]);
+      rec('downloaded terrain.json matches exportTerrainObject',
+        typeof downloaded._comment === 'string' && dlSorted && dlMatch,
+        `keys=[${dlKeys.join(',')}]`);
+    }
+  } else {
+    rec('export terrain.json download is parseable JSON', false, 'no download captured');
+  }
 
   const paintState = await page.evaluate(() => {
     const s = window.hexwright.store;
