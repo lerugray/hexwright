@@ -11,7 +11,13 @@ export const PATHS = {
   nabHexgrid: resolve(REPO, 'local/nab/hexgrid.json'),
   nabProject: resolve(REPO, 'local/nab/project.json'),
   nabPalette: resolve(REPO, 'local/palettes/nab.json'),
+  twuEpProject: resolve(REPO, 'local/twu-ep/project.json'),
 };
+
+/** twu-ep project must be served from the PARENT of the repo (its map path
+ * escapes the repo, see "Launch Hexwright - TWU East Prussia.command"). */
+export const REPO_PARENT = resolve(REPO, '..');
+export const REPO_NAME = 'hexwright';
 
 /** Manifest URL query param for the operator GotA sample (gitignored under local/). */
 export const GOTA_PROJECT_URL = 'local/samples/gota/gota-project.json';

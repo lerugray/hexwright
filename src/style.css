@@ -1298,6 +1298,28 @@ button.active {
   color: var(--hx-danger, var(--danger));
 }
 
+.point-feat-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.point-feat-add select {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--rad-s, 6px);
+  border: 1px solid var(--hx-hairline, var(--chrome-2));
+  background: var(--hx-bg-raised, var(--chrome));
+  color: var(--hx-text, var(--text));
+  font: inherit;
+}
+
+.point-feat-add[hidden] {
+  display: none;
+}
+
 .hexdiagram {
   display: grid;
   place-items: center;

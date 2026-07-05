@@ -85,7 +85,8 @@ export class UI {
       'feature-inspector', 'feat-insp-close', 'feat-insp-title', 'feat-insp-name', 'feat-insp-attrs',
       'feat-insp-delete', 'feat-insp-save',
       'hex-editor', 'hexed-close', 'hexed-title', 'hexed-name', 'hexed-terrain-current', 'hexed-terrain-grid',
-      'hexed-feat-count', 'hexed-featrow', 'hexed-point-feats', 'hexed-edges-meta', 'hexed-svg', 'hexed-fill',
+      'hexed-feat-count', 'hexed-featrow', 'hexed-point-feats', 'hexed-point-feat-add',
+      'hexed-add-feat-select', 'hexed-add-feat-btn', 'hexed-edges-meta', 'hexed-svg', 'hexed-fill',
       'hexed-edges', 'hexed-edge-labels', 'hexed-center-code', 'hexed-on-edge-label',
       'hexed-edchips', 'hexed-inkgrid',
       'count-land', 'layer-counts', 'status',
@@ -408,6 +409,7 @@ export class UI {
     this.els['feat-insp-close'].addEventListener('click', () => this.closeFeatureInspector());
     this.els['feat-insp-save'].addEventListener('click', () => this._saveFeatureInspector());
     this.els['feat-insp-delete'].addEventListener('click', () => this._deleteFeatureInspector());
+    this.els['hexed-add-feat-btn']?.addEventListener('click', () => this._addInspectorPointFeature());
     ['pointerdown', 'pointerup', 'mousedown', 'mouseup'].forEach((evt) => {
       this.els['feature-inspector']?.addEventListener(evt, (e) => e.stopPropagation());
     });
@@ -955,7 +957,11 @@ export class UI {
     if (!rec) return;
     this.featureInspector = { code, type };
     this.els['feat-insp-title'].textContent = `${pf?.label || type} · ${code}`;
-    this.els['feat-insp-name'].value = rec.name || '';
+    // Name inheritance: hexes are named separately (Inspect panel's Name field,
+    // the names layer). A feature with no name of its own defaults to the
+    // hex's name — pre-filled, still editable — instead of presenting a blank
+    // field the operator has to retype for a hex they already named.
+    this.els['feat-insp-name'].value = rec.name || this.store.getHexName(code) || '';
     this._renderFeatureInspectorAttrs(pf, rec);
     this.els['feature-inspector'].hidden = false;
     this.els['layers-panel'].hidden = true;
@@ -1605,6 +1611,7 @@ export class UI {
       btn.classList.toggle('is-active', currentFeatures.includes(btn.dataset.feature));
     });
     this._renderInspectorPointFeatures(code);
+    this._renderInspectorAddFeature(code);
 
     const centers = this.store.centers;
     const grid = this.store.state.grid;
@@ -1673,6 +1680,34 @@ export class UI {
         <button type="button" class="pf-del" data-pf-type="${pf.type}" aria-label="Delete ${label}" title="Delete">×</button>
       </div>`;
     }).join('');
+  }
+
+  // Add-from-Inspect: pick a not-yet-present type (same declarations the
+  // features-mode picker uses) and create it, then immediately open the full
+  // feature editor to set its fields — so working hex-by-hex in Inspect never
+  // requires a detour through Features mode just to add one feature.
+  _renderInspectorAddFeature(code) {
+    const wrap = this.els['hexed-point-feat-add'];
+    const select = this.els['hexed-add-feat-select'];
+    if (!wrap || !select) return;
+    const present = new Set(this.store.getPointFeaturesAt(code).map((pf) => pf.type));
+    const available = this._effectiveHexFeatures().filter((f) => !present.has(f.key));
+    if (!available.length) { wrap.hidden = true; select.innerHTML = ''; return; }
+    wrap.hidden = false;
+    select.innerHTML = available.map((f) => `<option value="${f.key}">${f.label || f.key}</option>`).join('');
+  }
+
+  _addInspectorPointFeature() {
+    const code = this.inspectorHex;
+    const type = this.els['hexed-add-feat-select']?.value;
+    if (!code || !type) return;
+    const decl = this._hexFeatureDecl(type);
+    const label = decl?.label || type;
+    // Same store mutation path as features-mode placement (blank name/attrs —
+    // openFeatureInspector below pre-fills the name from the hex name if set).
+    this.store.setPointFeature(code, type, { name: '', attrs: undefined });
+    this.status(`Added ${label} on ${code}`, 1800);
+    this.openFeatureInspector(code, type);
   }
 
   _deleteInspectorPointFeature(type) {

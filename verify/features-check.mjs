@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { ProjectStore, validateFeaturesDocument, syntheticHexFeaturesFromFeatures } from '../src/store.js';
-import { GOTA_PROJECT_URL, PATHS } from './_local-data.mjs';
+import { GOTA_PROJECT_URL, PATHS, REPO_PARENT, REPO_NAME } from './_local-data.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIR = REPO;
@@ -336,6 +336,68 @@ try {
   });
   rec('manifest-style features import loads into store', manifestLoad.imported, JSON.stringify(manifestLoad));
 
+  // --- Add-from-Inspect + name inheritance (2026-07-05): adding a feature must
+  // be possible directly from the Inspect panel (no detour through Features
+  // mode), and its name field must default to the hex's own name when the hex
+  // is already named (editable, never a blank required-feeling field). Uses a
+  // fresh, isolated hex (via the store API, not a mouse click) so it can't
+  // interfere with any other case's assumptions about hex/feature state. ---
+  const addSetup = await page.evaluate(({ excludeCode }) => {
+    const { store } = window.hexwright;
+    const codes = Object.keys(store.centers || {});
+    return codes.find((c) => c !== excludeCode && store.getPointFeaturesAt(c).length === 0) || null;
+  }, { excludeCode: setup.code });
+  rec('found an isolated hex for the Add-from-Inspect check', !!addSetup, addSetup);
+
+  if (addSetup) {
+    await page.evaluate(({ code }) => {
+      const { store, ui } = window.hexwright;
+      store.setHexName(code, 'Testhaven');
+      ui.setMode('inspect');
+      ui.openInspector(code);
+    }, { code: addSetup });
+    await sleep(200);
+
+    const addRowState = await page.evaluate(() => {
+      const wrap = document.getElementById('hexed-point-feat-add');
+      const select = document.getElementById('hexed-add-feat-select');
+      return { hidden: wrap?.hidden, options: select ? Array.from(select.options).map((o) => o.value) : [] };
+    });
+    rec('inspect panel offers an Add-feature control for available types',
+      !addRowState.hidden && addRowState.options.length > 0, JSON.stringify(addRowState));
+
+    if (addRowState.options.length) {
+      const addType = addRowState.options[0];
+      await page.selectOption('#hexed-add-feat-select', addType);
+      await page.click('#hexed-add-feat-btn');
+      await sleep(200);
+
+      const addVisible = await page.evaluate(() => {
+        const fi = document.getElementById('feature-inspector');
+        if (fi.hidden) return { hidden: true };
+        const rect = fi.getBoundingClientRect();
+        const topEl = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return {
+          hidden: false,
+          position: getComputedStyle(fi).position,
+          onTop: !!(topEl && fi.contains(topEl)),
+          nameValue: document.getElementById('feat-insp-name')?.value
+        };
+      });
+      rec('Add-from-Inspect opens a genuinely on-screen editor',
+        !addVisible.hidden && addVisible.position === 'fixed' && addVisible.onTop, JSON.stringify(addVisible));
+      rec('Add-from-Inspect pre-fills the name field from the hex name (editable, not blank)',
+        addVisible.nameValue === 'Testhaven', `name="${addVisible.nameValue}"`);
+
+      await page.click('#feat-insp-save');
+      await sleep(200);
+      const addedRec = await page.evaluate(({ code, type }) =>
+        window.hexwright.store.getPointFeature(code, type), { code: addSetup, type: addType });
+      rec('Add-from-Inspect saves through the same store mutation path',
+        !!addedRec && addedRec.name === 'Testhaven', JSON.stringify(addedRec));
+    }
+  }
+
   rec('no uncaught console/page errors', errors.length === 0, errors.slice(0, 4).join(' | '));
 } catch (err) {
   rec('features-check harness completed', false, err.message);
@@ -343,6 +405,139 @@ try {
 
 await browser.close();
 srv.kill();
+}
+
+// --- Side-by-side TWU-EP parity (operator's real project; gitignored local
+// state, skip when absent). Confirms the Edit-visibility fix + attr editing
+// work identically on TWU's own palette/data, not just GotA's — the palette
+// declares attrs just as richly as GotA's (fortress: sp, vp: vp), so the two
+// projects are expected to behave IDENTICALLY, not differently. ---
+if (!existsSync(PATHS.twuEpProject)) {
+  console.log('SKIP TWU-EP local project not present (local/twu-ep/project.json)');
+} else {
+  const TWU_PORT = 8033;
+  // Serve the PARENT dir: twu-ep/project.json's map path escapes the repo
+  // (see "Launch Hexwright - TWU East Prussia.command").
+  const twuSrv = spawn('python3', ['-m', 'http.server', String(TWU_PORT)], { cwd: REPO_PARENT, stdio: 'ignore' });
+  await sleep(1300);
+
+  const twuBrowser = await chromium.launch();
+  const twuPage = await twuBrowser.newPage({ viewport: { width: 1500, height: 980 } });
+  const twuErrors = [];
+  twuPage.on('console', (m) => { if (m.type() === 'error') twuErrors.push(m.text()); });
+  twuPage.on('pageerror', (e) => twuErrors.push(`PAGEERROR: ${e.message}`));
+
+  try {
+    await twuPage.goto(`http://localhost:${TWU_PORT}/${REPO_NAME}/?project=local/twu-ep/project.json`, { waitUntil: 'load', timeout: 20000 });
+    await twuPage.waitForFunction(() => {
+      const el = document.getElementById('count-land');
+      return el && /[1-9]/.test(el.textContent);
+    }, { timeout: 25000 });
+    await sleep(1000);
+
+    // Real fortress hex from the operator's own features.json, via the exact
+    // Inspect-panel Edit control (not a JS shortcut).
+    await twuPage.evaluate(() => {
+      const ui = window.hexwright.ui;
+      ui.setMode('inspect');
+      ui.openInspector('3506');
+    });
+    await sleep(200);
+
+    const hasEditRow = await twuPage.evaluate(() =>
+      !!document.querySelector('#hexed-point-feats .point-feat-row[data-pf-type="fortress"] .pf-edit'));
+    rec('TWU-EP: inspect panel lists the real fortress feature with Edit', hasEditRow);
+
+    await twuPage.click('#hexed-point-feats .point-feat-row[data-pf-type="fortress"] .pf-edit');
+    await sleep(200);
+
+    const twuVisible = await twuPage.evaluate(() => {
+      const fi = document.getElementById('feature-inspector');
+      if (fi.hidden) return { hidden: true };
+      const rect = fi.getBoundingClientRect();
+      const topEl = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return { hidden: false, position: getComputedStyle(fi).position, onTop: !!(topEl && fi.contains(topEl)) };
+    });
+    rec('TWU-EP: Edit opens a genuinely on-screen editor (parity with GotA)',
+      !twuVisible.hidden && twuVisible.position === 'fixed' && twuVisible.onTop, JSON.stringify(twuVisible));
+
+    const spInput = twuPage.locator('#feat-insp-attrs .feat-attr[data-attr-key="sp"]');
+    const hasSpAttr = (await spInput.count()) > 0;
+    rec('TWU-EP: fortress palette declares an editable SP attr', hasSpAttr);
+    if (hasSpAttr) {
+      await spInput.click();
+      await spInput.fill('9');
+      await twuPage.click('#feat-insp-save');
+      await sleep(200);
+      const afterSp = await twuPage.evaluate(() => window.hexwright.store.getPointFeature('3506', 'fortress')?.attrs?.sp);
+      rec('TWU-EP: SP edit saves through the store', Number(afterSp) === 9, `sp=${afterSp}`);
+    }
+
+    // Add-from-Inspect + name inheritance, on a fresh isolated TWU hex (parity
+    // with the GotA case above — same code path, real project data).
+    const twuAddSetup = await twuPage.evaluate(() => {
+      const { store } = window.hexwright;
+      const codes = Object.keys(store.centers || {});
+      return codes.find((c) => c !== '3506' && store.getPointFeaturesAt(c).length === 0) || null;
+    });
+    rec('TWU-EP: found an isolated hex for the Add-from-Inspect check', !!twuAddSetup, twuAddSetup);
+
+    if (twuAddSetup) {
+      await twuPage.evaluate(({ code }) => {
+        const { store, ui } = window.hexwright;
+        store.setHexName(code, 'Testhaven');
+        ui.setMode('inspect');
+        ui.openInspector(code);
+      }, { code: twuAddSetup });
+      await sleep(200);
+
+      const twuAddRowState = await twuPage.evaluate(() => {
+        const wrap = document.getElementById('hexed-point-feat-add');
+        const select = document.getElementById('hexed-add-feat-select');
+        return { hidden: wrap?.hidden, options: select ? Array.from(select.options).map((o) => o.value) : [] };
+      });
+      rec('TWU-EP: inspect panel offers an Add-feature control for available types',
+        !twuAddRowState.hidden && twuAddRowState.options.length > 0, JSON.stringify(twuAddRowState));
+
+      if (twuAddRowState.options.length) {
+        const twuAddType = twuAddRowState.options[0];
+        await twuPage.selectOption('#hexed-add-feat-select', twuAddType);
+        await twuPage.click('#hexed-add-feat-btn');
+        await sleep(200);
+
+        const twuAddVisible = await twuPage.evaluate(() => {
+          const fi = document.getElementById('feature-inspector');
+          if (fi.hidden) return { hidden: true };
+          const rect = fi.getBoundingClientRect();
+          const topEl = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+          return {
+            hidden: false,
+            position: getComputedStyle(fi).position,
+            onTop: !!(topEl && fi.contains(topEl)),
+            nameValue: document.getElementById('feat-insp-name')?.value
+          };
+        });
+        rec('TWU-EP: Add-from-Inspect opens a genuinely on-screen editor',
+          !twuAddVisible.hidden && twuAddVisible.position === 'fixed' && twuAddVisible.onTop, JSON.stringify(twuAddVisible));
+        rec('TWU-EP: Add-from-Inspect pre-fills the name field from the hex name',
+          twuAddVisible.nameValue === 'Testhaven', `name="${twuAddVisible.nameValue}"`);
+
+        await twuPage.click('#feat-insp-save');
+        await sleep(200);
+        const twuAddedRec = await twuPage.evaluate(({ code, type }) =>
+          window.hexwright.store.getPointFeature(code, type), { code: twuAddSetup, type: twuAddType });
+        rec('TWU-EP: Add-from-Inspect saves through the same store mutation path',
+          !!twuAddedRec && twuAddedRec.name === 'Testhaven', JSON.stringify(twuAddedRec));
+      }
+    }
+
+    rec('TWU-EP: no uncaught console/page errors', twuErrors.length === 0, twuErrors.slice(0, 4).join(' | '));
+  } catch (err) {
+    rec('TWU-EP parity check completed', false, err.message);
+  }
+
+  await twuBrowser.close();
+  twuSrv.kill();
 }
 
 const passed = results.filter((r) => r.ok).length;
