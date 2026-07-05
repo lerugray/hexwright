@@ -159,6 +159,7 @@ export function colCount(grid) {
 }
 
 export function isValidCell(col, row, grid) {
+  if (!grid) return false; // no lattice loaded: nothing is a valid cell (fail closed, don't throw)
   if (row < 0) return false;
   return row < rowCount(col, grid);
 }

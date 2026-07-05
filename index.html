@@ -136,6 +136,40 @@
       <div id="point-feature-layer-rows"></div>
     </div>
 
+    <div id="group-layer-wrap">
+      <div class="layer-section-label">Groups</div>
+      <div id="group-layer-rows"></div>
+      <div id="group-edit-form" class="group-edit" hidden>
+        <input id="group-edit-id" type="hidden" />
+        <label class="field-row">
+          <span class="lbl">Name</span>
+          <input id="group-edit-name" type="text" class="field-input" placeholder="Group name" />
+        </label>
+        <label class="field-row">
+          <span class="lbl">Kind</span>
+          <input id="group-edit-kind" type="text" class="field-input" placeholder="vp, objective, …" />
+        </label>
+        <label class="field-row">
+          <span class="lbl">Value</span>
+          <input id="group-edit-value" type="text" class="field-input" placeholder="numeric or label" />
+        </label>
+        <div class="group-edit-actions">
+          <button type="button" id="group-edit-save" class="btn primary">Save</button>
+          <button type="button" id="group-edit-cancel" class="btn">Cancel</button>
+        </div>
+      </div>
+      <div class="group-create">
+        <input id="group-create-name" type="text" class="field-input" placeholder="Name" />
+        <input id="group-create-kind" type="text" class="field-input" placeholder="Kind" />
+        <input id="group-create-value" type="text" class="field-input" placeholder="Value" />
+        <button type="button" id="group-create-btn" class="btn primary" disabled>Create from selection</button>
+      </div>
+      <div class="group-selection-actions">
+        <button type="button" id="group-add-sel-btn" class="btn" disabled>Add to group</button>
+        <button type="button" id="group-remove-sel-btn" class="btn" disabled>Remove from group</button>
+      </div>
+    </div>
+
     <div id="terrain-layer-wrap">
       <div id="terrain-fill-row" class="layer-row">
         <button type="button" id="terrain-fill-eye" class="eye" aria-label="Toggle terrain fill visibility"></button>

@@ -139,6 +139,11 @@ function countHexsideEdges(project) {
   return Object.keys(project.hexsides).length;
 }
 
+function countGroups(project) {
+  if (!project || !Array.isArray(project.groups)) return 0;
+  return project.groups.length;
+}
+
 function countPointFeatures(project) {
   const features = project?.features;
   if (!features) return 0;
@@ -176,7 +181,8 @@ function parseSessionRecord(raw) {
     project,
     savedAt,
     land: countLandHexes(project),
-    sides: countHexsideEdges(project)
+    sides: countHexsideEdges(project),
+    groups: countGroups(project)
   };
 }
 
@@ -251,6 +257,7 @@ function makeBlankProject({ grid = null, blankLattice = false } = {}) {
     features: {},
     names: {},
     provenance: {},
+    groups: [],
     ...(blankLattice ? { blankLattice: true } : {})
   };
 }
@@ -390,6 +397,7 @@ async function loadProjectFromManifest(manifestUrl) {
     hexsides,
     features,
     names,
+    groups: Array.isArray(manifest.groups) ? manifest.groups : null,
     palette,
     traces,
     blankLattice: manifest.blankLattice === true
@@ -510,7 +518,8 @@ async function main() {
       name.textContent = slot.project.name || 'untitled';
       const detail = document.createElement('span');
       detail.className = 'detail hx-data';
-      detail.textContent = `${slot.land > 0 ? `${slot.land} hexes` : `${slot.sides} edges`} · ${formatRelativeTime(slot.savedAt)}`;
+      const summary = slot.land > 0 ? `${slot.land} hexes` : slot.sides > 0 ? `${slot.sides} edges` : slot.groups > 0 ? `${slot.groups} groups` : 'empty';
+      detail.textContent = `${summary} · ${formatRelativeTime(slot.savedAt)}`;
       row.append(name, detail);
       row.addEventListener('click', () => restoreFromSlot(slot));
       recentList.appendChild(row);
@@ -545,7 +554,7 @@ async function main() {
     const manifestLabel = String(manifestUrl || '').split('/').pop() || '';
     const project = await loadProjectFromManifest(manifestUrl);
     const slot = getSessionSlotForName(project.name);
-    if (slot && (slot.land > 0 || slot.sides > 0) && await promptRestore(slot, 'project')) {
+    if (slot && (slot.land > 0 || slot.sides > 0 || slot.groups > 0) && await promptRestore(slot, 'project')) {
       const restored = slot.project;
       restored.mapImage = project.mapImage;
       restored.traces = project.traces || [];
@@ -608,6 +617,19 @@ async function main() {
           }
           restored.names = restoredNames;
         }
+      }
+      // Merge manifest groups under restored groups: restored wins by id; manifest-only
+      // groups are appended so operator work is preserved while missing groups backfill.
+      if (Array.isArray(project.groups) && project.groups.length) {
+        const restoredGroups = Array.isArray(restored.groups) ? restored.groups.slice() : [];
+        const existingIds = new Set(restoredGroups.map((g) => g.id));
+        for (const g of project.groups) {
+          if (g && g.id && !existingIds.has(g.id)) {
+            restoredGroups.push(g);
+            existingIds.add(g.id);
+          }
+        }
+        restored.groups = restoredGroups;
       }
       await loadAndRender(restored);
       renderer.setViewMode('both');
@@ -858,7 +880,8 @@ async function main() {
         const sides = Object.keys(store.state.hexsides || {}).length;
         const feats = countPointFeatures(store.exportProjectObject());
         const named = Object.keys(store.state.names || {}).length;
-        if (land > 0 || sides > 0 || feats > 0 || named > 0) {
+        const groups = (store.state.groups || []).length;
+        if (land > 0 || sides > 0 || feats > 0 || named > 0 || groups > 0) {
           const project = store.exportProjectObject();
           localStorage.setItem(
             sessionKeyForName(project.name),

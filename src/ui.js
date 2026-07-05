@@ -58,6 +58,10 @@ export class UI {
     this.pendingLayerClear = null;
     this._layerClearTimer = null;
 
+    this._selectedGroupId = null;
+    this._groupDeleteArmedId = null;
+    this._groupDeleteTimer = null;
+
     this.buildHexEditor();
     this._setupInspectorDrag();
     this.bindGlobal();
@@ -79,6 +83,9 @@ export class UI {
       'brush-card', 'brush-mode-tag', 'brush-ink-list',
       'layers-panel', 'feature-layer-rows', 'point-feature-layer-wrap', 'point-feature-layer-rows',
       'terrain-layer-wrap', 'terrain-fill-row', 'terrain-fill-eye', 'terrain-fill-count', 'terrain-labels-toggle',
+      'group-layer-wrap', 'group-layer-rows', 'group-edit-form', 'group-edit-id', 'group-edit-name', 'group-edit-kind', 'group-edit-value', 'group-edit-save', 'group-edit-cancel',
+      'group-create-name', 'group-create-kind', 'group-create-value', 'group-create-btn',
+      'group-add-sel-btn', 'group-remove-sel-btn',
       'trace-layer-wrap', 'trace-layer-rows',
       'trace-opacity', 'trace-opacity-value', 'terrain-fill-opacity', 'terrain-fill-opacity-value',
       'terrain-label-size-row', 'terrain-label-size', 'terrain-label-size-value',
@@ -310,6 +317,12 @@ export class UI {
           e.preventDefault();
           this.els['clear-select'].click();
         }
+        if (this._selectedGroupId || this.renderer.selectedHexes.size) {
+          e.preventDefault();
+          this._deselectGroup();
+          this.renderer.clearHexSelection();
+          return;
+        }
         return;
       }
 
@@ -390,6 +403,9 @@ export class UI {
       }
       if (code) this.openInspector(code, screenPt);
       else this.closeInspector();
+    };
+    this.renderer.onSelectionChange = () => {
+      this._reflectGroupActionButtons();
     };
 
     // close popovers on outside click
@@ -528,6 +544,29 @@ export class UI {
       const row = clearBtn.closest('.layer-row');
       const label = row?.querySelector('.name')?.textContent?.trim() || clearBtn.dataset.pointFeatureKey;
       this.clearPointFeatureLayer(clearBtn.dataset.pointFeatureKey, label);
+    });
+
+    this.els['group-layer-rows']?.addEventListener('click', (e) => {
+      const delBtn = e.target.closest('.group-del[data-group-id]');
+      if (delBtn) {
+        this._deleteGroup(delBtn.dataset.groupId);
+        return;
+      }
+      const editBtn = e.target.closest('.group-edit[data-group-id]');
+      const row = e.target.closest('.group-row[data-group-id]');
+      const id = editBtn?.dataset.groupId || row?.dataset.groupId;
+      if (id) this._selectGroup(id);
+    });
+    this.els['group-create-btn']?.addEventListener('click', () => this._createGroupFromSelection());
+    this.els['group-edit-save']?.addEventListener('click', () => this._saveGroupEdit());
+    this.els['group-edit-cancel']?.addEventListener('click', () => this._deselectGroup());
+    this.els['group-add-sel-btn']?.addEventListener('click', () => this._addSelectedToGroup());
+    this.els['group-remove-sel-btn']?.addEventListener('click', () => this._removeSelectedFromGroup());
+    this.els['group-edit-form']?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this._saveGroupEdit();
+      }
     });
 
     this.els['terrain-fill-eye'].addEventListener('click', () => {
@@ -1260,6 +1299,181 @@ export class UI {
     this.store.clearHexsideFeatureLayer(featureKey);
   }
 
+  // ----------------- groups (multi-hex assignments) -----------------
+
+  _deselectGroup() {
+    if (!this._selectedGroupId) return;
+    this._selectedGroupId = null;
+    this.renderer.clearGroupHover();
+    this._disarmGroupDelete();
+    this._renderGroupsPanel();
+    this._reflectGroupActionButtons();
+  }
+
+  _validateSelectedGroup() {
+    if (!this._selectedGroupId) return;
+    if (!this.store.getGroup(this._selectedGroupId)) this._deselectGroup();
+  }
+
+  _selectGroup(id) {
+    if (this._selectedGroupId === id) return;
+    this._selectedGroupId = id;
+    const group = this.store.getGroup(id);
+    this.renderer.setGroupHover(group?.hexes || []);
+    this._disarmGroupDelete();
+    this._renderGroupsPanel();
+    this._reflectGroupActionButtons();
+    if (this.inspectorHex) this.closeInspector();
+  }
+
+  _isGroupDeleteArmed(id) {
+    return this._groupDeleteArmedId === id;
+  }
+
+  _armGroupDelete(id) {
+    this._disarmGroupDelete();
+    this._groupDeleteArmedId = id;
+    if (this._groupDeleteTimer) clearTimeout(this._groupDeleteTimer);
+    this._groupDeleteTimer = setTimeout(() => this._disarmGroupDelete(), 3000);
+    this._renderGroupsPanel();
+  }
+
+  _disarmGroupDelete() {
+    if (!this._groupDeleteArmedId) return;
+    this._groupDeleteArmedId = null;
+    if (this._groupDeleteTimer) clearTimeout(this._groupDeleteTimer);
+    this._groupDeleteTimer = null;
+    this._renderGroupsPanel();
+  }
+
+  _escHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  _renderGroupsPanel() {
+    const wrap = this.els['group-layer-wrap'];
+    const rows = this.els['group-layer-rows'];
+    if (!wrap || !rows) return;
+    const groups = this.store.getGroups();
+    wrap.hidden = false;
+    rows.innerHTML = groups.map((g) => {
+      const selected = this._selectedGroupId === g.id;
+      const armed = this._isGroupDeleteArmed(g.id);
+      return `<div class="group-row${selected ? ' is-selected' : ''}" data-group-id="${this._escHtml(g.id)}">
+        <div class="group-main">
+          <span class="group-name">${this._escHtml(g.name || '(unnamed)')}</span>
+          <span class="group-meta">${g.hexes.length} hex${g.hexes.length === 1 ? '' : 'es'} · ${this._escHtml(g.kind || '—')} · ${this._escHtml(g.value != null ? String(g.value) : '')}</span>
+        </div>
+        <div class="group-actions">
+          <button type="button" class="group-edit" data-group-id="${this._escHtml(g.id)}" aria-label="Edit ${this._escHtml(g.name || 'group')}">✎</button>
+          <button type="button" class="group-del${armed ? ' confirming' : ''}" data-group-id="${this._escHtml(g.id)}" aria-label="${armed ? 'Confirm delete' : 'Delete group'}">${armed ? '✓' : '×'}</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    const editForm = this.els['group-edit-form'];
+    if (editForm) {
+      const editing = this._selectedGroupId ? this.store.getGroup(this._selectedGroupId) : null;
+      editForm.hidden = !editing;
+      if (editing) {
+        this.els['group-edit-id'].value = editing.id;
+        this.els['group-edit-name'].value = editing.name || '';
+        this.els['group-edit-kind'].value = editing.kind || '';
+        this.els['group-edit-value'].value = editing.value != null ? String(editing.value) : '';
+      }
+    }
+  }
+
+  _createGroupFromSelection() {
+    const hexes = [...this.renderer.selectedHexes];
+    if (!hexes.length) return;
+    const name = this.els['group-create-name'].value.trim();
+    const kind = this.els['group-create-kind'].value.trim();
+    const value = this.els['group-create-value'].value;
+    const id = this.store.createGroup({ name, kind, value, hexes });
+    this.els['group-create-name'].value = '';
+    this.els['group-create-kind'].value = '';
+    this.els['group-create-value'].value = '';
+    this.renderer.clearHexSelection();
+    this._selectGroup(id);
+    this.status(`Created group${name ? ` "${name}"` : ''} with ${hexes.length} hex${hexes.length === 1 ? '' : 'es'}.`, 2500);
+  }
+
+  _saveGroupEdit() {
+    const id = this.els['group-edit-id'].value;
+    if (!id) return;
+    const name = this.els['group-edit-name'].value.trim();
+    const kind = this.els['group-edit-kind'].value.trim();
+    const value = this.els['group-edit-value'].value;
+    const group = this.store.getGroup(id);
+    if (!group) return;
+    const changed = name !== (group.name || '') || kind !== (group.kind || '') || value !== (group.value != null ? String(group.value) : '');
+    if (changed) {
+      this.store.updateGroup(id, { name, kind, value });
+    }
+    this._renderGroupsPanel();
+  }
+
+  _deleteGroup(id) {
+    if (!this._isGroupDeleteArmed(id)) {
+      this._armGroupDelete(id);
+      return;
+    }
+    this._disarmGroupDelete();
+    if (this._selectedGroupId === id) this._selectedGroupId = null;
+    this.store.deleteGroup(id);
+    this.renderer.clearGroupHover();
+    this._reflectGroupActionButtons();
+  }
+
+  _addSelectedToGroup() {
+    if (!this._selectedGroupId) return;
+    const hexes = [...this.renderer.selectedHexes];
+    if (!hexes.length) return;
+    let added = 0;
+    for (const code of hexes) {
+      if (this.store.addHexToGroup(this._selectedGroupId, code)) added++;
+    }
+    if (added) {
+      this._renderGroupsPanel();
+      const group = this.store.getGroup(this._selectedGroupId);
+      this.renderer.setGroupHover(group?.hexes || []);
+      this.status(`Added ${added} hex${added === 1 ? '' : 'es'} to group.`, 1800);
+    }
+  }
+
+  _removeSelectedFromGroup() {
+    if (!this._selectedGroupId) return;
+    const hexes = [...this.renderer.selectedHexes];
+    if (!hexes.length) return;
+    let removed = 0;
+    for (const code of hexes) {
+      if (this.store.removeHexFromGroup(this._selectedGroupId, code)) removed++;
+    }
+    if (removed) {
+      this._renderGroupsPanel();
+      const group = this.store.getGroup(this._selectedGroupId);
+      this.renderer.setGroupHover(group?.hexes || []);
+      this.status(`Removed ${removed} hex${removed === 1 ? '' : 'es'} from group.`, 1800);
+    }
+  }
+
+  _reflectGroupActionButtons() {
+    const hasSel = this.renderer.selectedHexes.size > 0;
+    const hasGroup = !!this._selectedGroupId;
+    const createBtn = this.els['group-create-btn'];
+    if (createBtn) createBtn.disabled = !hasSel;
+    const addBtn = this.els['group-add-sel-btn'];
+    if (addBtn) addBtn.disabled = !(hasSel && hasGroup);
+    const removeBtn = this.els['group-remove-sel-btn'];
+    if (removeBtn) removeBtn.disabled = !(hasSel && hasGroup);
+  }
+
   _traceColor(trace) {
     const palette = this.store.getPalette();
     const feature = (palette?.hexsideFeatures || []).find((f) => f.key === trace.layer || f.exportLayer === trace.layer);
@@ -1362,6 +1576,8 @@ export class UI {
     const mapDim = Math.max(0, Math.min(0.85, this.renderer.mapDim || 0));
     this.els['map-dim'].value = String(mapDim);
     this.els['map-dim-value'].textContent = `${Math.round(mapDim * 100)}%`;
+
+    this._renderGroupsPanel();
   }
 
   _terrainColorForCursor() {
@@ -1880,6 +2096,8 @@ export class UI {
     }
     this._renderBrushCard();
     this._renderLayersPanel();
+    this._validateSelectedGroup();
+    this._reflectGroupActionButtons();
     this._updateCounts();
     this._updateAnomalyStatus();
     this.els['undo'].disabled = !this.store.canUndo();

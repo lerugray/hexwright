@@ -21,6 +21,9 @@ export class MapRenderer {
 
     this.view = { baseScale: 1, zoom: 1, panX: 0, panY: 0 };
     this.selectedHex = null;
+    this.selectedHexes = new Set();
+    this.groupHoverHexes = new Set();
+    this.onSelectionChange = null;
     this.highlighted = { hex: null, edge: null, neighbor: null };
 
     this.viewMode = 'both';          // 'map' | 'classification' | 'both'
@@ -536,9 +539,15 @@ export class MapRenderer {
         const pt = this._eventToScreen(e);
         const hex = this.hexAtScreen(pt);
         if (hex) {
-          this.selectedHex = hex;
-          this.draw();
-          this.onHexSelect?.(hex, pt);
+          if (this._canMultiSelect(e)) {
+            this._toggleSelectedHex(hex);
+          } else {
+            this.selectedHexes.clear();
+            this.selectedHex = hex;
+            this.draw();
+            this._notifySelectionChange();
+            this.onHexSelect?.(hex, pt);
+          }
         }
         return;
       }
@@ -625,21 +634,66 @@ export class MapRenderer {
     }
   }
 
+  _canMultiSelect(e) {
+    return !!(e?.shiftKey && !this.edgePaint.active && !this.brush.active && !this.nudgeMode);
+  }
+
+  _notifySelectionChange() {
+    this.onSelectionChange?.(new Set(this.selectedHexes));
+  }
+
+  _toggleSelectedHex(code) {
+    if (!code) return;
+    if (this.selectedHexes.has(code)) this.selectedHexes.delete(code);
+    else this.selectedHexes.add(code);
+    this.selectedHex = code;
+    this.draw();
+    this._notifySelectionChange();
+  }
+
+  clearHexSelection() {
+    this.selectedHexes.clear();
+    this.selectedHex = null;
+    this.groupHoverHexes.clear();
+    this.draw();
+    this._notifySelectionChange();
+  }
+
+  setGroupHover(codes) {
+    this.groupHoverHexes = new Set(codes || []);
+    this.draw();
+  }
+
+  clearGroupHover() {
+    if (!this.groupHoverHexes.size) return;
+    this.groupHoverHexes.clear();
+    this.draw();
+  }
+
   _clickAt(e) {
     const pt = this._eventToScreen(e);
     const world = screenToWorld(pt, this.view);
     const hit = this._hexAt(world);
     // Edge-inspector highlights paint the neighbor hex; clear so map click shows one hex only.
     this.clearHighlight();
-    if (hit) {
-      this.selectedHex = hit;
-      this.draw();
-      this.onHexSelect?.(hit, pt);
-    } else {
+    if (!hit) {
       this.selectedHex = null;
+      this.selectedHexes.clear();
+      this.groupHoverHexes.clear();
       this.draw();
+      this._notifySelectionChange();
       this.onHexSelect?.(null);
+      return;
     }
+    if (this._canMultiSelect(e)) {
+      this._toggleSelectedHex(hit);
+      return;
+    }
+    this.selectedHexes.clear();
+    this.selectedHex = hit;
+    this.draw();
+    this._notifySelectionChange();
+    this.onHexSelect?.(hit, pt);
   }
 
   _hexAt(worldPt) {
@@ -1178,20 +1232,61 @@ export class MapRenderer {
   }
 
   _drawSelection(ctx, view) {
-    if (!this.selectedHex) return;
     const s = view.baseScale * view.zoom;
     const grid = this.store.state.grid;
-    const poly = hexPolygon(this.selectedHex, grid);
+    if (!grid) return; // no project loaded — nothing to outline (hexPolygon needs a lattice)
+    const codes = [];
+    // Group hover fill is shown behind selection strokes.
+    if (this.groupHoverHexes.size) {
+      ctx.save();
+      ctx.translate(view.panX, view.panY);
+      ctx.scale(s, s);
+      for (const code of this.groupHoverHexes) {
+        const poly = hexPolygon(code, grid);
+        if (!poly) continue;
+        ctx.beginPath();
+        ctx.moveTo(poly[0].x, poly[0].y);
+        for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(122, 217, 255, 0.18)';
+        ctx.fill();
+        ctx.strokeStyle = '#7ad9ff';
+        ctx.lineWidth = 2.0 / s;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (!this.selectedHex && !this.selectedHexes.size) return;
+    for (const code of this.selectedHexes) {
+      if (code !== this.selectedHex) codes.push(code);
+    }
     ctx.save();
     ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
-    ctx.beginPath();
-    ctx.moveTo(poly[0].x, poly[0].y);
-    for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
-    ctx.closePath();
-    ctx.strokeStyle = '#ff7a1a';
-    ctx.lineWidth = 2.5 / s;
-    ctx.stroke();
+    for (const code of codes) {
+      const poly = hexPolygon(code, grid);
+      if (!poly) continue;
+      ctx.beginPath();
+      ctx.moveTo(poly[0].x, poly[0].y);
+      for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+      ctx.closePath();
+      ctx.strokeStyle = '#ff7a1a';
+      ctx.lineWidth = 2.0 / s;
+      ctx.stroke();
+    }
+    // Primary selected hex rendered last with a heavier stroke.
+    if (this.selectedHex) {
+      const poly = hexPolygon(this.selectedHex, grid);
+      if (poly) {
+        ctx.beginPath();
+        ctx.moveTo(poly[0].x, poly[0].y);
+        for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+        ctx.closePath();
+        ctx.strokeStyle = '#ff7a1a';
+        ctx.lineWidth = 2.5 / s;
+        ctx.stroke();
+      }
+    }
     ctx.restore();
   }
 
@@ -1461,7 +1556,10 @@ export class MapRenderer {
 
   closeInspector() {
     this.selectedHex = null;
+    this.selectedHexes.clear();
+    this.groupHoverHexes.clear();
     this.clearHighlight();
     this.draw();
+    this._notifySelectionChange();
   }
 }

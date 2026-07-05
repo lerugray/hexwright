@@ -244,6 +244,7 @@ export class ProjectStore {
       hexFeatures: {},
       hexsides: emptyHexsidesState(),
       provenance: {},
+      groups: [],
       traces: [],
       loadedHexsides: null,
       mapOffset: [0, 0],
@@ -327,6 +328,7 @@ export class ProjectStore {
       hexFeatures: deepClone(migrated.hexFeatures || {}),
       hexsides: deepClone(migrated.hexsides || emptyHexsidesState()),
       provenance: deepClone(migrated.provenance || {}),
+      groups: deepClone(migrated.groups || []),
       traces: project.traces || [],
       loadedHexsides: project.hexsides ? deepClone(project.hexsides) : null,
       mapOffset: Array.isArray(project.mapOffset)
@@ -348,6 +350,7 @@ export class ProjectStore {
     const hexFeatures = {};
     const hexsides = {};
     const provenance = {};
+    const groups = Array.isArray(project.groups) ? deepClone(project.groups) : [];
 
     const sourceTerrain = project.terrain && project.terrain.terrain
       ? project.terrain.terrain
@@ -449,7 +452,7 @@ export class ProjectStore {
       }
     }
 
-    return { terrain, features, names, hexFeatures, hexsides, provenance };
+    return { terrain, features, names, hexFeatures, hexsides, provenance, groups };
   }
 
   setProject(patch) {
@@ -521,7 +524,8 @@ export class ProjectStore {
       names: deepClone(this.state.names || {}),
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
-      provenance: deepClone(this.state.provenance)
+      provenance: deepClone(this.state.provenance),
+      groups: deepClone(this.state.groups || [])
     };
     if (this.strokeActive) {
       if (!this.strokeSnap) this.strokeSnap = snap;
@@ -565,7 +569,8 @@ export class ProjectStore {
       names: deepClone(this.state.names || {}),
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
-      provenance: deepClone(this.state.provenance)
+      provenance: deepClone(this.state.provenance),
+      groups: deepClone(this.state.groups || [])
     });
     this.applySnap(snap);
     this.rebuildIndex();
@@ -582,7 +587,8 @@ export class ProjectStore {
       names: deepClone(this.state.names || {}),
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
-      provenance: deepClone(this.state.provenance)
+      provenance: deepClone(this.state.provenance),
+      groups: deepClone(this.state.groups || [])
     });
     this.applySnap(snap);
     this.rebuildIndex();
@@ -597,6 +603,7 @@ export class ProjectStore {
     this.state.hexFeatures = snap.hexFeatures;
     this.state.hexsides = snap.hexsides;
     this.state.provenance = snap.provenance;
+    this.state.groups = snap.groups || [];
   }
 
   // ----------------- terrain -----------------
@@ -807,6 +814,132 @@ export class ProjectStore {
 
   exportNamesJson() {
     return JSON.stringify(this.exportNamesObject(), null, 2);
+  }
+
+  // ----------------- groups (multi-hex assignments) -----------------
+
+  _nextGroupId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      try { return crypto.randomUUID(); } catch (_) { /* fall through */ }
+    }
+    return `g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  _validGroupId(id) {
+    return typeof id === 'string' && id.trim().length > 0;
+  }
+
+  _sanitizeHexes(list) {
+    if (!Array.isArray(list)) return [];
+    const set = new Set();
+    for (const code of list) {
+      const s = String(code || '').trim();
+      if (s && this._isValidHexCode(s)) set.add(s);
+    }
+    return [...set];
+  }
+
+  getGroups() {
+    return deepClone(this.state.groups || []);
+  }
+
+  getGroup(id) {
+    const g = (this.state.groups || []).find((x) => x.id === id);
+    return g ? deepClone(g) : null;
+  }
+
+  getGroupsForHex(code) {
+    return (this.state.groups || []).filter((g) => g.hexes && g.hexes.includes(code)).map((g) => g.id);
+  }
+
+  createGroup({ name = '', kind = '', value = '', hexes = [] } = {}) {
+    const sanitized = this._sanitizeHexes(hexes);
+    const group = {
+      id: this._nextGroupId(),
+      name: String(name != null ? name : '').trim(),
+      kind: String(kind != null ? kind : '').trim(),
+      value: value != null ? value : '',
+      hexes: sanitized
+    };
+    this.pushUndo();
+    if (!this.state.groups) this.state.groups = [];
+    this.state.groups = [...this.state.groups, group];
+    this.notify('groups');
+    return group.id;
+  }
+
+  updateGroup(id, patch) {
+    if (!this._validGroupId(id)) return false;
+    const idx = (this.state.groups || []).findIndex((g) => g.id === id);
+    if (idx < 0) return false;
+    const current = this.state.groups[idx];
+    const next = { ...current };
+    if (patch.name !== undefined) next.name = String(patch.name != null ? patch.name : '').trim();
+    if (patch.kind !== undefined) next.kind = String(patch.kind != null ? patch.kind : '').trim();
+    if (patch.value !== undefined) next.value = patch.value != null ? patch.value : '';
+    if (patch.hexes !== undefined) next.hexes = this._sanitizeHexes(patch.hexes);
+    if (JSON.stringify(current) === JSON.stringify(next)) return false;
+    this.pushUndo();
+    this.state.groups = this.state.groups.slice();
+    this.state.groups[idx] = next;
+    this.notify('groups');
+    return true;
+  }
+
+  renameGroup(id, name) {
+    return this.updateGroup(id, { name });
+  }
+
+  setGroupKind(id, kind) {
+    return this.updateGroup(id, { kind });
+  }
+
+  setGroupValue(id, value) {
+    return this.updateGroup(id, { value });
+  }
+
+  setGroupHexes(id, hexes) {
+    return this.updateGroup(id, { hexes });
+  }
+
+  /** isValidCell takes (col, row, grid) — parse the CCRR code first. */
+  _isValidHexCode(code) {
+    try {
+      const { col, row } = parseCCRR(code);
+      return isValidCell(col, row, this.state.grid);
+    } catch {
+      return false;
+    }
+  }
+
+  addHexToGroup(id, code) {
+    if (!this._validGroupId(id) || !code) return false;
+    const g = this.getGroup(id);
+    if (!g) return false;
+    const s = String(code).trim();
+    if (!this._isValidHexCode(s)) return false;
+    if (g.hexes.includes(s)) return false;
+    return this.updateGroup(id, { hexes: [...g.hexes, s] });
+  }
+
+  removeHexFromGroup(id, code) {
+    if (!this._validGroupId(id) || !code) return false;
+    const g = this.getGroup(id);
+    if (!g) return false;
+    const s = String(code).trim();
+    if (!g.hexes.includes(s)) return false;
+    return this.updateGroup(id, { hexes: g.hexes.filter((h) => h !== s) });
+  }
+
+  deleteGroup(id) {
+    if (!this._validGroupId(id)) return false;
+    const before = (this.state.groups || []).length;
+    const next = (this.state.groups || []).filter((g) => g.id !== id);
+    if (next.length === before) return false;
+    this.pushUndo();
+    this.state.groups = next;
+    this.notify('groups');
+    return true;
   }
 
   // ----------------- hexsides (per-edge arrays) -----------------
@@ -1188,6 +1321,7 @@ export class ProjectStore {
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance),
+      groups: deepClone(this.state.groups || []),
       mapOffset: deepClone(this.state.mapOffset || [0, 0]),
       palette: this.palette?.name || 'default',
       paletteMigrationCursor: this.state.paletteMigrationCursor || 0,
