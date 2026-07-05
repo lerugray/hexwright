@@ -1340,16 +1340,11 @@ export class UI {
   openInspector(code) {
     this.inspectorHex = code;
     this.hexedSelectedEdge = null;
+    this.renderer.clearHighlight();
     this._updateInspectorTitle(code);
     this.els['hex-editor'].hidden = false;
     this.els['layers-panel'].hidden = true;
     this._refreshInspector();
-    for (let i = 0; i < 6; i++) {
-      if (edgeNeighbor(code, i, this.store.centers, this.store.state.grid)) {
-        this._selectHexEditorEdge(i);
-        break;
-      }
-    }
     requestAnimationFrame(() => {
       this._positionInspector();
     });

@@ -628,6 +628,8 @@ export class MapRenderer {
     const pt = this._eventToScreen(e);
     const world = screenToWorld(pt, this.view);
     const hit = this._hexAt(world);
+    // Edge-inspector highlights paint the neighbor hex; clear so map click shows one hex only.
+    this.clearHighlight();
     if (hit) {
       this.selectedHex = hit;
       this.draw();
