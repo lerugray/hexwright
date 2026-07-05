@@ -4,7 +4,7 @@ import { spawn } from 'child_process';
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { ProjectStore, validateFeaturesDocument } from '../src/store.js';
+import { ProjectStore, validateFeaturesDocument, syntheticHexFeaturesFromFeatures } from '../src/store.js';
 import { GOTA_PROJECT_URL, PATHS } from './_local-data.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -51,6 +51,22 @@ try {
 } catch (err) {
   rec('invalid import fails loudly', /Expected features/.test(err.message), err.message.slice(0, 60));
 }
+
+// --- Unit: picker fallback when palette declares no hexFeatures (never a dead panel) ---
+const fbStore = new ProjectStore();
+fbStore.setPalette({ name: 'no-decl', terrain: [], hexsideFeatures: [] }); // NO hexFeatures
+fbStore.setPointFeature('0101', 'vp', { name: 'Town', attrs: { vp: 7 } });
+fbStore.setPointFeature('0202', 'fortress', { name: 'Fort', attrs: { sp: 4 } });
+const synth = syntheticHexFeaturesFromFeatures(fbStore.state.features);
+rec('fallback synthesizes picker types from loaded data when palette declares none',
+  synth.length === 2 && synth.some((f) => f.key === 'vp') && synth.some((f) => f.key === 'fortress'),
+  synth.map((f) => f.key).join(','));
+const vpDecl = synth.find((f) => f.key === 'vp');
+rec('fallback infers numeric attr schema from data',
+  vpDecl?.attrs?.[0]?.key === 'vp' && vpDecl?.attrs?.[0]?.type === 'number',
+  JSON.stringify(vpDecl?.attrs));
+rec('fallback yields empty list when no point-feature data present',
+  syntheticHexFeaturesFromFeatures({}).length === 0);
 
 // --- Headless UI harness (requires operator sample under local/) ---
 if (!existsSync(PATHS.gotaProject)) {
@@ -109,11 +125,27 @@ try {
   const modeOn = await page.evaluate(() => window.hexwright.ui.mode === 'features');
   rec('P switches to features mode', modeOn);
 
+  const canvasBox = await page.locator('#map-canvas').boundingBox();
+  const clickPt = { x: canvasBox.x + setup.pt.x, y: canvasBox.y + setup.pt.y };
+
+  // Select-not-place guard: entering features mode arms NO type, and a bare click
+  // must never silently add a feature (the operator's "silently added" bug).
+  const noArm = await page.evaluate(() => window.hexwright.ui.featurePaintType == null);
+  rec('features mode starts with no type armed (select-not-place)', noArm);
+  const beforeNoSel = await page.evaluate(() => window.hexwright.store.undoStack.length);
+  await page.mouse.click(clickPt.x, clickPt.y);
+  await sleep(200);
+  const noSelResult = await page.evaluate(({ code }) => ({
+    added: window.hexwright.store.getPointFeaturesAt(code).length,
+    undoDelta: window.hexwright.store.undoStack.length
+  }), setup);
+  rec('bare click with no type armed adds nothing',
+    noSelResult.added === 0 && noSelResult.undoDelta === beforeNoSel,
+    `added=${noSelResult.added} undo=${noSelResult.undoDelta}/${beforeNoSel}`);
+
   await page.click(`#brush-card .ink[data-ink-key="${setup.featureType}"]`);
   await sleep(150);
 
-  const canvasBox = await page.locator('#map-canvas').boundingBox();
-  const clickPt = { x: canvasBox.x + setup.pt.x, y: canvasBox.y + setup.pt.y };
   const beforeUndo = await page.evaluate(() => window.hexwright.store.undoStack.length);
   await page.mouse.click(clickPt.x, clickPt.y);
   await sleep(200);
@@ -168,7 +200,37 @@ try {
   }, setup);
   rec('inspector delete removes feature', deleted);
 
-  // Re-place for export + autosave checks
+  // --- Inspect-panel point-feature list + per-row delete (fix #3) ---
+  // Place a feature, open it in INSPECT mode, confirm the row renders, then delete
+  // via the inspect panel's × button and assert exactly one feature is removed.
+  await page.mouse.click(clickPt.x, clickPt.y); // re-place (type still armed)
+  await sleep(150);
+  await page.evaluate(({ code }) => {
+    const ui = window.hexwright.ui;
+    ui.setMode('inspect');
+    ui.openInspector(code);
+  }, setup);
+  await sleep(150);
+  const rowShown = await page.evaluate(({ featureType }) =>
+    !!document.querySelector(`#hexed-point-feats .point-feat-row[data-pf-type="${featureType}"] .pf-del`), setup);
+  rec('inspect panel lists the hex point feature with a delete control', rowShown);
+
+  const beforeInspDel = await page.evaluate(({ code }) =>
+    window.hexwright.store.getPointFeaturesAt(code).length, setup);
+  page.once('dialog', (d) => d.accept());
+  await page.click(`#hexed-point-feats .point-feat-row[data-pf-type="${setup.featureType}"] .pf-del`);
+  await sleep(200);
+  const inspDelResult = await page.evaluate(({ code, featureType }) => ({
+    after: window.hexwright.store.getPointFeaturesAt(code).length,
+    gone: !window.hexwright.store.getPointFeature(code, featureType)
+  }), setup);
+  rec('inspect-panel delete removes exactly one feature',
+    inspDelResult.gone && inspDelResult.after === beforeInspDel - 1,
+    `before=${beforeInspDel} after=${inspDelResult.after}`);
+
+  // Re-place for export + autosave checks (back into features mode, type still armed)
+  await page.evaluate(() => window.hexwright.ui.setMode('features'));
+  await sleep(100);
   await page.mouse.click(clickPt.x, clickPt.y);
   await sleep(150);
 

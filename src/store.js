@@ -116,6 +116,36 @@ function defaultAttrsFromSchema(attrSchema) {
   return attrs;
 }
 
+// Fallback point-feature TYPE declarations synthesized from the point-feature
+// DATA already loaded into state. Used when a project's palette declares no
+// `hexFeatures` (so the features picker + inspector never render a dead panel).
+// Attr schema is inferred from the attrs present on the loaded instances; a
+// numeric-looking value implies `type:number`, else text.
+export function syntheticHexFeaturesFromFeatures(featuresState) {
+  const byType = new Map();
+  for (const bucket of Object.values(featuresState || {})) {
+    if (!bucket || typeof bucket !== 'object') continue;
+    for (const [type, rec] of Object.entries(bucket)) {
+      if (!type) continue;
+      let entry = byType.get(type);
+      if (!entry) { entry = { key: type, attrs: new Map() }; byType.set(type, entry); }
+      const attrs = (rec && rec.attrs) || {};
+      for (const [k, v] of Object.entries(attrs)) {
+        const isNum = typeof v === 'number' || (v !== '' && v != null && Number.isFinite(Number(v)));
+        // once seen as text, stays text
+        if (!entry.attrs.has(k) || (entry.attrs.get(k) === 'number' && !isNum)) {
+          entry.attrs.set(k, isNum ? 'number' : 'text');
+        }
+      }
+    }
+  }
+  return [...byType.values()].map((e) => ({
+    key: e.key,
+    label: e.key,
+    attrs: [...e.attrs.entries()].map(([k, t]) => ({ key: k, label: k, type: t }))
+  }));
+}
+
 function parseTwuPairArrayEntry(entry, label, index) {
   if (!Array.isArray(entry) || entry.length !== 2) {
     throw new Error(`${label} index ${index} must be a 2-element [a,b] array.`);

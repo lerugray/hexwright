@@ -1226,6 +1226,57 @@ button.active {
 
 .feat.is-active .fdot { background: var(--hx-accent, var(--accent)); }
 
+/* Inspect-mode list of the hex's point features (value-bearing: VP, fortress SP). */
+.point-feats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.point-feat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  background: var(--hx-bg-raised, var(--chrome));
+  border: 1px solid var(--hx-hairline, var(--chrome-2));
+  border-radius: 7px;
+  font-size: var(--fs-12, 12px);
+  color: var(--hx-text, var(--text));
+}
+
+.point-feat-row .pf-glyph { flex: 0 0 auto; }
+.point-feat-row .pf-label { font-weight: 600; }
+.point-feat-row .pf-name { color: var(--hx-text-dim, var(--muted)); }
+.point-feat-row .pf-val { margin-left: auto; color: var(--hx-text-dim, var(--muted)); }
+
+.point-feat-row .pf-edit,
+.point-feat-row .pf-del {
+  flex: 0 0 auto;
+  border: 1px solid var(--hx-hairline, var(--chrome-2));
+  background: var(--hx-bg-hover, var(--chrome-2));
+  color: var(--hx-text, var(--text));
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: var(--fs-12, 12px);
+  line-height: 1;
+  padding: 3px 7px;
+}
+
+.point-feat-row .pf-val + .pf-edit { margin-left: 6px; }
+.point-feat-row .pf-edit:hover { border-color: var(--hx-accent-deep, var(--accent)); }
+
+.point-feat-row .pf-del {
+  padding: 3px 8px;
+  font-weight: 700;
+}
+
+.point-feat-row .pf-del:hover {
+  border-color: var(--hx-danger, var(--danger));
+  color: var(--hx-danger, var(--danger));
+}
+
 .hexdiagram {
   display: grid;
   place-items: center;

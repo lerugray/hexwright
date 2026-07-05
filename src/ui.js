@@ -2,6 +2,7 @@ import {
   TERRAIN_COLORS, EDITABLE_LAYERS, HEXSIDE_COLORS, terrainSwatchBackground,
   hexCenter, hexPolygon, edgeNeighbor
 } from './geometry.js';
+import { syntheticHexFeaturesFromFeatures } from './store.js';
 
 const LAYER_LABELS = {
   rivers: 'river',
@@ -84,7 +85,7 @@ export class UI {
       'feature-inspector', 'feat-insp-close', 'feat-insp-title', 'feat-insp-name', 'feat-insp-attrs',
       'feat-insp-delete', 'feat-insp-save',
       'hex-editor', 'hexed-close', 'hexed-title', 'hexed-name', 'hexed-terrain-current', 'hexed-terrain-grid',
-      'hexed-feat-count', 'hexed-featrow', 'hexed-edges-meta', 'hexed-svg', 'hexed-fill',
+      'hexed-feat-count', 'hexed-featrow', 'hexed-point-feats', 'hexed-edges-meta', 'hexed-svg', 'hexed-fill',
       'hexed-edges', 'hexed-edge-labels', 'hexed-center-code', 'hexed-on-edge-label',
       'hexed-edchips', 'hexed-inkgrid',
       'count-land', 'layer-counts', 'status',
@@ -357,12 +358,24 @@ export class UI {
       if (this.inspectorHex) this._positionInspector();
     });
     this.renderer.onHexSelect = (code, screenPt) => {
-      if (this.featurePaintActive && code && this.featurePaintType) {
-        const existing = this.store.getPointFeature(code, this.featurePaintType);
-        if (existing) this.openFeatureInspector(code, this.featurePaintType);
-        else {
-          this.store.setPointFeature(code, this.featurePaintType, { name: '', attrs: undefined });
-          this.status(`Placed ${this._activePointFeatureLabel()} on ${code}`, 1800);
+      if (this.featurePaintActive && code) {
+        // Armed type: click an empty hex to place it, click an existing one to edit.
+        if (this.featurePaintType) {
+          const existing = this.store.getPointFeature(code, this.featurePaintType);
+          if (existing) this.openFeatureInspector(code, this.featurePaintType);
+          else {
+            this.store.setPointFeature(code, this.featurePaintType, { name: '', attrs: undefined });
+            this.status(`Placed ${this._activePointFeatureLabel()} on ${code}`, 1800);
+          }
+          return;
+        }
+        // No type armed (select-not-place): NEVER silently add. Edit an existing
+        // feature if the hex has one, else prompt the operator to pick a type.
+        const present = this.store.getPointFeaturesAt(code);
+        if (present.length) {
+          this.openFeatureInspector(code, present[0].type);
+        } else {
+          this.status('Pick a feature type below (or press 1–0) to place it — a bare click adds nothing.', 2600);
         }
         return;
       }
@@ -417,6 +430,16 @@ export class UI {
         this.store.setTerrain(this.inspectorHex, terr.dataset.terrain);
         this.brushTerrain = terr.dataset.terrain;
         this._reflectBrush();
+        return;
+      }
+      const pfDel = e.target.closest('.pf-del[data-pf-type]');
+      if (pfDel) {
+        this._deleteInspectorPointFeature(pfDel.dataset.pfType);
+        return;
+      }
+      const pfEdit = e.target.closest('.pf-edit[data-pf-type]');
+      if (pfEdit && this.inspectorHex) {
+        this.openFeatureInspector(this.inspectorHex, pfEdit.dataset.pfType);
         return;
       }
       const feat = e.target.closest('.feat[data-feature]');
@@ -669,9 +692,12 @@ export class UI {
     if (mode !== 'features') this.closeFeatureInspector();
 
     if (this.featurePaintActive) {
-      const pFeatures = this.store.getPalette()?.hexFeatures || [];
-      if (pFeatures.length && !pFeatures.some((f) => f.key === this.featurePaintType)) {
-        this.featurePaintType = pFeatures[0].key;
+      // Select-not-place default: entering features mode must NOT auto-arm a type
+      // (that silently placed a feature on the operator's first click). A type is
+      // armed only when the user explicitly picks one from the picker or 1–0 keys.
+      // Drop a stale arm that no longer exists in the current palette/data.
+      if (this.featurePaintType && !this._hexFeatureDecl(this.featurePaintType)) {
+        this.featurePaintType = null;
       }
     }
 
@@ -728,7 +754,11 @@ export class UI {
       return;
     }
     if (this.mode === 'features') {
-      hint.innerHTML = `<b>Features · ${this._activePointFeatureLabel()}</b> — click hex to place · click again to edit<span class="hint-extra"> · <span class="kbd">P</span> features · <span class="kbd">1</span>–<span class="kbd">0</span> switch type</span>`;
+      if (this.featurePaintType) {
+        hint.innerHTML = `<b>Features · ${this._activePointFeatureLabel()}</b> — click hex to place · click again to edit<span class="hint-extra"> · <span class="kbd">P</span> features · <span class="kbd">1</span>–<span class="kbd">0</span> switch type</span>`;
+      } else {
+        hint.innerHTML = `<b>Features</b> — pick a type below, then click a hex to place · click an existing feature to edit<span class="hint-extra"> · <span class="kbd">1</span>–<span class="kbd">0</span> pick type</span>`;
+      }
       return;
     }
     if (this.mode === 'nudge') {
@@ -853,9 +883,22 @@ export class UI {
     this.setMode('features');
   }
 
+  // Point-feature TYPE declarations that drive the picker + inspector. Prefer the
+  // palette's declared `hexFeatures`; when a project declares none, synthesize the
+  // types from the point-feature data actually loaded — so the picker is never a
+  // dead panel and placed/imported features remain editable.
+  _effectiveHexFeatures() {
+    const declared = this.store.getPalette()?.hexFeatures || [];
+    if (declared.length) return declared;
+    return syntheticHexFeaturesFromFeatures(this.store.state.features);
+  }
+
+  _hexFeatureDecl(type) {
+    return this._effectiveHexFeatures().find((f) => f.key === type) || null;
+  }
+
   _activePointFeatureLabel() {
-    const palette = this.store.getPalette();
-    const feature = (palette?.hexFeatures || []).find((f) => f.key === this.featurePaintType);
+    const feature = this._hexFeatureDecl(this.featurePaintType);
     return feature?.label || feature?.key || 'Feature';
   }
 
@@ -876,15 +919,13 @@ export class UI {
 
   _reflectFeaturePaint() {
     const btn = this.els['tool-features'];
-    const palette = this.store.getPalette();
-    const feature = (palette?.hexFeatures || []).find((f) => f.key === this.featurePaintType);
+    const feature = this._hexFeatureDecl(this.featurePaintType);
     if (btn) btn.title = `Features mode (P)${feature ? ` — ${feature.label || feature.key}` : ''}`;
     this._updateModeHint();
   }
 
   _selectPointFeatureByIndex(idx) {
-    const palette = this.store.getPalette();
-    const feature = palette?.hexFeatures?.[idx];
+    const feature = this._effectiveHexFeatures()[idx];
     if (!feature) return;
     this.setFeaturePaintType(feature.key);
     this.status(`Feature ${idx + 1}: ${feature.label || feature.key}`, 1200);
@@ -909,8 +950,7 @@ export class UI {
   }
 
   openFeatureInspector(code, type) {
-    const palette = this.store.getPalette();
-    const pf = (palette?.hexFeatures || []).find((f) => f.key === type);
+    const pf = this._hexFeatureDecl(type);
     const rec = this.store.getPointFeature(code, type);
     if (!rec) return;
     this.featureInspector = { code, type };
@@ -1034,9 +1074,11 @@ export class UI {
 
     if (this.mode === 'features') {
       const counts = this._pointFeatureCounts();
-      const features = palette.hexFeatures || [];
-      if (features.length && !features.some((f) => f.key === this.featurePaintType)) {
-        this.featurePaintType = features[0].key;
+      const features = this._effectiveHexFeatures();
+      // Select-not-place: do NOT force an armed type here. Only clear a stale arm
+      // that isn't a real type anymore; null means "nothing armed" (no silent add).
+      if (this.featurePaintType && !features.some((f) => f.key === this.featurePaintType)) {
+        this.featurePaintType = null;
         this._setupFeaturePaint();
       }
       list.innerHTML = features.map((f, idx) => {
@@ -1183,7 +1225,7 @@ export class UI {
       </div>`;
     }).join('');
 
-    const pointFeatures = palette.hexFeatures || [];
+    const pointFeatures = this._effectiveHexFeatures();
     const pointCounts = this._pointFeatureCounts();
     const pointWrap = this.els['point-feature-layer-wrap'];
     const pointRows = this.els['point-feature-layer-rows'];
@@ -1562,6 +1604,7 @@ export class UI {
     this.els['hexed-featrow'].querySelectorAll('.feat[data-feature]').forEach(btn => {
       btn.classList.toggle('is-active', currentFeatures.includes(btn.dataset.feature));
     });
+    this._renderInspectorPointFeatures(code);
 
     const centers = this.store.centers;
     const grid = this.store.state.grid;
@@ -1601,6 +1644,46 @@ export class UI {
   _toggleHexFeature(key) {
     if (!this.inspectorHex) return;
     this.store.toggleHexFeature(this.inspectorHex, key);
+  }
+
+  // Inspect-mode list of the hex's POINT features (type/name/value) with per-row
+  // Edit (reuses the feature inspector) + Delete. Renders nothing when the hex has
+  // no point features. Edits/deletes route through the same store mutation path the
+  // features tool uses, so autosave + export stay consistent.
+  _renderInspectorPointFeatures(code) {
+    const el = this.els['hexed-point-feats'];
+    if (!el) return;
+    const present = this.store.getPointFeaturesAt(code);
+    if (!present.length) { el.innerHTML = ''; el.hidden = true; return; }
+    el.hidden = false;
+    el.innerHTML = present.map((pf) => {
+      const decl = this._hexFeatureDecl(pf.type);
+      const label = decl?.label || pf.type;
+      const glyph = decl?.glyph ? `<span class="hx-data pf-glyph">${decl.glyph}</span>` : '';
+      const attrs = pf.attrs || {};
+      const attrStr = Object.entries(attrs)
+        .map(([k, v]) => `${k} ${v}`).join(' · ');
+      const nameStr = pf.name ? `<span class="pf-name">${pf.name}</span>` : '';
+      return `<div class="point-feat-row" data-pf-type="${pf.type}">
+        ${glyph}
+        <span class="pf-label">${label}</span>
+        ${nameStr}
+        <span class="hx-data pf-val">${attrStr}</span>
+        <button type="button" class="pf-edit" data-pf-type="${pf.type}" title="Edit ${label}">Edit</button>
+        <button type="button" class="pf-del" data-pf-type="${pf.type}" aria-label="Delete ${label}" title="Delete">×</button>
+      </div>`;
+    }).join('');
+  }
+
+  _deleteInspectorPointFeature(type) {
+    const code = this.inspectorHex;
+    if (!code || !type) return;
+    const decl = this._hexFeatureDecl(type);
+    const label = decl?.label || type;
+    if (!confirm(`Delete ${label} on ${code}?`)) return;
+    this.store.deletePointFeature(code, type);
+    this.status(`Deleted ${label} on ${code}`, 1800);
+    // onChange -> updateUI -> _refreshInspector re-renders the list.
   }
 
   _toggleHexEditorInk(featureKey) {
