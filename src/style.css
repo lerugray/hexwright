@@ -656,6 +656,10 @@ button.active {
   color: var(--text);
 }
 
+#terrain-label-size-row[hidden] {
+  display: none;
+}
+
 #layers-panel input[type="range"] {
   width: 100%;
   accent-color: var(--accent);

@@ -143,6 +143,53 @@ try {
   rec('label upper third distinct from center glyph row',
     on.upperHasInk && on.centerHasInk, 'both regions have ink at different Y');
 
+  // Label-size slider: measure the actual rendered ink width of the hex-name
+  // label at a small vs. large scale (objective pixel measurement, not a glance —
+  // see verify-reported-visual-defects-objectively.md).
+  const measureNameLabelWidth = async (labelScale) => page.evaluate(({ GRID, labelScale }) => {
+    const { store, renderer, geo } = window.hexwright;
+    store.state.names = { '0001': 'Testburgmontagne' };
+    store.state.terrain.terrain = { '0001': 'woods' };
+    store.rebuildIndex();
+    renderer.terrainLabelsVisible = true;
+    renderer.terrainLabelScale = labelScale;
+    const code = '0001';
+    const c = geo.hexCenter(code, GRID);
+    const r = geo.hexRadius(GRID);
+    const zoom = 2.5;
+    renderer.view = {
+      baseScale: 1, zoom,
+      panX: renderer.width / 2 - c.x * zoom,
+      panY: renderer.height / 2 - c.y * zoom
+    };
+    renderer.draw();
+    // Name sits at center.y - r*0.08 in world space when an abbr is also present.
+    const sp = renderer.worldToScreen({ x: c.x, y: c.y - r * 0.08 });
+    const dpr = renderer.canvas.width / renderer.width;
+    const cy = Math.round(sp.y * dpr);
+    const cx = Math.round(sp.x * dpr);
+    const half = Math.round(220 * dpr);
+    const x0 = Math.max(0, cx - half);
+    const w = Math.min(renderer.canvas.width - x0, half * 2);
+    const data = renderer.ctx.getImageData(x0, cy, w, 1).data;
+    let minX = null, maxX = null;
+    for (let i = 0; i < data.length; i += 4) {
+      const dark = data[i] < 60 && data[i + 1] < 60 && data[i + 2] < 60 && data[i + 3] > 200;
+      if (dark) {
+        const x = i / 4;
+        if (minX === null) minX = x;
+        maxX = x;
+      }
+    }
+    return minX === null ? 0 : (maxX - minX);
+  }, { GRID, labelScale });
+
+  const widthSmall = await measureNameLabelWidth(0.6);
+  const widthLarge = await measureNameLabelWidth(2.5);
+  rec('label-size slider measurably widens rendered name-label ink',
+    widthSmall > 0 && widthLarge > widthSmall * 1.5,
+    `small=${widthSmall}px large=${widthLarge}px`);
+
   const clearOnly = await page.evaluate(({ GRID, PALETTE }) => {
     const { store, renderer, geo } = window.hexwright;
     store.state.terrain.terrain = { '0101': 'clear' };
@@ -233,6 +280,39 @@ try {
   await sleep(80);
   const sliderVal = await page.evaluate(() => window.hexwright.renderer.terrainFillAlpha);
   rec('terrain fill opacity slider updates renderer', Math.abs(sliderVal - 0.35) < 0.01, String(sliderVal));
+
+  // Label-size slider: visibility gating, live-update, persistence, reload.
+  await page.evaluate(() => window.hexwright.ui.toggleTerrainLabels(true));
+  const rowVisibleWhenOn = await page.evaluate(() => !document.getElementById('terrain-label-size-row').hidden);
+  rec('label-size row visible when labels on', rowVisibleWhenOn);
+
+  await page.locator('#terrain-label-size').fill('2');
+  await sleep(80);
+  const scaleVal = await page.evaluate(() => window.hexwright.renderer.terrainLabelScale);
+  rec('label-size slider updates renderer', Math.abs(scaleVal - 2) < 0.01, String(scaleVal));
+
+  const scalePersisted = await page.evaluate(() => {
+    const raw = localStorage.getItem('hexwright.view');
+    const v = JSON.parse(raw);
+    return typeof v.terrainLabelScale === 'number' && Math.abs(v.terrainLabelScale - 2) < 0.01;
+  });
+  rec('label-size persists in view settings', scalePersisted);
+
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => window.hexwright?.store, { timeout: 15000 });
+  await sleep(300);
+  const afterReload = await page.evaluate(() => ({
+    scale: window.hexwright.renderer.terrainLabelScale,
+    sliderVal: parseFloat(document.getElementById('terrain-label-size').value),
+    rowVisible: !document.getElementById('terrain-label-size-row').hidden
+  }));
+  rec('label-size scale survives reload', Math.abs(afterReload.scale - 2) < 0.01, String(afterReload.scale));
+  rec('label-size slider reflects restored value after reload', Math.abs(afterReload.sliderVal - 2) < 0.01, String(afterReload.sliderVal));
+  rec('label-size row visible after reload (labels were on)', afterReload.rowVisible);
+
+  await page.evaluate(() => window.hexwright.ui.toggleTerrainLabels(false));
+  const rowHiddenWhenOff = await page.evaluate(() => document.getElementById('terrain-label-size-row').hidden);
+  rec('label-size row hides when labels off', rowHiddenWhenOff);
 
   rec('no console/page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 } catch (e) {

@@ -27,6 +27,7 @@ export class MapRenderer {
     this.terrainFillAlpha = 1;       // View-only terrain fill opacity (UI slider)
     this.terrainFillVisible = true;  // View-only toggle: terrain fill layer
     this.terrainLabelsVisible = false; // View-only terrain abbr labels (default off)
+    this.terrainLabelScale = 1;      // View-only label-size multiplier (UI slider, 0.5-3x)
     this.hexsideStrokeAlpha = 1;     // View-only painted hexside ink opacity (UI slider)
     this.hexsideVisibility = {};     // View-only per-feature visibility map
     this.mapDim = 0;                 // View-only raster dimming in both/map modes
@@ -849,6 +850,20 @@ export class MapRenderer {
     ctx.restore();
   }
 
+  // Canvas 2D's `font` setter parses a raw CSS <font> value with no cascade —
+  // it does NOT resolve CSS custom properties (var(--font-data, ...) is an
+  // invalid font-family token, so the WHOLE assignment is silently rejected
+  // and the previous font is kept, size and all). Resolve --font-data to its
+  // concrete computed value once and reuse the literal string.
+  _dataFontFamily() {
+    if (!this._dataFontFamilyCache) {
+      let v = '';
+      try { v = getComputedStyle(this.canvas).getPropertyValue('--font-data').trim(); } catch (_) { /* detached */ }
+      this._dataFontFamilyCache = v || 'monospace';
+    }
+    return this._dataFontFamilyCache;
+  }
+
   _drawTerrainLabels(ctx, view) {
     const s = view.baseScale * view.zoom;
     const effScale = s;
@@ -874,8 +889,9 @@ export class MapRenderer {
     ctx.textBaseline = 'middle';
     if (fade < 1) ctx.globalAlpha = fade;
 
+    const dataFont = this._dataFontFamily();
     const drawLabelText = (text, x, y, fontPx, weight = 600) => {
-      ctx.font = `${weight} ${fontPx / s}px var(--font-data, monospace)`;
+      ctx.font = `${weight} ${fontPx / s}px ${dataFont}`;
       ctx.lineWidth = 3 / s;
       ctx.strokeStyle = INK_CASING;
       ctx.fillStyle = '#1a1a1a';
@@ -892,8 +908,9 @@ export class MapRenderer {
 
       const center = hexCenter(code, grid);
       const r = hexRadius(grid);
-      const abbrPx = Math.max(8, Math.min(14, r * 0.38 * s));
-      const namePx = Math.max(7, Math.min(11, r * 0.28 * s));
+      const labelScale = Math.max(0.5, Math.min(3, this.terrainLabelScale ?? 1));
+      const abbrPx = Math.max(8, Math.min(14, r * 0.38 * s)) * labelScale;
+      const namePx = Math.max(7, Math.min(11, r * 0.28 * s)) * labelScale;
       if (abbr && abbrPx < 6 && !name) continue;
 
       const x = center.x;

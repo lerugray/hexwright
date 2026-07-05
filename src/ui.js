@@ -81,6 +81,7 @@ export class UI {
       'terrain-layer-wrap', 'terrain-fill-row', 'terrain-fill-eye', 'terrain-fill-count', 'terrain-labels-toggle',
       'trace-layer-wrap', 'trace-layer-rows',
       'trace-opacity', 'trace-opacity-value', 'terrain-fill-opacity', 'terrain-fill-opacity-value',
+      'terrain-label-size-row', 'terrain-label-size', 'terrain-label-size-value',
       'hexside-stroke-opacity', 'hexside-stroke-opacity-value',
       'map-dim', 'map-dim-value',
       'canvas-wrap',
@@ -563,6 +564,16 @@ export class UI {
       if (this.renderer.viewMode !== 'both') this.setViewMode('both');
       this.renderer.terrainFillAlpha = parseFloat(e.target.value);
       this.els['terrain-fill-opacity-value'].textContent = `${Math.round(this.renderer.terrainFillAlpha * 100)}%`;
+      this._saveViewSettings();
+      this.renderer.draw();
+    });
+
+    // Label size — multiplier on the terrain-abbr/hex-name label font (L toggle).
+    // Only meaningful when labels are visible; row is shown/hidden in
+    // _renderLayersPanel alongside the Lbl toggle state.
+    this.els['terrain-label-size'].addEventListener('input', (e) => {
+      this.renderer.terrainLabelScale = Math.max(0.5, Math.min(3, parseFloat(e.target.value)));
+      this.els['terrain-label-size-value'].textContent = `${Math.round(this.renderer.terrainLabelScale * 100)}%`;
       this._saveViewSettings();
       this.renderer.draw();
     });
@@ -1218,6 +1229,9 @@ export class UI {
       if (typeof v.terrainLabelsVisible === 'boolean') {
         this.renderer.terrainLabelsVisible = v.terrainLabelsVisible;
       }
+      if (Number.isFinite(v.terrainLabelScale)) {
+        this.renderer.terrainLabelScale = Math.max(0.5, Math.min(3, v.terrainLabelScale));
+      }
     } catch (_) { /* ignore corrupt view settings */ }
   }
 
@@ -1228,7 +1242,8 @@ export class UI {
         hexsideStrokeAlpha: this.renderer.hexsideStrokeAlpha,
         mapDim: this.renderer.mapDim,
         terrainFillVisible: this.renderer.terrainFillVisible !== false,
-        terrainLabelsVisible: !!this.renderer.terrainLabelsVisible
+        terrainLabelsVisible: !!this.renderer.terrainLabelsVisible,
+        terrainLabelScale: Math.max(0.5, Math.min(3, this.renderer.terrainLabelScale ?? 1))
       }));
     } catch (_) { /* quota */ }
   }
@@ -1308,6 +1323,11 @@ export class UI {
       labelsBtn.classList.toggle('on', labelsOn);
       labelsBtn.setAttribute('aria-pressed', labelsOn ? 'true' : 'false');
     }
+    const labelSizeRow = this.els['terrain-label-size-row'];
+    if (labelSizeRow) labelSizeRow.hidden = !labelsOn;
+    const labelScale = Math.max(0.5, Math.min(3, this.renderer.terrainLabelScale ?? 1));
+    this.els['terrain-label-size'].value = String(labelScale);
+    this.els['terrain-label-size-value'].textContent = `${Math.round(labelScale * 100)}%`;
 
     const terrainCount = Object.keys(this.store.state.terrain?.terrain || {}).length;
     this.els['terrain-fill-count'].textContent = String(terrainCount);
