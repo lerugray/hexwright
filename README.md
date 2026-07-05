@@ -27,7 +27,7 @@ Hexwright has five tool modes on the left rail:
 
 | Mode | Key | Purpose |
 | --- | --- | --- |
-| **Inspect** | (default) | Click a hex to open the inspector. Toggle terrain, in-hex features, and individual hexside features. |
+| **Inspect** | (default) | Click a hex to open the inspector. Toggle terrain, in-hex features, and individual hexside features. The Features section can also **add a new point feature directly** (a type picker filtered to types not already on the hex, plus an Add button) — no detour through Point Features mode required while working hex-by-hex. The feature editor opens immediately after adding, with its **Name field pre-filled from the hex's own name** (when set) on both the new Add flow and the existing Edit flow. |
 | **Terrain paint** | `b` | Brush-assign base terrain. Click toggles off a hex already painted with the active ink. Drag paints a stroke (one undo entry per stroke). |
 | **Hexside edges** | `e` | Paint shared edges. Click toggles the active feature. Drag sets on. **Shift** snaps the cursor to the nearest valid edge (cyan preview). **Alt+click** or **Alt+drag** erases only the active ink. **Alt+click** with no active ink strips every feature on that edge. A **stroke-opacity** slider fades line strength without affecting terrain fill. |
 | **Point features** | `p` | Place typed markers (city, fort, objective, etc.) with optional numeric attributes. Click an existing marker to edit name and attrs. |
@@ -49,6 +49,10 @@ need marking). Labels fade with zoom and the toggle state persists across reload
 A **terrain fill-opacity slider** controls how strongly terrain color shows over the base map —
 useful for checking painted terrain against the underlying scan without switching to
 Classification view.
+
+A **Label size** slider (0.5x–3x, Layers panel, shown whenever terrain labels are on) scales
+terrain and name label text and persists per-project, same mechanism as the fill-opacity and
+hexside-stroke sliders.
 
 **Composite terrain classes** split a hex's fill diagonally between two colors: give a palette
 terrain entry `"colors": ["#colorA", "#colorB"]` instead of (or alongside) `"color"`, and the
@@ -225,6 +229,17 @@ Hexwright loads `palettes/default.json` when a manifest omits `palette`. You can
 | TWU layer | Validates shape strictly; wrong files fail loud with no mutation |
 
 Copy-to-clipboard actions use the same canonical objects as file export.
+
+## Deleting features and clearing layers
+
+Single-feature delete (the inspector's × or the feature editor's Delete button) applies
+immediately, with no confirmation dialog — a native `confirm()` there is low-stakes (autosave and
+export both hold a copy) and, more importantly, silently no-ops if the browser's dialogs are
+suppressed on this origin. Whole-layer clears (the per-layer Clear buttons for hexsides or point
+features) are destructive enough to still gate: they use an inline arm/confirm two-step instead of
+a native dialog — the first click flips the button to a red confirming state for 3 seconds, a
+second click on that same button within the window clears the layer, and a timeout or clicking
+another layer disarms it.
 
 ## Autosave, restore, and recents
 
