@@ -50,6 +50,7 @@ export const TERRAIN_COLORS = {
   clear:   { fill: 'rgba(190,210,140,0.25)', line: 'rgba(210,225,165,0.45)' },
   desert:  { fill: 'rgba(210,175,90,0.35)',  line: 'rgba(230,200,120,0.50)' },
   rough:   { fill: 'rgba(150,120,80,0.35)',  line: 'rgba(180,150,100,0.50)' },
+  broken:  { fill: 'rgba(150,120,80,0.35)',  line: 'rgba(180,150,100,0.50)' },
   woods:   { fill: 'rgba(40,115,40,0.35)',   line: 'rgba(70,150,70,0.50)' },
   swamp:   { fill: 'rgba(120,140,100,0.35)', line: 'rgba(150,170,120,0.50)' }
 };

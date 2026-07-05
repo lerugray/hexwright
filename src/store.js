@@ -153,6 +153,28 @@ function normalizeTerrainKey(value, aliases) {
   return key;
 }
 
+function readPaletteMigrationCursor(project) {
+  if (!project) return 0;
+  if (Number.isInteger(project.paletteMigrationCursor)) return project.paletteMigrationCursor;
+  const nested = project.terrain && project.terrain.paletteMigrationCursor;
+  if (Number.isInteger(nested)) return nested;
+  return 0;
+}
+
+// Palette terrainMigrations: sequential full passes over cell values only.
+function applyTerrainMigrations(terrainMap, migrations, cursor) {
+  if (!terrainMap || !Array.isArray(migrations) || cursor >= migrations.length) return;
+  for (let i = cursor; i < migrations.length; i++) {
+    const step = migrations[i];
+    if (!step || !step.from || !step.to) continue;
+    const fromKey = String(step.from).trim().toLowerCase();
+    const toKey = String(step.to).trim().toLowerCase();
+    for (const code of Object.keys(terrainMap)) {
+      if (terrainMap[code] === fromKey) terrainMap[code] = toKey;
+    }
+  }
+}
+
 function normalizeHexsideKey(value, aliases) {
   if (!value || typeof value !== 'string') return null;
   const key = value.trim().toLowerCase();
@@ -196,7 +218,8 @@ export class ProjectStore {
       loadedHexsides: null,
       mapOffset: [0, 0],
       schemaVersion: 2,
-      blankLattice: false
+      blankLattice: false,
+      paletteMigrationCursor: 0
     };
   }
 
@@ -259,6 +282,10 @@ export class ProjectStore {
 
     const migrated = this.migrateToV2(project, terrAliases, sideAliases);
 
+    const terrainMigrations = palette.terrainMigrations || [];
+    const migrationCursor = readPaletteMigrationCursor(project);
+    applyTerrainMigrations(migrated.terrain, terrainMigrations, migrationCursor);
+
     this.state = {
       name: project.name || '',
       mapImage: project.mapImage || null,
@@ -276,7 +303,8 @@ export class ProjectStore {
         ? [Number(project.mapOffset[0]) || 0, Number(project.mapOffset[1]) || 0]
         : [0, 0],
       schemaVersion: 2,
-      blankLattice: project.blankLattice === true
+      blankLattice: project.blankLattice === true,
+      paletteMigrationCursor: terrainMigrations.length
     };
 
     this.rebuildIndex();
@@ -1132,6 +1160,7 @@ export class ProjectStore {
       provenance: deepClone(this.state.provenance),
       mapOffset: deepClone(this.state.mapOffset || [0, 0]),
       palette: this.palette?.name || 'default',
+      paletteMigrationCursor: this.state.paletteMigrationCursor || 0,
       ...(this.state.blankLattice ? { blankLattice: true } : {})
     };
   }
