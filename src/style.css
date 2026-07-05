@@ -1077,9 +1077,30 @@ button.active {
   box-sizing: border-box;
 }
 
+/* Bug fix (2026-07-05): #feature-inspector was missing position:fixed entirely
+   (unlike #hex-editor/.inspector), so unhiding it left it in normal document
+   flow at (0,0), static, painted BEHIND the fixed-position #map-canvas per CSS
+   stacking rules (positioned elements always paint above non-positioned
+   in-flow content, z-index or not). It rendered with correct data every time —
+   just invisible under the map. Docked fixed, same corner as #hex-editor
+   (the two are always mutually exclusive, see closeInspector()/openFeatureInspector). */
+#feature-inspector {
+  position: fixed;
+  top: calc(var(--strip-h, 40px) + var(--sp-3, 12px));
+  right: var(--sp-3, 12px);
+  max-height: calc(100vh - var(--strip-h, 40px) - 2 * var(--sp-3, 12px));
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+#feature-inspector[hidden] {
+  display: none !important;
+}
+
 .feature-insp {
   width: 260px;
-  z-index: 12;
+  z-index: 46;
+  box-sizing: border-box;
 }
 
 .feature-insp .field-row {

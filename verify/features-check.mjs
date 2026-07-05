@@ -215,6 +215,59 @@ try {
     !!document.querySelector(`#hexed-point-feats .point-feat-row[data-pf-type="${featureType}"] .pf-del`), setup);
   rec('inspect panel lists the hex point feature with a delete control', rowShown);
 
+  // --- Inspect-panel per-row Edit (bug fix 2026-07-05): #feature-inspector was missing
+  // position:fixed entirely, so it rendered in normal document flow at (0,0) and was
+  // ALWAYS painted behind the fixed-position #map-canvas — the panel unhid correctly
+  // (a plain `.hidden` check passes) but was never visible on screen. Assert real
+  // screen visibility (computed position + what's actually painted at its center),
+  // not just the hidden attribute, or this regresses silently again. ---
+  await page.click(`#hexed-point-feats .point-feat-row[data-pf-type="${setup.featureType}"] .pf-edit`);
+  await sleep(200);
+
+  const editVisible = await page.evaluate(() => {
+    const fi = document.getElementById('feature-inspector');
+    if (fi.hidden) return { hidden: true };
+    const rect = fi.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const topEl = document.elementFromPoint(cx, cy);
+    return {
+      hidden: false,
+      position: getComputedStyle(fi).position,
+      onTop: !!(topEl && fi.contains(topEl))
+    };
+  });
+  rec('inspect-panel Edit opens a genuinely on-screen editor (not just unhidden)',
+    !editVisible.hidden && editVisible.position === 'fixed' && editVisible.onTop,
+    JSON.stringify(editVisible));
+
+  const vpAttrInput = page.locator('#feat-insp-attrs .feat-attr[data-attr-key="vp"]');
+  const hasVpAttr = (await vpAttrInput.count()) > 0;
+  rec('probe feature type has a vp attr to edit', hasVpAttr);
+  if (hasVpAttr) {
+    await vpAttrInput.click();
+    await vpAttrInput.fill('42');
+    await page.click('#feat-insp-save');
+    await sleep(200);
+
+    const savedVp = await page.evaluate(({ code, featureType }) =>
+      window.hexwright.store.getPointFeature(code, featureType)?.attrs?.vp, setup);
+    rec('inspect-panel Edit save persists the attr change through the store',
+      Number(savedVp) === 42, `vp=${savedVp}`);
+
+    await page.evaluate(({ code }) => {
+      const ui = window.hexwright.ui;
+      ui.setMode('inspect');
+      ui.openInspector(code);
+    }, setup);
+    await sleep(150);
+    const rowAfterEdit = await page.evaluate(({ featureType }) => {
+      const row = document.querySelector(`#hexed-point-feats .point-feat-row[data-pf-type="${featureType}"]`);
+      return row ? row.textContent : '';
+    }, setup);
+    rec('re-inspect shows the edited value', /42/.test(rowAfterEdit), rowAfterEdit.trim().replace(/\s+/g, ' ').slice(0, 80));
+  }
+
   const beforeInspDel = await page.evaluate(({ code }) =>
     window.hexwright.store.getPointFeaturesAt(code).length, setup);
   page.once('dialog', (d) => d.accept());
