@@ -1006,12 +1006,12 @@ button.active {
   color: var(--hx-text-dim, var(--muted));
 }
 
-#hex-editor {
+#hex-editor,
+.inspector {
   position: fixed;
-  top: calc(var(--strip-h, 40px) + var(--sp-3, 12px));
-  right: var(--sp-3, 12px);
   z-index: 46;
-  width: 300px;
+  width: min(320px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
   padding: 0;
   background: var(--hx-bg-panel, var(--desk-2));
   border: 1px solid var(--hx-hairline, var(--chrome));
@@ -1020,6 +1020,7 @@ button.active {
   max-height: calc(100vh - var(--strip-h, 40px) - 2 * var(--sp-3, 12px));
   overflow-y: auto;
   overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 #hex-editor[hidden] {
@@ -1057,7 +1058,12 @@ button.active {
   color: var(--hx-text-bright, var(--text));
 }
 
-.hexed { width: 300px; }
+.hexed,
+.inspector {
+  width: min(320px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+}
 
 .feature-insp {
   width: 260px;
@@ -1131,7 +1137,7 @@ button.active {
 
 .terr-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
   gap: 6px;
 }
 
@@ -1139,6 +1145,7 @@ button.active {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   padding: 6px 8px;
   background: var(--hx-bg-raised, var(--chrome));
   border: 1px solid var(--hx-hairline, var(--chrome-2));
@@ -1146,6 +1153,12 @@ button.active {
   cursor: pointer;
   font-size: var(--fs-12, 12px);
   color: var(--hx-text, var(--text));
+  text-align: left;
+}
+
+.terr > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .terr:hover { background: var(--hx-bg-hover, var(--chrome-2)); }
@@ -1227,7 +1240,7 @@ button.active {
 
 .inkgrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
   gap: 5px;
   margin-top: var(--sp-2, 8px);
 }
@@ -1342,8 +1355,7 @@ button.active {
 
 @media (max-width: 980px) {
   .brush-card,
-  #layers-panel,
-  #hex-editor {
+  #layers-panel {
     transform: scale(0.95);
     transform-origin: top right;
   }

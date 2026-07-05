@@ -41,6 +41,7 @@ export class UI {
     this.featurePaintActive = false;
     this.featurePaintType = null;
     this.featureInspector = null;
+    this._inspectorAnchor = null;
     this._edgeWipeCount = 0;
     this.nudgeActive = false;
     this.anomalyActive = false;
@@ -338,6 +339,9 @@ export class UI {
       // (the autosave listener registers after boot-load, so nothing would clear it).
       if (reason !== 'project' && reason !== 'palette') this.markDirty();
       this.updateUI(reason);
+    });
+    window.addEventListener('resize', () => {
+      if (this.inspectorHex) this._positionInspector(this._inspectorAnchor);
     });
     this.renderer.onHexSelect = (code, screenPt) => {
       if (this.featurePaintActive && code && this.featurePaintType) {
@@ -1330,8 +1334,9 @@ export class UI {
 
   // ----------------- inspector -----------------
 
-  openInspector(code) {
+  openInspector(code, anchorPt) {
     this.inspectorHex = code;
+    this._inspectorAnchor = anchorPt || null;
     this.hexedSelectedEdge = null;
     this._updateInspectorTitle(code);
     this.els['hex-editor'].hidden = false;
@@ -1343,6 +1348,57 @@ export class UI {
         break;
       }
     }
+    requestAnimationFrame(() => {
+      this._positionInspector(this._inspectorAnchor);
+    });
+  }
+
+  _positionInspector(anchorPt) {
+    const panel = this.els['hex-editor'];
+    if (!panel || panel.hidden) return;
+
+    const MARGIN = 12;
+    const GAP = 10;
+    const strip = document.querySelector('.status-strip');
+    const minTop = (strip ? strip.getBoundingClientRect().bottom : 40) + MARGIN;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+
+    let anchorX;
+    let anchorY;
+    if (anchorPt && this.renderer?.canvas) {
+      const canvasRect = this.renderer.canvas.getBoundingClientRect();
+      anchorX = canvasRect.left + anchorPt.x;
+      anchorY = canvasRect.top + anchorPt.y;
+    } else {
+      anchorX = vw - MARGIN;
+      anchorY = minTop;
+    }
+
+    // Measure at a stable off-screen slot so layout reflects current content.
+    panel.style.visibility = 'hidden';
+    panel.style.left = `${MARGIN}px`;
+    panel.style.top = `${minTop}px`;
+    const { width: pw, height: ph } = panel.getBoundingClientRect();
+    panel.style.visibility = '';
+
+    const maxLeft = Math.max(MARGIN, vw - pw - MARGIN);
+    const maxTop = Math.max(minTop, vh - ph - MARGIN);
+
+    let left = anchorPt ? anchorX + GAP : vw - pw - MARGIN;
+    let top = anchorPt ? anchorY + GAP : minTop;
+
+    if (left + pw > vw - MARGIN) left = anchorX - pw - GAP;
+    if (top + ph > vh - MARGIN) top = anchorY - ph - GAP;
+
+    left = Math.min(Math.max(MARGIN, left), maxLeft);
+    top = Math.min(Math.max(minTop, top), maxTop);
+
+    panel.style.left = `${Math.round(left)}px`;
+    panel.style.top = `${Math.round(top)}px`;
   }
 
   _updateInspectorTitle(code) {
@@ -1438,8 +1494,12 @@ export class UI {
 
   closeInspector() {
     this.inspectorHex = null;
+    this._inspectorAnchor = null;
     this.hexedSelectedEdge = null;
     this.els['hex-editor'].hidden = true;
+    this.els['hex-editor'].style.left = '';
+    this.els['hex-editor'].style.top = '';
+    this.els['hex-editor'].style.visibility = '';
     if (!this.featureInspector) this.els['layers-panel'].hidden = false;
     this.renderer.closeInspector();
   }
