@@ -1,4 +1,5 @@
-// Per-layer clear control: confirm dialog, empty target layer, preserve others.
+// Per-layer clear control: arm/confirm two-step (NOT a native confirm() —
+// see src/ui.js UI._armLayerClear), empty target layer, preserve others.
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
 import { skipIfMissing, GOTA_PROJECT_URL, PATHS } from './_local-data.mjs';
@@ -22,6 +23,12 @@ const page = await browser.newPage({ viewport: { width: 1500, height: 980 } });
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push(`PAGEERROR: ${e.message}`));
+// Regression guard: clear-layer is destructive and rare, but it must NEVER
+// route through a native confirm() again — a dialog-suppression extension
+// makes confirm() silently return false with no visible failure (the exact
+// bug this two-step arm/confirm replacement fixes). Fail loudly if a real
+// browser dialog ever appears.
+page.on('dialog', async (d) => { errors.push(`UNEXPECTED NATIVE DIALOG: ${d.message()}`); await d.dismiss(); });
 
 try {
   await page.goto(`http://localhost:${PORT}/?project=${GOTA_PROJECT_URL}`, { waitUntil: 'load', timeout: 20000 });
@@ -30,6 +37,15 @@ try {
     return el && /[1-9]/.test(el.textContent);
   }, { timeout: 25000 });
   await sleep(1500);
+
+  // Simulate the operator's actual reported state: dialogs suppressed on this
+  // origin. The two-step arm/confirm flow below must work purely off clicks —
+  // it must not (and no longer does) depend on window.confirm at all.
+  await page.evaluate(() => {
+    window.confirm = () => false;
+    window.alert = () => {};
+    window.prompt = () => null;
+  });
 
   const seeded = await page.evaluate(() => {
     const store = window.hexwright.store;
@@ -66,15 +82,12 @@ try {
 
   await page.waitForSelector('.layer-clear[data-feature-key="river"]', { timeout: 5000 });
 
-  let cancelMsg = '';
-  page.once('dialog', async (dialog) => {
-    cancelMsg = dialog.message();
-    await dialog.dismiss();
-  });
+  // --- First click arms, does not clear ---
   await page.click('.layer-clear[data-feature-key="river"]');
-  await sleep(200);
+  await sleep(150);
 
-  const afterCancel = await page.evaluate(() => {
+  const afterFirstClick = await page.evaluate(() => {
+    const btn = document.querySelector('.layer-clear[data-feature-key="river"]');
     const store = window.hexwright.store;
     const count = (key) => {
       let n = 0;
@@ -87,23 +100,61 @@ try {
       river: count('river'),
       road: count('road'),
       rail: count('rail'),
-      terrain: Object.keys(store.state.terrain.terrain || {}).length
+      armed: !!btn && btn.classList.contains('confirming'),
+      label: btn?.getAttribute('aria-label') || ''
     };
   });
 
-  rec('confirm dialog mentions layer name and entry count',
-    new RegExp(`Clear River \\(${seeded.river} entries\\)`).test(cancelMsg) && cancelMsg.includes('cannot be undone'),
-    cancelMsg.slice(0, 80));
-  rec('canceled confirm leaves river entries intact', afterCancel.river === seeded.river, `river=${afterCancel.river}`);
-  rec('canceled confirm leaves other layers intact',
-    afterCancel.road === seeded.road && afterCancel.rail === seeded.rail,
-    `road=${afterCancel.road} rail=${afterCancel.rail}`);
+  rec('first click arms the button instead of clearing', afterFirstClick.armed, JSON.stringify(afterFirstClick));
+  rec('armed state leaves river entries intact', afterFirstClick.river === seeded.river, `river=${afterFirstClick.river}`);
+  rec('armed state leaves other layers intact',
+    afterFirstClick.road === seeded.road && afterFirstClick.rail === seeded.rail,
+    `road=${afterFirstClick.road} rail=${afterFirstClick.rail}`);
+  rec('armed label mentions layer name and entry count',
+    new RegExp(`[Cc]lear river.*${seeded.river}`).test(afterFirstClick.label) || new RegExp(`River.*${seeded.river}`).test(afterFirstClick.label),
+    afterFirstClick.label);
 
-  let acceptMsg = '';
-  page.once('dialog', async (dialog) => {
-    acceptMsg = dialog.message();
-    await dialog.accept();
+  // --- Clicking a DIFFERENT layer's clear button while one is armed re-targets
+  // the arm instead of clearing the first-armed layer (no accidental clear of
+  // the wrong layer). ---
+  await page.click('.layer-clear[data-feature-key="rail"]');
+  await sleep(150);
+
+  const afterSwitch = await page.evaluate(() => {
+    const store = window.hexwright.store;
+    const count = (key) => {
+      let n = 0;
+      for (const arr of Object.values(store.state.hexsides || {})) {
+        if (Array.isArray(arr) && arr.includes(key)) n++;
+      }
+      return n;
+    };
+    const riverBtn = document.querySelector('.layer-clear[data-feature-key="river"]');
+    const railBtn = document.querySelector('.layer-clear[data-feature-key="rail"]');
+    return {
+      river: count('river'),
+      rail: count('rail'),
+      riverArmed: !!riverBtn && riverBtn.classList.contains('confirming'),
+      railArmed: !!railBtn && railBtn.classList.contains('confirming')
+    };
   });
+
+  rec('clicking a different layer clears nothing yet', afterSwitch.river === seeded.river && afterSwitch.rail === seeded.rail,
+    `river=${afterSwitch.river} rail=${afterSwitch.rail}`);
+  rec('arm re-targets to the newly clicked layer, not the first one',
+    !afterSwitch.riverArmed && afterSwitch.railArmed, JSON.stringify(afterSwitch));
+
+  // --- Timeout disarms automatically (no lingering "confirming" state) ---
+  await sleep(3300);
+  const afterTimeout = await page.evaluate(() => {
+    const btn = document.querySelector('.layer-clear[data-feature-key="rail"]');
+    return { armed: !!btn && btn.classList.contains('confirming') };
+  });
+  rec('confirming state times out on its own', !afterTimeout.armed, JSON.stringify(afterTimeout));
+
+  // --- Second click on the SAME button within the window performs the clear ---
+  await page.click('.layer-clear[data-feature-key="river"]');
+  await sleep(150);
   await page.click('.layer-clear[data-feature-key="river"]');
   await sleep(300);
 
@@ -128,7 +179,7 @@ try {
     };
   });
 
-  rec('accepted confirm clears river layer', afterClearRiver.river === 0, `river=${afterClearRiver.river}`);
+  rec('two clicks (suppressed-confirm state) clear the river layer', afterClearRiver.river === 0, `river=${afterClearRiver.river}`);
   rec('clear river preserves road crossing layer', afterClearRiver.road === seeded.road, `road=${afterClearRiver.road}`);
   rec('clear river preserves rail crossing layer', afterClearRiver.rail === seeded.rail, `rail=${afterClearRiver.rail}`);
   rec('clear river does not touch terrain', afterClearRiver.terrain === seeded.terrain, `terrain=${afterClearRiver.terrain}`);
@@ -136,11 +187,9 @@ try {
   rec('cleared layer row hides clear affordance', !afterClearRiver.riverBtn);
   rec('other layers still show clear affordance', afterClearRiver.roadBtn && afterClearRiver.railBtn);
 
-  let railMsg = '';
-  page.once('dialog', async (dialog) => {
-    railMsg = dialog.message();
-    await dialog.accept();
-  });
+  // --- Two-click clear works for a crossing (rail) layer too ---
+  await page.click('.layer-clear[data-feature-key="rail"]');
+  await sleep(150);
   await page.click('.layer-clear[data-feature-key="rail"]');
   await sleep(300);
 
@@ -156,11 +205,53 @@ try {
     return { rail: count('rail'), road: count('road') };
   });
 
-  rec('confirm dialog works for crossing (rail) layer', /Clear Rail \(1 entries\)/.test(railMsg), railMsg.slice(0, 60));
-  rec('clear rail empties crossing layer only', afterClearRail.rail === 0 && afterClearRail.road === seeded.road,
+  rec('two-click clear works for crossing (rail) layer',
+    afterClearRail.rail === 0 && afterClearRail.road === seeded.road,
     `rail=${afterClearRail.rail} road=${afterClearRail.road}`);
 
-  rec('no uncaught console/page errors', errors.length === 0, errors.slice(0, 4).join(' | '));
+  // --- Same arm/confirm two-step for the point-feature "clear layer" button
+  // (clearPointFeatureLayer) — shares the exact same _armLayerClear /
+  // _isLayerClearArmed machinery as the hexside layer above, but exercised
+  // independently since it's a separate data layer (this.store.state.features). ---
+  const pfSeed = await page.evaluate(() => {
+    const { store } = window.hexwright;
+    const decl = (store.getPalette()?.hexFeatures || [])[0];
+    if (!decl) return null;
+    const codes = Object.keys(store.centers || {}).filter((c) => store.getPointFeaturesAt(c).length === 0);
+    if (codes.length < 2) return null;
+    store.setPointFeature(codes[0], decl.key, { name: '', attrs: undefined });
+    store.setPointFeature(codes[1], decl.key, { name: '', attrs: undefined });
+    return { type: decl.key, count: store.countPointFeatureType(decl.key) };
+  });
+
+  rec('seed a point-feature layer to clear', !!pfSeed && pfSeed.count >= 2, JSON.stringify(pfSeed));
+
+  if (pfSeed) {
+    await page.waitForSelector(`.layer-clear[data-point-feature-key="${pfSeed.type}"]`, { timeout: 5000 });
+
+    await page.click(`.layer-clear[data-point-feature-key="${pfSeed.type}"]`);
+    await sleep(150);
+    const pfAfterFirst = await page.evaluate((type) => {
+      const btn = document.querySelector(`.layer-clear[data-point-feature-key="${type}"]`);
+      return {
+        count: window.hexwright.store.countPointFeatureType(type),
+        armed: !!btn && btn.classList.contains('confirming')
+      };
+    }, pfSeed.type);
+    rec('point-feature layer: first click arms, does not clear',
+      pfAfterFirst.armed && pfAfterFirst.count === pfSeed.count, JSON.stringify(pfAfterFirst));
+
+    await page.click(`.layer-clear[data-point-feature-key="${pfSeed.type}"]`);
+    await sleep(200);
+    const pfAfterSecond = await page.evaluate((type) => ({
+      count: window.hexwright.store.countPointFeatureType(type),
+      btnGone: !document.querySelector(`.layer-clear[data-point-feature-key="${type}"]`)
+    }), pfSeed.type);
+    rec('point-feature layer: second click (suppressed-confirm state) clears it',
+      pfAfterSecond.count === 0 && pfAfterSecond.btnGone, JSON.stringify(pfAfterSecond));
+  }
+
+  rec('no uncaught console/page errors, no native dialogs', errors.length === 0, errors.slice(0, 4).join(' | '));
 } catch (err) {
   rec('clear-layer harness completed', false, err.message);
 }

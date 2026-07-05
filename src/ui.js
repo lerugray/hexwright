@@ -50,6 +50,13 @@ export class UI {
     this.anomalyActive = false;
     this.helpOpen = false;
     this.projectSub = '';
+    // Arm/confirm state for the destructive "clear whole layer" buttons (never a
+    // native confirm() — dialog-suppression extensions make confirm() silently
+    // return false and veto the action with no visible failure). First click arms
+    // a few-second "confirming" window; a second click on the SAME button within
+    // that window executes the clear. See _armLayerClear / _isLayerClearArmed.
+    this.pendingLayerClear = null;
+    this._layerClearTimer = null;
 
     this.buildHexEditor();
     this._setupInspectorDrag();
@@ -942,12 +949,44 @@ export class UI {
     return counts;
   }
 
+  // Arm/confirm two-step for the "clear whole layer" buttons. Deliberately NOT
+  // a native confirm() — a browser/extension set to suppress dialogs on this
+  // origin makes confirm() return false immediately, silently vetoing the
+  // clear with no visible failure (the operator has confirm()s turned off on
+  // purpose for the routine single-feature deletes; a bulk clear-all still
+  // needs a real "are you sure" that suppression can't defeat). First click
+  // arms a short "confirming" window on that exact button; a second click on
+  // the SAME button within the window performs the clear; anything else
+  // (timeout, clicking a different layer's button) disarms it.
+  _isLayerClearArmed(kind, key) {
+    return !!(this.pendingLayerClear && this.pendingLayerClear.kind === kind && this.pendingLayerClear.key === key);
+  }
+
+  _armLayerClear(kind, key) {
+    if (this._layerClearTimer) clearTimeout(this._layerClearTimer);
+    this.pendingLayerClear = { kind, key };
+    this._layerClearTimer = setTimeout(() => {
+      this.pendingLayerClear = null;
+      this._layerClearTimer = null;
+      this._renderLayersPanel();
+    }, 3000);
+    this._renderLayersPanel();
+  }
+
+  _disarmLayerClear() {
+    if (this._layerClearTimer) { clearTimeout(this._layerClearTimer); this._layerClearTimer = null; }
+    this.pendingLayerClear = null;
+  }
+
   clearPointFeatureLayer(type, label) {
     if (!type) return;
     const count = this.store.countPointFeatureType(type);
     if (count === 0) return;
-    const name = label || type;
-    if (!confirm(`Clear ${name} (${count} entries)? This cannot be undone except by autosave restore.`)) return;
+    if (!this._isLayerClearArmed('point', type)) {
+      this._armLayerClear('point', type);
+      return;
+    }
+    this._disarmLayerClear();
     this.store.clearPointFeatureType(type);
   }
 
@@ -1015,7 +1054,9 @@ export class UI {
   _deleteFeatureInspector() {
     if (!this.featureInspector) return;
     const { code, type } = this.featureInspector;
-    if (!confirm(`Delete ${type} on ${code}?`)) return;
+    // No confirm() here on purpose — a single point feature is low-stakes
+    // (autosave + export both cover it) and a native dialog silently no-ops
+    // under browser dialog-suppression, which reads as a broken Delete button.
     this.store.deletePointFeature(code, type);
     this.status(`Deleted ${type} on ${code}`, 1800);
     this.closeFeatureInspector();
@@ -1196,8 +1237,11 @@ export class UI {
     if (!featureKey) return;
     const count = this._featureCounts()[featureKey] || 0;
     if (count === 0) return;
-    const name = label || featureKey;
-    if (!confirm(`Clear ${name} (${count} entries)? This cannot be undone except by autosave restore.`)) return;
+    if (!this._isLayerClearArmed('hexside', featureKey)) {
+      this._armLayerClear('hexside', featureKey);
+      return;
+    }
+    this._disarmLayerClear();
     this.store.clearHexsideFeatureLayer(featureKey);
   }
 
@@ -1217,8 +1261,9 @@ export class UI {
     featureRows.innerHTML = features.map((f) => {
       const on = this._featureVisible(f.key);
       const n = counts[f.key] || 0;
+      const armed = this._isLayerClearArmed('hexside', f.key);
       const clearBtn = n > 0
-        ? `<button type="button" class="layer-clear" data-feature-key="${f.key}" aria-label="Clear ${f.label || f.key}" title="Clear layer">×</button>`
+        ? `<button type="button" class="layer-clear${armed ? ' confirming' : ''}" data-feature-key="${f.key}" aria-label="${armed ? `Confirm clear ${f.label || f.key} — click again to permanently remove ${n} entries` : `Clear ${f.label || f.key}`}" title="${armed ? 'Click again to permanently clear this layer' : 'Clear layer'}">${armed ? '✓' : '×'}</button>`
         : '';
       return `<div class="layer-row${on ? '' : ' dimmed'}">
         <button type="button" class="eye${on ? '' : ' off'}" data-feature-key="${f.key}" aria-label="Toggle ${f.label || f.key}">
@@ -1239,8 +1284,9 @@ export class UI {
       pointWrap.hidden = pointFeatures.length === 0;
       pointRows.innerHTML = pointFeatures.map((f) => {
         const n = pointCounts[f.key] || 0;
+        const armed = this._isLayerClearArmed('point', f.key);
         const clearBtn = n > 0
-          ? `<button type="button" class="layer-clear" data-point-feature-key="${f.key}" aria-label="Clear ${f.label || f.key}" title="Clear layer">×</button>`
+          ? `<button type="button" class="layer-clear${armed ? ' confirming' : ''}" data-point-feature-key="${f.key}" aria-label="${armed ? `Confirm clear ${f.label || f.key} — click again to permanently remove ${n} entries` : `Clear ${f.label || f.key}`}" title="${armed ? 'Click again to permanently clear this layer' : 'Clear layer'}">${armed ? '✓' : '×'}</button>`
           : '';
         return `<div class="layer-row">
           <span class="swatch point-feat-glyph hx-data">${f.glyph || '•'}</span>
@@ -1715,7 +1761,9 @@ export class UI {
     if (!code || !type) return;
     const decl = this._hexFeatureDecl(type);
     const label = decl?.label || type;
-    if (!confirm(`Delete ${label} on ${code}?`)) return;
+    // No confirm() here on purpose — same reasoning as _deleteFeatureInspector
+    // above: single-feature delete is low-stakes, and a suppressed confirm()
+    // silently vetoes the × button with no visible failure.
     this.store.deletePointFeature(code, type);
     this.status(`Deleted ${label} on ${code}`, 1800);
     // onChange -> updateUI -> _refreshInspector re-renders the list.

@@ -81,6 +81,11 @@ const page = await browser.newPage({ viewport: { width: 1500, height: 980 } });
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push(`PAGEERROR: ${e.message}`));
+// Regression guard: no editing-path action should EVER trigger a real browser
+// dialog again (a dialog-suppression extension makes confirm() silently
+// return false with no visible failure — that was the whole bug). If one
+// somehow fires, dismiss it (never let it hang the test) and fail loudly.
+page.on('dialog', async (d) => { errors.push(`UNEXPECTED NATIVE DIALOG: ${d.message()}`); await d.dismiss(); });
 
 try {
   await page.goto(`http://localhost:${PORT}/?project=${GOTA_PROJECT_URL}`, { waitUntil: 'load', timeout: 20000 });
@@ -89,6 +94,16 @@ try {
     return el && /[1-9]/.test(el.textContent);
   }, { timeout: 25000 });
   await sleep(1500);
+
+  // Simulate the operator's actual reported state: dialogs suppressed on this
+  // origin, so confirm()/alert() return immediately with no real dialog ever
+  // shown. Every delete below must still work — this is the exact condition
+  // that silently no-op'd the Inspect-panel × before the fix.
+  await page.evaluate(() => {
+    window.confirm = () => false;
+    window.alert = () => {};
+    window.prompt = () => null;
+  });
 
   const setup = await page.evaluate(() => {
     const hw = window.hexwright;
@@ -188,7 +203,9 @@ try {
   }, beforeEditUndo);
   rec('edit save creates one undo step', undoDeltaEdit === 1, `delta=${undoDeltaEdit}`);
 
-  page.once('dialog', (d) => d.accept());
+  // No confirm() involved anymore — and window.confirm is stubbed to always
+  // return false above, so if this still called confirm() the delete would
+  // silently no-op and the assertion below would catch it.
   await page.evaluate(({ code, featureType }) => {
     window.hexwright.ui.openFeatureInspector(code, featureType);
     window.hexwright.ui._deleteFeatureInspector();
@@ -270,7 +287,9 @@ try {
 
   const beforeInspDel = await page.evaluate(({ code }) =>
     window.hexwright.store.getPointFeaturesAt(code).length, setup);
-  page.once('dialog', (d) => d.accept());
+  // Real click on the Inspect-panel × (the exact control the operator hit
+  // suppressed-confirm on). window.confirm is stubbed to false above; the
+  // click must still delete, unassisted by any dialog.
   await page.click(`#hexed-point-feats .point-feat-row[data-pf-type="${setup.featureType}"] .pf-del`);
   await sleep(200);
   const inspDelResult = await page.evaluate(({ code, featureType }) => ({

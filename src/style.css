@@ -441,6 +441,21 @@ label.file-btn:focus-within {
   background: rgba(255, 255, 255, 0.06);
 }
 
+/* Arm/confirm two-step state for the destructive clear-layer button (replaces
+   a native confirm() — see UI._armLayerClear). First click lands here; a
+   second click on the same button within the window performs the clear. */
+.layer-clear.confirming {
+  color: var(--ink, #1a1a1a);
+  background: var(--hx-danger, var(--danger));
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.layer-clear.confirming:hover {
+  color: var(--ink, #1a1a1a);
+  background: var(--hx-danger, var(--danger));
+}
+
 .layer-row.dimmed .name,
 .layer-row.dimmed .count {
   color: rgba(255, 255, 255, 0.45);
