@@ -19,7 +19,7 @@ python3 -m http.server 8000
 # open http://localhost:8000/hexwright/
 ```
 
-On macOS, double-click `Launch Hexwright.command` to start a local server and open the editor. Put private project data under `local/` (gitignored); reference it with `?project=local/my-game/project.json`.
+On macOS, double-click `Launch Hexwright.command` to start a local server and open the editor, or use the `Hexwright.app` bundle (same launcher, wrapped as a regular app with a parchment-hex icon — drag it to the Dock or Applications). Put private project data under `local/` (gitignored); reference it with `?project=local/my-game/project.json`.
 
 ## Editor modes
 
@@ -34,6 +34,26 @@ Hexwright has five tool modes on the left rail:
 | **Grid nudge** | `n` | Drag the scan under the fixed grid, or use arrow keys for 1 px steps (Shift = 10 px). Offset persists in the project autosave. |
 
 Middle-mouse drag pans in every mode. `v` cycles view: Map, Classification, Both. `?` opens the in-app help and shortcut table.
+
+**The inspector** (opened in Inspect mode) docks to the right edge by default. Drag it by its
+header to reposition (clamped inside the viewport); double-click the header to re-dock. `Esc`
+closes it — if a text field inside has focus, the first `Esc` blurs the field instead of closing.
+
+## Terrain display
+
+`L` toggles terrain labels: each hex shows its palette `abbr` (a short code, e.g. `W` for woods)
+below the terrain fill, or a derived initial when the palette omits `abbr`. Set `abbr: ""` on a
+palette entry to suppress its label entirely (useful for a default "clear" terrain that doesn't
+need marking). Labels fade with zoom and the toggle state persists across reloads.
+
+A **terrain fill-opacity slider** controls how strongly terrain color shows over the base map —
+useful for checking painted terrain against the underlying scan without switching to
+Classification view.
+
+**Composite terrain classes** split a hex's fill diagonally between two colors: give a palette
+terrain entry `"colors": ["#colorA", "#colorB"]` instead of (or alongside) `"color"`, and the
+renderer draws a two-color split fill. Handy for combined classes like woods+swamp or
+woods+mountain without inventing a new solid color per combination.
 
 ## Grid schema
 
@@ -112,9 +132,18 @@ A manifest JSON lists paths relative to the served root (typically the parent of
 | `terrain` | `{"terrain": {"CCRR": "key", ...}}` |
 | `hexsides` | Grouped v1 bundle or v2 internal shape (loader migrates) |
 | `features` | Point-feature document (see below) |
+| `names` | Per-hex location names document: `{"names": {"CCRR": "Name", ...}}` |
 | `palette` | Palette JSON (terrain, hexFeatures, hexsideFeatures, aliases) |
 | `blankLattice` | When `true`, show every valid grid cell even if terrain is empty (hexside-only projects) |
 | `traces` | Optional reference PNG overlays with opacity control |
+
+### Location names
+
+The inspector has a **Name** field per hex, independent of terrain and point features — for
+labeling towns, garrisons, or any location the printed map names but doesn't otherwise mark.
+Names render under the terrain abbreviation when the labels toggle (`L`) is on. Export/import via
+the `names.json` document shape above (same shape as the manifest's `names` field); copy-to-
+clipboard mirrors file export.
 
 Boot directly:
 
@@ -157,7 +186,7 @@ Palettes live in JSON. A neutral example ships at `palettes/default.json`.
 }
 ```
 
-- **terrain**: base fill per hex; `color` drives Classification view and overlay export.
+- **terrain**: base fill per hex; `color` drives Classification view and overlay export. `abbr` sets the short label shown by the terrain-labels toggle (`""` suppresses it); `colors: [a, b]` (instead of `color`) renders a two-color diagonal split fill for composite classes.
 - **hexFeatures**: point markers; optional `attrs` define inspector fields (`type: "number"` today).
 - **hexsideFeatures**: `kind` is `edge` or `crossing`; optional `dash`; `exportLayer` names the v1 export bucket.
 - **Aliases**: map legacy import names to palette keys.
@@ -173,6 +202,7 @@ Hexwright loads `palettes/default.json` when a manifest omits `palette`. You can
 | `hexsides.json` | Grouped layers; each pair `{a,b}` with `a < b`, once per layer |
 | `terrain.json` | `{"terrain": {"CCRR": key}}` |
 | `features.json` | `{"_comment", "features": [{code, type, name?, attrs}]}` sorted by code |
+| `names.json` | `{"names": {"CCRR": "Name", ...}}` |
 | Classification PNG | Raster at `imageFull` resolution |
 | TWU rivers / rail | Strict pair-array contracts for games that use that on-ramp |
 
@@ -181,6 +211,7 @@ Hexwright loads `palettes/default.json` when a manifest omits `palette`. You can
 | Input | Behavior |
 | --- | --- |
 | Raw `hexsides.json` / `terrain.json` | Replace current layer data |
+| `names.json` | Merges into current names (operator entries win on conflict) |
 | WMP draft | Classifier output with alias mapping; marks hexes `draft` until touched |
 | TWU layer | Validates shape strictly; wrong files fail loud with no mutation |
 
@@ -189,6 +220,13 @@ Copy-to-clipboard actions use the same canonical objects as file export.
 ## Autosave, restore, and recents
 
 Every edit debounces to `localStorage` (~1 s) keyed by project name slug. On the next visit, a restore prompt appears when a slot is newer than the manifest load. Recents on the start screen list recently opened manifests. A normal refresh reloads editor code but preserves autosaved project state.
+
+**Manifest features and names merge UNDER autosave, operator wins.** When a manifest declares
+point features or location names (for example, generated route/paint-guide markers) and a
+restored autosave slot also has features or names, the two are merged rather than one replacing
+the other: manifest entries fill in first, then autosave entries are layered on top and win any
+conflict. This lets generated markers (re-)appear on a fresh manifest load while an operator's
+own placements and renames from a prior editing session are never clobbered by Restore.
 
 ## Verify suite
 
