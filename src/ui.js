@@ -286,9 +286,19 @@ export class UI {
           this.toggleHelp(false);
           return;
         }
-        if (!typing) {
-          if (this.featureInspector) this.closeFeatureInspector();
-          else this.closeInspector();
+        const isTextField = tag === 'INPUT' || tag === 'TEXTAREA';
+        if (isTextField && (this.inspectorHex || this.featureInspector)) {
+          e.target?.blur();
+          return;
+        }
+        if (this.featureInspector) {
+          e.preventDefault();
+          this.closeFeatureInspector();
+          return;
+        }
+        if (this.inspectorHex) {
+          e.preventDefault();
+          this.els['clear-select'].click();
         }
         return;
       }

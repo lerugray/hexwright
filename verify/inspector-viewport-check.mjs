@@ -237,6 +237,33 @@ try {
       right.wrapChipCount >= 12 && right.wrapBad === 0 && right.allPresent,
       `wrap=${right.wrapChipCount} wrapBad=${right.wrapBad} all=${right.allChipCount} present=${right.allPresent}`
     );
+
+    const modeBeforeEsc = await page.evaluate(() => window.hexwright.ui.mode);
+    await page.keyboard.press('Escape');
+    await sleep(120);
+    const afterEsc = await readInspectorState();
+    const modeAfterEsc = await page.evaluate(() => window.hexwright.ui.mode);
+    rec('Escape closes hex inspector', !afterEsc.open);
+    rec('Escape does not change mode', modeBeforeEsc === modeAfterEsc, `mode=${modeAfterEsc}`);
+
+    await clickEdgeHex('right');
+    await page.focus('#hexed-name');
+    await sleep(80);
+    await page.keyboard.press('Escape');
+    await sleep(120);
+    const afterNameEsc = await page.evaluate(() => ({
+      open: !document.getElementById('hex-editor').hidden,
+      nameFocused: document.activeElement === document.getElementById('hexed-name')
+    }));
+    rec(
+      'Escape in Name field blurs without closing inspector',
+      afterNameEsc.open && !afterNameEsc.nameFocused,
+      `open=${afterNameEsc.open} nameFocused=${afterNameEsc.nameFocused}`
+    );
+    await page.keyboard.press('Escape');
+    await sleep(120);
+    const afterSecondEsc = await readInspectorState();
+    rec('Second Escape closes inspector after Name blur', !afterSecondEsc.open);
   }
 
   const bottom = await clickEdgeHex('bottom');
