@@ -553,10 +553,14 @@ async function main() {
       if (!restored.grid) restored.grid = project.grid;
       if (project.palette) restored.palette = project.palette;
       // Hexside-only autosaves (common during GotA tracing) must not discard the
-      // manifest's production terrain layer on restore.
+      // manifest's production terrain layer on restore. But this must ONLY backfill
+      // when the autosave has NO terrain at all — comparing counts (manifestLand >
+      // restoredLand) wholesale-discarded any PARTIAL operator terrain painting
+      // (fewer cells than the shipped sample) on restore, destroying real work
+      // (2026-07-05 incident: a night of GotA terrain painting lost this way).
       const manifestLand = countLandHexes(project);
       const restoredLand = countLandHexes(restored);
-      if (manifestLand > restoredLand) restored.terrain = project.terrain;
+      if (restoredLand === 0 && manifestLand > 0) restored.terrain = project.terrain;
       // Manifest point features merge UNDER the autosave's: a (code,type) the
       // operator placed always wins; manifest-only entries (e.g. generated
       // route/paint-guide markers) still appear.

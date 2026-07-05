@@ -317,4 +317,87 @@ async function restoreNewestRecent(page) {
   await ctx.close();
 }
 
+// Case 6: manifest restore preserves PARTIAL operator terrain, and still backfills
+// a ZERO-terrain (hexside-only) autosave from the manifest. Regression guard for the
+// 2026-07-05 incident: the old `manifestLand > restoredLand` gate wholesale-discarded
+// any partial operator terrain painting (fewer cells than the shipped sample) on
+// restore, destroying a night of GotA terrain work.
+{
+  const errors = [];
+  const ctx = await b.newContext();
+  const partialSlot = {
+    savedAt: now,
+    project: {
+      schemaVersion: 2,
+      name: 'Guns of the Americas',
+      mapImage: null,
+      imageFull: [100, 100],
+      grid: null,
+      terrain: { terrain: { '0000': 'sea', '0001': 'coast', '0002': 'clear' } },
+      hexFeatures: {},
+      hexsides: {},
+      provenance: {}
+    }
+  };
+  await ctx.addInitScript((slot) => {
+    localStorage.setItem('hexwright.session.guns-of-the-americas', JSON.stringify(slot));
+  }, partialSlot);
+  const page = await makePage(ctx, errors);
+  await page.goto(`http://localhost:${PORT}/`,{waitUntil:'load'});
+  await loadSampleFromStart(page);
+  await page.waitForSelector('#restore-prompt:not([hidden])', { timeout: 10000 });
+  await page.click('#restore-prompt-restore');
+  await page.waitForFunction(()=>{const el=document.getElementById('count-land');return el&&/[1-9]/.test(el.textContent);},{timeout:25000});
+  const afterPartialRestore = await page.evaluate(()=>{
+    const s = window.hexwright.store.state;
+    const terrain = s.terrain.terrain || {};
+    return {
+      land: Object.keys(terrain).length,
+      keepsOperatorCells: terrain['0000']==='sea' && terrain['0001']==='coast' && terrain['0002']==='clear'
+    };
+  });
+  rec('manifest restore keeps PARTIAL operator terrain (not overwritten by larger manifest)',
+    afterPartialRestore.land===3 && afterPartialRestore.keepsOperatorCells,
+    JSON.stringify(afterPartialRestore));
+  rec('case 6a has no console/page errors', errors.length===0, errors.slice(0,2).join(' | '));
+  await ctx.close();
+}
+
+{
+  const errors = [];
+  const ctx = await b.newContext();
+  const zeroSlot = {
+    savedAt: now,
+    project: {
+      schemaVersion: 2,
+      name: 'Guns of the Americas',
+      mapImage: null,
+      imageFull: [100, 100],
+      grid: null,
+      terrain: { terrain: {} },
+      hexFeatures: {},
+      hexsides: { '0101|0102': ['river'] },
+      provenance: {}
+    }
+  };
+  await ctx.addInitScript((slot) => {
+    localStorage.setItem('hexwright.session.guns-of-the-americas', JSON.stringify(slot));
+  }, zeroSlot);
+  const page = await makePage(ctx, errors);
+  await page.goto(`http://localhost:${PORT}/`,{waitUntil:'load'});
+  await loadSampleFromStart(page);
+  await page.waitForSelector('#restore-prompt:not([hidden])', { timeout: 10000 });
+  await page.click('#restore-prompt-restore');
+  await page.waitForFunction(()=>{const el=document.getElementById('count-land');return el&&/[1-9]/.test(el.textContent);},{timeout:25000});
+  const afterZeroRestore = await page.evaluate(()=>{
+    const s = window.hexwright.store.state;
+    return { land: Object.keys(s.terrain.terrain || {}).length };
+  });
+  rec('manifest restore still backfills terrain when autosave has ZERO terrain (hexside-only intent preserved)',
+    afterZeroRestore.land===4176,
+    JSON.stringify(afterZeroRestore));
+  rec('case 6b has no console/page errors', errors.length===0, errors.slice(0,2).join(' | '));
+  await ctx.close();
+}
+
 await b.close(); srv.kill(); const fails=results.filter(x=>!x).length; console.log(`\n=== ${results.length-fails}/${results.length} passed ===`); process.exit(fails?1:0);
