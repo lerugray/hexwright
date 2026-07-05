@@ -55,6 +55,15 @@ terrain entry `"colors": ["#colorA", "#colorB"]` instead of (or alongside) `"col
 renderer draws a two-color split fill. Handy for combined classes like woods+swamp or
 woods+mountain without inventing a new solid color per combination.
 
+**Terrain class renames** (`terrainMigrations`): a palette may declare an ordered list of
+one-time renames, `"terrainMigrations": [{"from": "old", "to": "new"}, ...]`, applied to
+terrain cell values as sequential full passes when a project loads. A `paletteMigrationCursor`
+persisted in autosave/export records how many migrations a project has already had, so
+restores never double-apply — which makes swap-chains safe (e.g. `rough`→`broken` then
+`desert`→`rough`: old rough all become broken before old desert becomes the new rough). This
+is for renaming classes in existing data; for merely accepting alternate spellings at import,
+use `terrainAliases` (idempotent, applied every load).
+
 ## Grid schema
 
 Hex codes use flat-top **even-q** addressing: `"0803"` = column 08, row 03.
