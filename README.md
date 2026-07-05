@@ -230,6 +230,16 @@ Hexwright loads `palettes/default.json` when a manifest omits `palette`. You can
 
 Copy-to-clipboard actions use the same canonical objects as file export.
 
+## Groups (added 2026-07-05)
+
+Multi-hex entities (a fortress VP cluster, an objective set): shift-click
+hexes into a selection, create a named group from it in the Groups panel
+({name, kind, value}); click a group to highlight its members; edit,
+add/remove hexes, or delete via the inline two-step confirm. Groups ride
+exports/imports and autosave (a groups-only slot counts as real work for
+the restore guard). Planned v2 (hxw-003): territorial-scale groups such as
+GotA states via flood-fill selection bounded by boundary hexsides.
+
 ## Deleting features and clearing layers
 
 Single-feature delete (the inspector's × or the feature editor's Delete button) applies
