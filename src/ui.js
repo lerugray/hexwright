@@ -13,6 +13,8 @@ const LAYER_LABELS = {
 };
 
 const VIEW_SETTINGS_KEY = 'hexwright.view';
+const INSPECTOR_POS_KEY = 'hexwright.inspectorPos';
+const INSPECTOR_MARGIN = 12;
 
 const EDGE_NAMES = ['E', 'NE', 'NW', 'W', 'SW', 'SE'];
 const EYE_OPEN_SVG = '<svg viewBox="0 0 24 24"><path d="M2 12 s4 -6 10 -6 s10 6 10 6 s-4 6 -10 6 s-10 -6 -10 -6 z"/><circle cx="12" cy="12" r="2.6"/></svg>';
@@ -41,7 +43,7 @@ export class UI {
     this.featurePaintActive = false;
     this.featurePaintType = null;
     this.featureInspector = null;
-    this._inspectorAnchor = null;
+    this._inspectorDrag = null;
     this._edgeWipeCount = 0;
     this.nudgeActive = false;
     this.anomalyActive = false;
@@ -49,6 +51,7 @@ export class UI {
     this.projectSub = '';
 
     this.buildHexEditor();
+    this._setupInspectorDrag();
     this.bindGlobal();
     this.bindControls();
     this._loadViewSettings();
@@ -341,7 +344,7 @@ export class UI {
       this.updateUI(reason);
     });
     window.addEventListener('resize', () => {
-      if (this.inspectorHex) this._positionInspector(this._inspectorAnchor);
+      if (this.inspectorHex) this._positionInspector();
     });
     this.renderer.onHexSelect = (code, screenPt) => {
       if (this.featurePaintActive && code && this.featurePaintType) {
@@ -1334,9 +1337,8 @@ export class UI {
 
   // ----------------- inspector -----------------
 
-  openInspector(code, anchorPt) {
+  openInspector(code) {
     this.inspectorHex = code;
-    this._inspectorAnchor = anchorPt || null;
     this.hexedSelectedEdge = null;
     this._updateInspectorTitle(code);
     this.els['hex-editor'].hidden = false;
@@ -1349,56 +1351,144 @@ export class UI {
       }
     }
     requestAnimationFrame(() => {
-      this._positionInspector(this._inspectorAnchor);
+      this._positionInspector();
     });
   }
 
-  _positionInspector(anchorPt) {
+  _inspectorViewport() {
+    const strip = document.querySelector('.status-strip');
+    const minTop = (strip ? strip.getBoundingClientRect().bottom : 40) + INSPECTOR_MARGIN;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    return { minTop, vw, vh };
+  }
+
+  _clampInspectorRect(left, top, pw, ph) {
+    const { minTop, vw, vh } = this._inspectorViewport();
+    const M = INSPECTOR_MARGIN;
+    const maxLeft = Math.max(M, vw - pw - M);
+    const maxTop = Math.max(minTop, vh - ph - M);
+    return {
+      left: Math.min(Math.max(M, left), maxLeft),
+      top: Math.min(Math.max(minTop, top), maxTop)
+    };
+  }
+
+  _loadInspectorPos() {
+    try {
+      const raw = localStorage.getItem(INSPECTOR_POS_KEY);
+      if (!raw) return null;
+      const v = JSON.parse(raw);
+      if (Number.isFinite(v.left) && Number.isFinite(v.top)) return v;
+    } catch (_) { /* ignore corrupt inspector position */ }
+    return null;
+  }
+
+  _saveInspectorPos(left, top) {
+    try {
+      localStorage.setItem(INSPECTOR_POS_KEY, JSON.stringify({
+        left: Math.round(left),
+        top: Math.round(top)
+      }));
+    } catch (_) { /* quota */ }
+  }
+
+  _dockInspector() {
+    const panel = this.els['hex-editor'];
+    if (!panel) return;
+    panel.style.left = '';
+    panel.style.top = '';
+    panel.style.right = '';
+    try { localStorage.removeItem(INSPECTOR_POS_KEY); } catch (_) { /* ignore */ }
+  }
+
+  _positionInspector() {
     const panel = this.els['hex-editor'];
     if (!panel || panel.hidden) return;
 
-    const MARGIN = 12;
-    const GAP = 10;
-    const strip = document.querySelector('.status-strip');
-    const minTop = (strip ? strip.getBoundingClientRect().bottom : 40) + MARGIN;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-
-    panel.style.right = 'auto';
-    panel.style.bottom = 'auto';
-
-    let anchorX;
-    let anchorY;
-    if (anchorPt && this.renderer?.canvas) {
-      const canvasRect = this.renderer.canvas.getBoundingClientRect();
-      anchorX = canvasRect.left + anchorPt.x;
-      anchorY = canvasRect.top + anchorPt.y;
-    } else {
-      anchorX = vw - MARGIN;
-      anchorY = minTop;
+    const saved = this._loadInspectorPos();
+    if (!saved) {
+      panel.style.left = '';
+      panel.style.top = '';
+      panel.style.right = '';
+      return;
     }
 
-    // Measure at a stable off-screen slot so layout reflects current content.
-    panel.style.visibility = 'hidden';
-    panel.style.left = `${MARGIN}px`;
-    panel.style.top = `${minTop}px`;
+    panel.style.right = 'auto';
     const { width: pw, height: ph } = panel.getBoundingClientRect();
-    panel.style.visibility = '';
+    const clamped = this._clampInspectorRect(saved.left, saved.top, pw, ph);
+    panel.style.left = `${Math.round(clamped.left)}px`;
+    panel.style.top = `${Math.round(clamped.top)}px`;
+    if (Math.abs(clamped.left - saved.left) > 0.5 || Math.abs(clamped.top - saved.top) > 0.5) {
+      this._saveInspectorPos(clamped.left, clamped.top);
+    }
+  }
 
-    const maxLeft = Math.max(MARGIN, vw - pw - MARGIN);
-    const maxTop = Math.max(minTop, vh - ph - MARGIN);
+  _setupInspectorDrag() {
+    const panel = this.els['hex-editor'];
+    const head = panel?.querySelector('.head');
+    if (!head) return;
 
-    let left = anchorPt ? anchorX + GAP : vw - pw - MARGIN;
-    let top = anchorPt ? anchorY + GAP : minTop;
+    const drag = {
+      active: false,
+      pointerId: null,
+      startX: 0,
+      startY: 0,
+      startLeft: 0,
+      startTop: 0,
+      moved: false
+    };
+    this._inspectorDrag = drag;
 
-    if (left + pw > vw - MARGIN) left = anchorX - pw - GAP;
-    if (top + ph > vh - MARGIN) top = anchorY - ph - GAP;
+    head.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.target.closest('.collapse')) return;
+      drag.active = true;
+      drag.pointerId = e.pointerId;
+      drag.moved = false;
+      drag.startX = e.clientX;
+      drag.startY = e.clientY;
+      const rect = panel.getBoundingClientRect();
+      drag.startLeft = rect.left;
+      drag.startTop = rect.top;
+      panel.style.right = 'auto';
+      panel.style.left = `${Math.round(rect.left)}px`;
+      panel.style.top = `${Math.round(rect.top)}px`;
+      head.classList.add('is-dragging');
+      head.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
 
-    left = Math.min(Math.max(MARGIN, left), maxLeft);
-    top = Math.min(Math.max(minTop, top), maxTop);
+    head.addEventListener('pointermove', (e) => {
+      if (!drag.active || e.pointerId !== drag.pointerId) return;
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) drag.moved = true;
+      const { width: pw, height: ph } = panel.getBoundingClientRect();
+      const clamped = this._clampInspectorRect(drag.startLeft + dx, drag.startTop + dy, pw, ph);
+      panel.style.left = `${Math.round(clamped.left)}px`;
+      panel.style.top = `${Math.round(clamped.top)}px`;
+    });
 
-    panel.style.left = `${Math.round(left)}px`;
-    panel.style.top = `${Math.round(top)}px`;
+    const finishDrag = (e) => {
+      if (!drag.active || e.pointerId !== drag.pointerId) return;
+      drag.active = false;
+      drag.pointerId = null;
+      head.classList.remove('is-dragging');
+      if (head.hasPointerCapture(e.pointerId)) head.releasePointerCapture(e.pointerId);
+      if (drag.moved) {
+        const rect = panel.getBoundingClientRect();
+        this._saveInspectorPos(rect.left, rect.top);
+      }
+    };
+
+    head.addEventListener('pointerup', finishDrag);
+    head.addEventListener('pointercancel', finishDrag);
+
+    head.addEventListener('dblclick', (e) => {
+      if (e.target.closest('.collapse')) return;
+      e.preventDefault();
+      this._dockInspector();
+    });
   }
 
   _updateInspectorTitle(code) {
@@ -1490,16 +1580,15 @@ export class UI {
 
     this._paintHexEditorDiagram();
     this._refreshHexEditorEdgePanel();
+    requestAnimationFrame(() => {
+      if (this.inspectorHex) this._positionInspector();
+    });
   }
 
   closeInspector() {
     this.inspectorHex = null;
-    this._inspectorAnchor = null;
     this.hexedSelectedEdge = null;
     this.els['hex-editor'].hidden = true;
-    this.els['hex-editor'].style.left = '';
-    this.els['hex-editor'].style.top = '';
-    this.els['hex-editor'].style.visibility = '';
     if (!this.featureInspector) this.els['layers-panel'].hidden = false;
     this.renderer.closeInspector();
   }

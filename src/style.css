@@ -1023,6 +1023,11 @@ button.active {
   box-sizing: border-box;
 }
 
+#hex-editor {
+  top: calc(var(--strip-h, 40px) + var(--sp-3, 12px));
+  right: var(--sp-3, 12px);
+}
+
 #hex-editor[hidden] {
   display: none !important;
 }
@@ -1033,6 +1038,13 @@ button.active {
   justify-content: space-between;
   padding: var(--sp-2, 8px) var(--sp-3, 12px);
   border-bottom: 1px solid var(--hx-hairline, var(--chrome));
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+#hex-editor .head.is-dragging {
+  cursor: grabbing;
 }
 
 #hex-editor .head .title {
