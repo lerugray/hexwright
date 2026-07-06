@@ -68,6 +68,47 @@ rec('fallback infers numeric attr schema from data',
 rec('fallback yields empty list when no point-feature data present',
   syntheticHexFeaturesFromFeatures({}).length === 0);
 
+// --- Unit: GotA capitol vp/bp parity with city (palette-driven; skip if local palette absent) ---
+const GOTA_PALETTE_PATH = resolve(REPO, 'local/palettes/gota.json');
+if (!existsSync(GOTA_PALETTE_PATH)) {
+  console.log('SKIP GotA palette not present (local/palettes/gota.json)');
+} else {
+  const gotaPalette = JSON.parse(readFileSync(GOTA_PALETTE_PATH, 'utf8'));
+  const cityDecl = gotaPalette.hexFeatures?.find((f) => f.key === 'city');
+  const capitolDecl = gotaPalette.hexFeatures?.find((f) => f.key === 'capitol');
+  const cityNumericKeys = (cityDecl?.attrs || []).filter((a) => a.type === 'number').map((a) => a.key);
+  const capitolNumericKeys = (capitolDecl?.attrs || []).filter((a) => a.type === 'number').map((a) => a.key);
+  rec('GotA capitol declares same numeric attrs as city (vp, bp)',
+    cityNumericKeys.includes('vp') && cityNumericKeys.includes('bp') &&
+    capitolNumericKeys.includes('vp') && capitolNumericKeys.includes('bp'),
+    `city=${cityNumericKeys.join(',')} capitol=${capitolNumericKeys.join(',')}`);
+
+  const gotaStore = new ProjectStore();
+  gotaStore.setPalette(gotaPalette);
+  gotaStore.state.features = {};
+  gotaStore.setPointFeature('1001', 'capitol', { name: 'Test Capitol', attrs: { vp: 5, bp: 3 } });
+  const capExported = gotaStore.exportFeaturesObject();
+  const capItem = capExported.features.find((f) => f.type === 'capitol');
+  rec('GotA capitol export includes vp+bp attrs',
+    capItem?.attrs?.vp === 5 && capItem?.attrs?.bp === 3,
+    JSON.stringify(capItem));
+
+  gotaStore.setPointFeature('1002', 'capitol', { name: 'Default Capitol' });
+  const capDefaults = gotaStore.getPointFeature('1002', 'capitol');
+  rec('GotA capitol placement defaults vp+bp from palette schema',
+    capDefaults?.attrs?.vp === 0 && capDefaults?.attrs?.bp === 0,
+    JSON.stringify(capDefaults?.attrs));
+
+  try {
+    validateFeaturesDocument({
+      features: [{ code: '2001', type: 'capitol', name: 'Imported', attrs: { vp: 2, bp: 1 } }]
+    });
+    rec('GotA capitol features import validates', true);
+  } catch (err) {
+    rec('GotA capitol features import validates', false, err.message);
+  }
+}
+
 // --- Headless UI harness (requires operator sample under local/) ---
 if (!existsSync(PATHS.gotaProject)) {
   console.log('SKIP local game data not present (local/samples/gota/gota-project.json)');
