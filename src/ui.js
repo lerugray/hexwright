@@ -62,6 +62,9 @@ export class UI {
     this._groupDeleteArmedId = null;
     this._groupDeleteTimer = null;
 
+    this.ptpPendingNodeId = null;
+    this.ptpSelectedEdge = null;
+
     this.buildHexEditor();
     this._setupInspectorDrag();
     this.bindGlobal();
@@ -70,6 +73,7 @@ export class UI {
     this._setupBrush();
     this._setupEdgePaint();
     this._setupFeaturePaint();
+    this._setupPtpEdgePaint();
     this.setMode('inspect');
     this.updateUI();
   }
@@ -105,7 +109,11 @@ export class UI {
       'hexed-edges', 'hexed-edge-labels', 'hexed-center-code', 'hexed-on-edge-label',
       'hexed-edchips', 'hexed-inkgrid',
       'count-land', 'layer-counts', 'status',
-      'help-overlay', 'close-help'
+      'help-overlay', 'close-help',
+      'load-nodes', 'import-edges',
+      'export-edges-file', 'export-edges-copy',
+      'ptp-edge-inspector', 'ptp-edge-insp-close', 'ptp-edge-insp-title',
+      'ptp-edge-insp-type', 'ptp-edge-insp-delete'
     ];
     for (const id of ids) this.els[id] = document.getElementById(id);
   }
@@ -514,13 +522,20 @@ export class UI {
     this.els['export-twu'].addEventListener('click', () => {
       if (this.loadHandlers?.exportTwu) this.loadHandlers.exportTwu();
     });
-
+    this.els['export-edges-file']?.addEventListener('click', () => this._download('edges.json', this.store.exportPtpEdgesJson()));
+    this.els['export-edges-copy']?.addEventListener('click', () => this._copy(this.store.exportPtpEdgesJson(), 'edges.json'));
+    this.els['ptp-edge-insp-delete']?.addEventListener('click', () => this._deletePtpEdgeInspector());
+    this.els['ptp-edge-insp-close']?.addEventListener('click', () => this.closePtpEdgeInspector());
+    this.els['ptp-edge-insp-type']?.addEventListener('change', () => this._retypePtpEdgeInspector());
 
     this.els['brush-ink-list'].addEventListener('click', (e) => {
       const row = e.target.closest('.ink[data-ink-key]');
       if (!row) return;
       const key = row.dataset.inkKey;
-      if (this.mode === 'edges') this.setEdgePaintFeature(key);
+      if (this.mode === 'edges') {
+        if (this.store.isPtp()) this.setPtpEdgeType(key);
+        else this.setEdgePaintFeature(key);
+      }
       else if (this.mode === 'features') this.setFeaturePaintType(key);
       else this.setBrushTerrain(key);
     });
@@ -668,6 +683,8 @@ export class UI {
     this.els['import-names'].addEventListener('change', (e) => handlers.importNames(e.target.files[0]));
     this.els['import-wmp'].addEventListener('change', (e) => handlers.importWmp(e.target.files[0]));
     this.els['import-twu'].addEventListener('change', (e) => handlers.importTwu(e.target.files[0]));
+    this.els['load-nodes']?.addEventListener('change', (e) => handlers.nodes?.(e.target.files[0]));
+    this.els['import-edges']?.addEventListener('change', (e) => handlers.importEdges?.(e.target.files[0]));
   }
 
   // ----------------- toolbar -----------------
@@ -741,12 +758,16 @@ export class UI {
   }
 
   setMode(mode) {
-    if (!['inspect', 'terrain', 'edges', 'features', 'nudge'].includes(mode)) return;
+    if (this.store.isPtp()) {
+      if (mode !== 'edges') mode = 'edges';
+    } else if (!['inspect', 'terrain', 'edges', 'features', 'nudge'].includes(mode)) {
+      return;
+    }
     this.mode = mode;
-    this.brushActive = mode === 'terrain';
-    this.edgePaintActive = mode === 'edges';
-    this.featurePaintActive = mode === 'features';
-    this.nudgeActive = mode === 'nudge';
+    this.brushActive = mode === 'terrain' && !this.store.isPtp();
+    this.edgePaintActive = mode === 'edges' && !this.store.isPtp();
+    this.featurePaintActive = mode === 'features' && !this.store.isPtp();
+    this.nudgeActive = mode === 'nudge' && !this.store.isPtp();
 
     if (mode !== 'features') this.closeFeatureInspector();
 
@@ -763,6 +784,7 @@ export class UI {
     this._setupBrush();
     this._setupEdgePaint();
     this._setupFeaturePaint();
+    this._setupPtpEdgePaint();
     this.renderer.setNudgeMode(this.nudgeActive);
 
     if (this.nudgeActive && this.renderer.viewMode !== 'both') {
@@ -779,6 +801,22 @@ export class UI {
     this._renderLayersPanel();
     this._updateCanvasCursor();
     this.renderer.draw();
+  }
+
+  _reflectMapFamily() {
+    document.body.classList.toggle('map-family-ptp', this.store.isPtp());
+    const ptpOnly = ['tool-inspect', 'tool-terrain', 'tool-features', 'tool-nudge'];
+    for (const id of ptpOnly) {
+      const el = this.els[id];
+      if (el) el.hidden = this.store.isPtp();
+    }
+    const hexOnly = ['hex-editor', 'terrain-layer-wrap', 'group-layer-wrap', 'feature-layer-rows'];
+    for (const id of hexOnly) {
+      const el = document.getElementById(id);
+      if (el) el.hidden = this.store.isPtp();
+    }
+    const ptpWrap = document.getElementById('ptp-layer-wrap');
+    if (ptpWrap) ptpWrap.hidden = !this.store.isPtp();
   }
 
   _reflectMode() {
@@ -804,6 +842,11 @@ export class UI {
   _updateModeHint() {
     const hint = this.els['mode-hint'];
     if (!hint) return;
+    if (this.mode === 'edges' && this.store.isPtp()) {
+      const label = this._activePtpEdgeLabel();
+      hint.innerHTML = `<b>Edge trace · ${label}</b> — click node A then node B · click edge to select<span class="hint-extra"> · <span class="kbd">⌥</span> click edge to delete · <span class="kbd">1</span>–<span class="kbd">0</span> switch type</span>`;
+      return;
+    }
     if (this.mode === 'terrain') {
       hint.innerHTML = `<b>Terrain brush · ${this._activeTerrainLabel()}</b> — click or drag hexes to paint<span class="hint-extra"> · <span class="kbd">B</span> terrain · <span class="kbd">1</span>–<span class="kbd">0</span> terrain keys</span>`;
       return;
@@ -888,6 +931,140 @@ export class UI {
     this._reflectEdgePaint();
     this._renderBrushCard();
     this._updateCanvasCursor();
+  }
+
+  _setupPtpEdgePaint() {
+    this.renderer.setPtpEdgePaint({
+      active: this.store.isPtp() && this.mode === 'edges',
+      typeKey: this.edgePaintFeature,
+      pendingNodeId: this.ptpPendingNodeId,
+      onNodeClick: (nodeId, opts) => this._onPtpNodeClick(nodeId, opts),
+      onEdgeSelect: (edge) => this._onPtpEdgeSelect(edge),
+      onEdgeDelete: (edge) => this._onPtpEdgeDelete(edge)
+    });
+    this.renderer.onPtpClear = () => this.closePtpEdgeInspector();
+  }
+
+  _effectiveEdgeFeatures() {
+    const palette = this.store.getPalette() || {};
+    if (this.store.isPtp()) return palette.edgeFeatures || [];
+    return palette.hexsideFeatures || [];
+  }
+
+  _activePtpEdgeLabel() {
+    const feature = this._effectiveEdgeFeatures().find((f) => f.key === this.edgePaintFeature);
+    return feature?.label || feature?.key || 'Edge';
+  }
+
+  setPtpEdgeType(key) {
+    this.edgePaintFeature = key;
+    this._setupPtpEdgePaint();
+    this._reflectEdgePaint();
+    this._renderBrushCard();
+    this._updateCanvasCursor();
+  }
+
+  _onPtpNodeClick(nodeId, opts = {}) {
+    if (!this.edgePaintFeature) {
+      this.status('Pick an edge type in the Brush card first.', 2500);
+      return;
+    }
+    if (opts.altDelete) {
+      this.status('Alt-click an edge line to delete it.', 2500);
+      return;
+    }
+    if (!this.ptpPendingNodeId) {
+      this.ptpPendingNodeId = nodeId;
+      this._setupPtpEdgePaint();
+      this.renderer.draw();
+      this.status(`Start: ${nodeId} — click the other node`, 3000);
+      return;
+    }
+    if (this.ptpPendingNodeId === nodeId) {
+      this.ptpPendingNodeId = null;
+      this._setupPtpEdgePaint();
+      this.renderer.draw();
+      return;
+    }
+    const from = this.ptpPendingNodeId;
+    this.ptpPendingNodeId = null;
+    this._setupPtpEdgePaint();
+    if (this.store.setPtpEdge(from, nodeId, this.edgePaintFeature)) {
+      this.status(`Edge ${from}–${nodeId} (${this.edgePaintFeature})`, 2500);
+      this._renderBrushCard();
+      this._renderLayersPanel();
+    }
+    this.renderer.draw();
+  }
+
+  _onPtpEdgeSelect(edge) {
+    this.ptpSelectedEdge = edge;
+    this.ptpPendingNodeId = null;
+    this._setupPtpEdgePaint();
+    this.openPtpEdgeInspector(edge);
+    this.renderer.setSelectedPtpEdge(edge);
+  }
+
+  _onPtpEdgeDelete(edge) {
+    if (this.store.deletePtpEdge(edge.a, edge.b)) {
+      this.status(`Deleted edge ${edge.a}–${edge.b}`, 2000);
+      this.closePtpEdgeInspector();
+      this._renderBrushCard();
+      this._renderLayersPanel();
+    }
+    this.renderer.draw();
+  }
+
+  openPtpEdgeInspector(edge) {
+    const panel = this.els['ptp-edge-inspector'];
+    if (!panel || !edge) return;
+    const features = this._effectiveEdgeFeatures();
+    const select = this.els['ptp-edge-insp-type'];
+    this.els['ptp-edge-insp-title'].textContent = `${edge.a} ↔ ${edge.b}`;
+    select.innerHTML = features.map((f) =>
+      `<option value="${f.key}"${f.key === edge.type ? ' selected' : ''}>${f.label || f.key}</option>`
+    ).join('');
+    panel.hidden = false;
+    this.els['layers-panel'].hidden = true;
+  }
+
+  closePtpEdgeInspector() {
+    this.ptpSelectedEdge = null;
+    if (this.els['ptp-edge-inspector']) this.els['ptp-edge-inspector'].hidden = true;
+    if (!this.inspectorHex) this.els['layers-panel'].hidden = false;
+    this.renderer.clearPtpSelection();
+  }
+
+  _retypePtpEdgeInspector() {
+    if (!this.ptpSelectedEdge) return;
+    const type = this.els['ptp-edge-insp-type']?.value;
+    if (!type) return;
+    const { a, b } = this.ptpSelectedEdge;
+    if (this.store.setPtpEdge(a, b, type)) {
+      this.ptpSelectedEdge = { ...this.ptpSelectedEdge, type, edgeKey: `${a < b ? a : b}|${a < b ? b : a}` };
+      this.status(`Retyped ${a}–${b} as ${type}`, 2000);
+      this._renderBrushCard();
+      this._renderLayersPanel();
+      this.renderer.setSelectedPtpEdge(this.ptpSelectedEdge);
+    }
+  }
+
+  _deletePtpEdgeInspector() {
+    if (!this.ptpSelectedEdge) return;
+    this._onPtpEdgeDelete(this.ptpSelectedEdge);
+  }
+
+  onPtpProjectLoaded() {
+    this.ptpPendingNodeId = null;
+    this.ptpSelectedEdge = null;
+    const features = this._effectiveEdgeFeatures();
+    if (features.length && !features.some((f) => f.key === this.edgePaintFeature)) {
+      this.edgePaintFeature = features[0].key;
+    }
+    this.setMode('edges');
+    this._reflectMapFamily();
+    this._renderBrushCard();
+    this._renderLayersPanel();
   }
 
   _setupEdgePaint() {
@@ -1128,10 +1305,10 @@ export class UI {
   }
 
   _selectEdgeFeatureByIndex(idx) {
-    const palette = this.store.getPalette();
-    const feature = palette?.hexsideFeatures?.[idx];
+    const feature = this._effectiveEdgeFeatures()[idx];
     if (!feature) return;
-    this.setEdgePaintFeature(feature.key);
+    if (this.store.isPtp()) this.setPtpEdgeType(feature.key);
+    else this.setEdgePaintFeature(feature.key);
     this.status(`Ink ${idx + 1}: ${feature.label || feature.key}`, 1200);
   }
 
@@ -1193,11 +1370,12 @@ export class UI {
     }
 
     if (this.mode === 'edges') {
-      const counts = this._featureCounts();
-      const features = palette.hexsideFeatures || [];
+      const counts = this.store.isPtp() ? this.store.getPtpEdgeCounts() : this._featureCounts();
+      const features = this._effectiveEdgeFeatures();
       if (features.length && !features.some((f) => f.key === this.edgePaintFeature)) {
         this.edgePaintFeature = features[0].key;
-        this._setupEdgePaint();
+        if (this.store.isPtp()) this._setupPtpEdgePaint();
+        else this._setupEdgePaint();
       }
       list.innerHTML = features.map((f, idx) => {
         const active = f.key === this.edgePaintFeature;
@@ -1483,9 +1661,41 @@ export class UI {
 
   _renderLayersPanel() {
     const palette = this.store.getPalette() || {};
+    const featureRows = this.els['feature-layer-rows'];
+
+    if (this.store.isPtp()) {
+      const counts = this.store.getPtpEdgeCounts();
+      const features = palette.edgeFeatures || [];
+      featureRows.innerHTML = features.map((f) => {
+        const n = counts[f.key] || 0;
+        return `<div class="layer-row">
+          <span class="swatch" style="background:${this._hexsideFeatureColor(f)}"></span>
+          <span class="name">${f.label || f.key}</span>
+          <span class="count">${n}</span>
+        </div>`;
+      }).join('');
+      const nodeCount = Object.keys(this.store.state.nodes || {}).length;
+      const edgeCount = this.store.countPtpEdges();
+      const orphans = this.store.getOrphanNodeIds();
+      const ptpMeta = document.getElementById('ptp-layer-meta');
+      if (ptpMeta) {
+        ptpMeta.textContent = `${nodeCount} nodes · ${edgeCount} edges`;
+        ptpMeta.title = orphans.length
+          ? `Orphan nodes (no edges): ${orphans.slice(0, 12).join(', ')}${orphans.length > 12 ? '…' : ''}`
+          : '';
+      }
+      const warn = document.getElementById('ptp-orphan-warn');
+      if (warn) {
+        warn.hidden = orphans.length === 0;
+        warn.textContent = orphans.length
+          ? `${orphans.length} orphan node${orphans.length === 1 ? '' : 's'} (no edges)`
+          : '';
+      }
+      return;
+    }
+
     const counts = this._featureCounts();
     const features = palette.hexsideFeatures || [];
-    const featureRows = this.els['feature-layer-rows'];
 
     featureRows.innerHTML = features.map((f) => {
       const on = this._featureVisible(f.key);
@@ -2092,8 +2302,10 @@ export class UI {
       this._rebuildHexEditorPalette();
       this._setupEdgePaint();
       this._setupFeaturePaint();
+      this._setupPtpEdgePaint();
       if (this.inspectorHex) this._refreshInspector();
     }
+    this._reflectMapFamily();
     this._renderBrushCard();
     this._renderLayersPanel();
     this._validateSelectedGroup();
@@ -2123,6 +2335,19 @@ export class UI {
   }
 
   _updateCounts() {
+    if (this.store.isPtp()) {
+      const nodeCount = Object.keys(this.store.state.nodes || {}).length;
+      this.els['count-land'].textContent = nodeCount;
+      const lc = this.els['layer-counts'];
+      const counts = this.store.getPtpEdgeCounts();
+      const features = this.store.getPalette()?.edgeFeatures || [];
+      lc.innerHTML = features.map((f) => `
+      <div class="layer-count">
+        <span><span class="layer-dot" style="background:${f.color || '#888'}"></span>${f.label || f.key}</span>
+        <span class="mono">${counts[f.key] || 0}</span>
+      </div>`).join('');
+      return;
+    }
     const counts = this.store.getCounts();
     this.els['count-land'].textContent = counts.land;
     const lc = this.els['layer-counts'];

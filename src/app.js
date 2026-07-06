@@ -235,6 +235,8 @@ function formatRelativeTime(ts) {
 
 function sniffJsonKind(obj) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+  if (Array.isArray(obj.nodes) && obj.meta) return 'nodes';
+  if (Array.isArray(obj.edges) && (obj.meta || obj._comment !== undefined)) return 'edges';
   if (obj.grid_version !== undefined || obj.col_pitch_x !== undefined || obj.x_model !== undefined) return 'grid';
   if (obj.terrain !== undefined) return 'terrain';
   if (Array.isArray(obj.rivers) || Array.isArray(obj.mountains)) return 'sides';
@@ -243,9 +245,10 @@ function sniffJsonKind(obj) {
   return null;
 }
 
-function makeBlankProject({ grid = null, blankLattice = false } = {}) {
+function makeBlankProject({ grid = null, blankLattice = false, mapFamily = 'hex' } = {}) {
   return {
     name: 'untitled',
+    mapFamily,
     mapImage: null,
     imageFull: grid?.image_full || [100, 100],
     grid,
@@ -258,6 +261,10 @@ function makeBlankProject({ grid = null, blankLattice = false } = {}) {
     names: {},
     provenance: {},
     groups: [],
+    nodes: {},
+    nodesMeta: {},
+    nodesFile: '',
+    ptpEdges: {},
     ...(blankLattice ? { blankLattice: true } : {})
   };
 }
@@ -351,23 +358,28 @@ async function loadProjectFromManifest(manifestUrl) {
   const manifest = await manifestRes.json();
 
   const base = window.location.href;
-  const mapUrl = new URL(manifest.map, base).href;
-  const gridUrl = new URL(manifest.hexgrid, base).href;
-  const terrainUrl = new URL(manifest.terrain, base).href;
+  const isPtp = manifest.mapFamily === 'ptp' || !!manifest.nodes;
+  const mapUrl = manifest.map ? new URL(manifest.map, base).href : null;
+  const gridUrl = manifest.hexgrid ? new URL(manifest.hexgrid, base).href : null;
+  const terrainUrl = manifest.terrain ? new URL(manifest.terrain, base).href : null;
   const sidesUrl = manifest.hexsides ? new URL(manifest.hexsides, base).href : null;
   const featuresUrl = manifest.features ? new URL(manifest.features, base).href : null;
   const namesUrl = manifest.names ? new URL(manifest.names, base).href : null;
+  const nodesUrl = manifest.nodes ? new URL(manifest.nodes, base).href : null;
+  const edgesUrl = manifest.edges ? new URL(manifest.edges, base).href : null;
   const paletteUrl = typeof manifest.palette === 'string'
     ? new URL(manifest.palette, base).href
     : null;
 
-  const [mapImg, grid, terrain, hexsides, features, names, palette] = await Promise.all([
-    loadImage(mapUrl),
-    fetch(gridUrl).then(r => r.json()),
-    fetch(terrainUrl).then(r => r.json()),
+  const [mapImg, grid, terrain, hexsides, features, names, nodesDoc, edgesDoc, palette] = await Promise.all([
+    mapUrl ? loadImage(mapUrl) : Promise.resolve(null),
+    gridUrl ? fetch(gridUrl).then(r => r.json()) : Promise.resolve(null),
+    terrainUrl ? fetch(terrainUrl).then(r => r.json()) : Promise.resolve(isPtp ? { terrain: {} } : null),
     sidesUrl ? fetch(sidesUrl).then(r => r.json()) : Promise.resolve(null),
     featuresUrl ? fetch(featuresUrl).then(r => r.json()) : Promise.resolve(null),
     namesUrl ? fetch(namesUrl).then(r => r.json()) : Promise.resolve(null),
+    nodesUrl ? fetch(nodesUrl).then(r => r.json()) : Promise.resolve(null),
+    edgesUrl ? fetch(edgesUrl).then(r => r.json()) : Promise.resolve(null),
     paletteUrl ? fetch(paletteUrl).then(r => r.json()) : Promise.resolve(manifest.palette && typeof manifest.palette === 'object' ? manifest.palette : null)
   ]);
 
@@ -390,17 +402,23 @@ async function loadProjectFromManifest(manifestUrl) {
 
   return {
     name: manifest.name,
+    mapFamily: manifest.mapFamily || (nodesDoc ? 'ptp' : 'hex'),
     mapImage: mapImg,
-    imageFull: manifest.imageFull || grid.image_full || [mapImg.naturalWidth, mapImg.naturalHeight],
-    grid,
-    terrain,
-    hexsides,
-    features,
-    names,
+    imageFull: manifest.imageFull || grid?.image_full || nodesDoc?.meta?.imageFull || [mapImg.naturalWidth, mapImg.naturalHeight],
+    grid: nodesDoc ? null : grid,
+    terrain: nodesDoc ? { terrain: {} } : terrain,
+    hexsides: nodesDoc ? null : hexsides,
+    features: nodesDoc ? null : features,
+    names: nodesDoc ? null : names,
+    nodes: nodesDoc ? undefined : {},
+    nodesMeta: nodesDoc?.meta || {},
+    nodesFile: manifest.nodes || '',
+    edges: edgesDoc || null,
     groups: Array.isArray(manifest.groups) ? manifest.groups : null,
     palette,
     traces,
-    blankLattice: manifest.blankLattice === true
+    blankLattice: manifest.blankLattice === true,
+    ...(nodesDoc ? { _nodesDocument: nodesDoc } : {})
   };
 }
 
@@ -485,7 +503,7 @@ async function main() {
 
   function isRenderableProject() {
     const s = store.state;
-    return !!(s.mapImage || s.grid);
+    return !!(s.mapImage || s.grid || (s.mapFamily === 'ptp' && Object.keys(s.nodes || {}).length));
   }
 
   function maybeFinishPartialLoad() {
@@ -531,21 +549,42 @@ async function main() {
     const proj = slot.project;
     proj.mapImage = null;
     await loadAndRender(proj);
-    renderer.setViewMode('classification');
+    if (store.isPtp()) {
+      renderer.setViewMode('map');
+      ui.onPtpProjectLoaded();
+    } else {
+      renderer.setViewMode('classification');
+    }
     ui.setProjectSource('');
     ui.status(`Restored session for ${proj.name || 'untitled'} (data + grid). Load the base map to see it under the grid.`, 6000);
     finishProjectLoad();
   }
 
   async function loadAndRender(project) {
-    store.loadProject(project);
+    if (project._nodesDocument) {
+      const nodesDoc = project._nodesDocument;
+      delete project._nodesDocument;
+      project.nodes = {};
+      await store.loadProject(project);
+      store.importNodes(nodesDoc, { nodesFile: project.nodesFile || '', skipUndo: true });
+      if (project.edges) store.importPtpEdges(project.edges, { skipUndo: true });
+      ui.onPtpProjectLoaded();
+    } else {
+      await store.loadProject(project);
+      if (store.isPtp()) ui.onPtpProjectLoaded();
+    }
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     renderer.resize();
     renderer.setBaseScale();
     renderer.fitView();
-    const land = Object.keys(project.terrain?.terrain || {}).length;
-    if (land > 0) {
-      ui.status(`${project.name || 'Project'} loaded — ${land} land hexes`, 3000);
+    if (store.isPtp()) {
+      const nodeCount = Object.keys(store.state.nodes || {}).length;
+      ui.status(`${project.name || 'Project'} loaded — ${nodeCount} nodes`, 3000);
+    } else {
+      const land = Object.keys(project.terrain?.terrain || {}).length;
+      if (land > 0) {
+        ui.status(`${project.name || 'Project'} loaded — ${land} land hexes`, 3000);
+      }
     }
     ui._updateProjectInfo();
   }
@@ -719,6 +758,37 @@ async function main() {
         ui.status(`TWU import failed: ${err.message}`, 7000);
       }
     },
+    nodes: async (file) => {
+      if (!file) return;
+      try {
+        const text = await readFile(file);
+        const count = store.importNodes(text, { nodesFile: file.name });
+        if (!store.state.mapImage) {
+          const meta = store.state.nodesMeta || {};
+          if (meta.imageFull) store.setProject({ imageFull: meta.imageFull });
+        }
+        renderer.setBaseScale();
+        renderer.fitView();
+        ui.onPtpProjectLoaded();
+        ui.setProjectSource(file.name);
+        ui.status(`Imported ${count} nodes`, 3000);
+        maybeFinishPartialLoad();
+      } catch (err) {
+        ui.status(`Nodes import failed: ${err.message}`, 7000);
+      }
+    },
+    importEdges: async (file) => {
+      if (!file) return;
+      try {
+        const text = await readFile(file);
+        const count = store.importPtpEdges(text);
+        ui.status(`Imported ${count} edges`, 3000);
+        ui._renderBrushCard();
+        ui._renderLayersPanel();
+      } catch (err) {
+        ui.status(`Edges import failed: ${err.message}`, 7000);
+      }
+    },
     importNames: async (file) => {
       const text = await readFile(file);
       const count = store.importNames(text);
@@ -809,6 +879,7 @@ async function main() {
     let gridFile = null;
     let terrainFile = null;
     let sidesFile = null;
+    let nodesFile = null;
     let manifestUrl = null;
 
     for (const file of files) {
@@ -824,20 +895,42 @@ async function main() {
         if (kind === 'grid') gridFile = file;
         else if (kind === 'terrain') terrainFile = file;
         else if (kind === 'sides') sidesFile = file;
+        else if (kind === 'nodes') nodesFile = file;
+        else if (kind === 'edges') {
+          if (!store.isPtp() && !nodesFile) continue;
+          try { store.importPtpEdges(obj); } catch (_) { /* paired with nodes in same drop */ }
+        }
         else if (kind === 'manifest' && obj.hexgrid) {
+          manifestUrl = URL.createObjectURL(file);
+        } else if (kind === 'manifest' && obj.map && obj.nodes) {
           manifestUrl = URL.createObjectURL(file);
         }
       } catch (_) { /* skip unreadable json */ }
     }
 
-    if (manifestUrl && !mapFile && !gridFile && !terrainFile && !sidesFile) {
+    if (manifestUrl && !mapFile && !gridFile && !terrainFile && !sidesFile && !nodesFile) {
       ui.status('Drop companion map/grid/terrain/sides files with a manifest, or paste its URL in Load a project.');
       URL.revokeObjectURL(manifestUrl);
       return;
     }
 
-    if (mapFile || gridFile || terrainFile || sidesFile) {
+    if (mapFile || gridFile || terrainFile || sidesFile || nodesFile) {
       try {
+        if (nodesFile) {
+          const mapDataUrl = mapFile ? await readFile(mapFile, 'dataurl') : null;
+          const mapImg = mapDataUrl ? await loadImage(mapDataUrl) : null;
+          const nodesText = await readFile(nodesFile);
+          const project = makeBlankProject({ mapFamily: 'ptp' });
+          project.name = nodesFile.name.replace(/\.json$/i, '');
+          project.mapImage = mapImg;
+          project.imageFull = mapImg ? [mapImg.naturalWidth, mapImg.naturalHeight] : [800, 600];
+          project.nodesFile = nodesFile.name;
+          project._nodesDocument = JSON.parse(nodesText);
+          await loadAndRender(project);
+          ui.setProjectSource([mapFile, nodesFile].filter(Boolean).map((f) => f.name).join(' + '));
+          finishProjectLoad();
+          return;
+        }
         const project = await loadUserFiles(mapFile, gridFile, terrainFile, sidesFile);
         await loadAndRender(project);
         ui.setProjectSource([mapFile, gridFile, terrainFile, sidesFile].filter(Boolean).map((f) => f.name).join(' + '));
@@ -878,10 +971,12 @@ async function main() {
         // lived only in the tab (ate Ray's edge fixes, 2026-07-04).
         const land = Object.keys(store.state.terrain.terrain || {}).length;
         const sides = Object.keys(store.state.hexsides || {}).length;
+        const ptpEdges = store.countPtpEdges();
         const feats = countPointFeatures(store.exportProjectObject());
         const named = Object.keys(store.state.names || {}).length;
         const groups = (store.state.groups || []).length;
-        if (land > 0 || sides > 0 || feats > 0 || named > 0 || groups > 0) {
+        const nodes = Object.keys(store.state.nodes || {}).length;
+        if (land > 0 || sides > 0 || feats > 0 || named > 0 || groups > 0 || ptpEdges > 0 || nodes > 0) {
           const project = store.exportProjectObject();
           localStorage.setItem(
             sessionKeyForName(project.name),

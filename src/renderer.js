@@ -4,6 +4,9 @@ import {
   worldToScreen, screenToWorld, edgeNeighbor, edgeMidpoint, hexRadius, nearestEdge,
   isValidCell, parseCCRR, EDGE_HIT_TOLERANCE, EDGE_SNAP_ASSIST_TOLERANCE
 } from './geometry.js';
+import {
+  nearestNode, nearestPtpEdge, nodePairKey, NODE_HIT_TOLERANCE, PTP_EDGE_HIT_TOLERANCE
+} from './ptp.js';
 
 const TERRAIN_LABEL_MIN_SCALE = 0.08;
 const TERRAIN_LABEL_FADE_SCALE = 0.14;
@@ -63,6 +66,17 @@ export class MapRenderer {
       onPlace: null,
       onEdit: null
     };
+
+    this.ptpEdgePaint = {
+      active: false,
+      typeKey: null,
+      pendingNodeId: null,
+      onNodeClick: null,
+      onEdgeSelect: null,
+      onEdgeDelete: null
+    };
+    this.selectedPtpEdge = null;
+    this.ptpHover = null;
 
     this.shiftHeld = false;
     this.altHeld = false;
@@ -166,6 +180,61 @@ export class MapRenderer {
     if (config.onPlace === undefined && this.featurePaint.onPlace) next.onPlace = this.featurePaint.onPlace;
     if (config.onEdit === undefined && this.featurePaint.onEdit) next.onEdit = this.featurePaint.onEdit;
     this.featurePaint = next;
+  }
+
+  setPtpEdgePaint(config) {
+    this.ptpEdgePaint = { ...this.ptpEdgePaint, ...config };
+    if (!this.ptpEdgePaint.active) {
+      this.ptpEdgePaint.pendingNodeId = null;
+      this.ptpHover = null;
+    }
+    this.draw();
+  }
+
+  clearPtpSelection() {
+    this.selectedPtpEdge = null;
+    this.ptpEdgePaint.pendingNodeId = null;
+    this.ptpHover = null;
+    this.draw();
+  }
+
+  setSelectedPtpEdge(edge) {
+    this.selectedPtpEdge = edge;
+    this.draw();
+  }
+
+  _ptpHitTolerance(scaleFactor) {
+    const s = this.view.baseScale * this.view.zoom;
+    return scaleFactor / Math.max(s, 0.02);
+  }
+
+  _ptpNodeAtScreen(pt) {
+    const world = screenToWorld(pt, this.view);
+    return nearestNode(world, this.store.state.nodes, this._ptpHitTolerance(NODE_HIT_TOLERANCE));
+  }
+
+  _ptpEdgeAtScreen(pt) {
+    const world = screenToWorld(pt, this.view);
+    return nearestPtpEdge(
+      world,
+      this.store.state.nodes,
+      this.store.state.ptpEdges,
+      this._ptpHitTolerance(PTP_EDGE_HIT_TOLERANCE)
+    );
+  }
+
+  _ptpEdgeFeatureDecl(typeKey) {
+    const palette = this.store.getPalette();
+    return (palette?.edgeFeatures || []).find((f) => f.key === typeKey) || null;
+  }
+
+  _ptpEdgeStroke(feature, selected = false) {
+    if (!feature) return { color: '#888', width: 2, dash: [] };
+    return {
+      color: feature.color || '#888',
+      width: selected ? 4 : (feature.width || 3),
+      dash: feature.dash ? [6, 4] : []
+    };
   }
 
   _edgeSnapAssistActive(e = null) {
@@ -324,6 +393,13 @@ export class MapRenderer {
         return;
       }
       if (e.button !== 0) return;
+      if (this.store.isPtp() && this.ptpEdgePaint.active) {
+        this.isDragging = true;
+        this.clickMoved = false;
+        this.dragStart = { x: e.clientX, y: e.clientY };
+        wrap.setPointerCapture(e.pointerId);
+        return;
+      }
       if (this.nudgeMode) {
         this.isDragging = true;
         const off = this.store.state.mapOffset || [0, 0];
@@ -379,6 +455,20 @@ export class MapRenderer {
         this.view.panX = this.panStart.x + dx;
         this.view.panY = this.panStart.y + dy;
         this.draw();
+        return;
+      }
+      if (this.store.isPtp() && this.ptpEdgePaint.active) {
+        const pt = this._eventToScreen(e);
+        if (!this.isDragging) {
+          const node = this._ptpNodeAtScreen(pt);
+          const edge = node ? null : this._ptpEdgeAtScreen(pt);
+          this.ptpHover = node || edge;
+          this.draw();
+          return;
+        }
+        const dx = e.clientX - this.dragStart.x;
+        const dy = e.clientY - this.dragStart.y;
+        if (Math.hypot(dx, dy) > 3) this.clickMoved = true;
         return;
       }
       if (this.nudgeMode) {
@@ -472,6 +562,11 @@ export class MapRenderer {
       wrap.releasePointerCapture(e.pointerId);
       if (this.middlePan) {
         this.middlePan = false;
+        return;
+      }
+      if (this.store.isPtp() && this.ptpEdgePaint.active) {
+        const pt = this._eventToScreen(e);
+        if (!this.clickMoved) this._ptpClickAt(pt, e);
         return;
       }
       if (this.nudgeMode) {
@@ -670,6 +765,28 @@ export class MapRenderer {
     this.draw();
   }
 
+  _ptpClickAt(pt, e) {
+    const altDelete = !!(e?.altKey);
+    const node = this._ptpNodeAtScreen(pt);
+    if (node) {
+      if (this.ptpEdgePaint.onNodeClick) {
+        this.ptpEdgePaint.onNodeClick(node.id, { altDelete });
+      }
+      return;
+    }
+    const edge = this._ptpEdgeAtScreen(pt);
+    if (edge) {
+      if (altDelete) {
+        if (this.ptpEdgePaint.onEdgeDelete) this.ptpEdgePaint.onEdgeDelete(edge);
+        return;
+      }
+      if (this.ptpEdgePaint.onEdgeSelect) this.ptpEdgePaint.onEdgeSelect(edge);
+      return;
+    }
+    this.clearPtpSelection();
+    this.onPtpClear?.();
+  }
+
   _clickAt(e) {
     const pt = this._eventToScreen(e);
     const world = screenToWorld(pt, this.view);
@@ -736,12 +853,31 @@ export class MapRenderer {
     ctx.clearRect(0, 0, width, height);
 
     const hasGrid = state.grid && this.store.centers;
-    if (!img && !hasGrid) {
+    const hasPtp = this.store.isPtp() && Object.keys(state.nodes || {}).length > 0;
+    if (!img && !hasGrid && !hasPtp) {
       ctx.fillStyle = '#0b0c0e';
       ctx.fillRect(0, 0, width, height);
       ctx.fillStyle = '#555';
       ctx.font = '14px var(--mono)';
       ctx.fillText('Load a project to begin', 20, height / 2);
+      return;
+    }
+
+    if (hasPtp) {
+      if (img) {
+        this._drawBaseMap(ctx, this.view);
+        if (this.mapDim > 0) {
+          ctx.save();
+          ctx.fillStyle = `rgba(10,11,14,${this.mapDim})`;
+          ctx.fillRect(0, 0, width, height);
+          ctx.restore();
+        }
+      } else {
+        ctx.fillStyle = '#eaddcf';
+        ctx.fillRect(0, 0, width, height);
+      }
+      this._drawPtpEdges(ctx, this.view);
+      this._drawPtpNodes(ctx, this.view);
       return;
     }
 
@@ -811,6 +947,81 @@ export class MapRenderer {
     ctx.translate(view.panX + off[0] * s, view.panY + off[1] * s);
     ctx.scale(s, s);
     ctx.drawImage(img, 0, 0, fw || img.naturalWidth, fh || img.naturalHeight);
+    ctx.restore();
+  }
+
+  _drawPtpEdges(ctx, view) {
+    const nodes = this.store.state.nodes || {};
+    const edges = this.store.state.ptpEdges || {};
+    const s = view.baseScale * view.zoom;
+    ctx.save();
+    ctx.translate(view.panX, view.panY);
+    ctx.scale(s, s);
+    ctx.lineCap = 'round';
+    for (const [key, type] of Object.entries(edges)) {
+      const parts = key.split('|');
+      if (parts.length !== 2) continue;
+      const na = nodes[parts[0]];
+      const nb = nodes[parts[1]];
+      if (!na || !nb) continue;
+      const selected = this.selectedPtpEdge?.edgeKey === key;
+      const feature = this._ptpEdgeFeatureDecl(type);
+      const stroke = this._ptpEdgeStroke(feature, selected);
+      ctx.beginPath();
+      ctx.moveTo(na.x, na.y);
+      ctx.lineTo(nb.x, nb.y);
+      ctx.strokeStyle = stroke.color;
+      ctx.lineWidth = stroke.width / s;
+      ctx.setLineDash(stroke.dash.map((d) => d / s));
+      ctx.stroke();
+    }
+    const pending = this.ptpEdgePaint.pendingNodeId;
+    if (pending && nodes[pending] && this.ptpHover?.id && nodes[this.ptpHover.id]) {
+      const a = nodes[pending];
+      const b = nodes[this.ptpHover.id];
+      if (b.id !== pending) {
+        const feature = this._ptpEdgeFeatureDecl(this.ptpEdgePaint.typeKey);
+        const stroke = this._ptpEdgeStroke(feature, false);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.globalAlpha = 0.45;
+        ctx.strokeStyle = stroke.color;
+        ctx.lineWidth = stroke.width / s;
+        ctx.setLineDash(stroke.dash.map((d) => d / s));
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
+    ctx.restore();
+  }
+
+  _drawPtpNodes(ctx, view) {
+    const nodes = this.store.state.nodes || {};
+    const s = view.baseScale * view.zoom;
+    const pending = this.ptpEdgePaint.pendingNodeId;
+    const hoverId = this.ptpHover?.id || null;
+    ctx.save();
+    ctx.translate(view.panX, view.panY);
+    ctx.scale(s, s);
+    for (const node of Object.values(nodes)) {
+      const selected = pending === node.id;
+      const hovered = hoverId === node.id;
+      const r = (selected || hovered ? 7 : 5) / s;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = selected ? '#ff7a1a' : (hovered ? '#ffd080' : '#f0f0f0');
+      ctx.fill();
+      ctx.strokeStyle = selected ? '#ff7a1a' : '#1a1a1a';
+      ctx.lineWidth = 1.5 / s;
+      ctx.stroke();
+      const label = node.name || node.id;
+      ctx.font = `${Math.max(10, 11 / s)}px var(--font-data)`;
+      ctx.fillStyle = '#1a1a1a';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(label, node.x, node.y + r + 2 / s);
+    }
     ctx.restore();
   }
 

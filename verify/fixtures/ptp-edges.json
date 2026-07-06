@@ -1,0 +1,12 @@
+{
+  "_comment": "fixture edges for ptp-check",
+  "meta": {
+    "game": "ptp-fixture",
+    "nodesFile": "ptp-nodes.json",
+    "count": { "road": 1, "rail": 1 }
+  },
+  "edges": [
+    { "a": "alpha", "b": "beta", "type": "road" },
+    { "a": "beta", "b": "gamma", "type": "rail" }
+  ]
+}

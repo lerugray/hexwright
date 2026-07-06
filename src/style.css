@@ -1620,4 +1620,34 @@ button.active {
   }
 }
 
+/* Point-to-point map family: hide hex-only chrome, show ptp-only controls */
+body:not(.map-family-ptp) .ptp-only { display: none !important; }
+body.map-family-ptp .hex-only { display: none !important; }
+body.map-family-ptp #export-sides-file,
+body.map-family-ptp #export-sides-copy,
+body.map-family-ptp #export-terrain-file,
+body.map-family-ptp #export-terrain-copy,
+body.map-family-ptp #export-features-file,
+body.map-family-ptp #export-features-copy,
+body.map-family-ptp #export-names-file,
+body.map-family-ptp #export-names-copy,
+body.map-family-ptp #export-overlay,
+body.map-family-ptp #toggle-anomaly { display: none !important; }
+
+#ptp-edge-inspector {
+  position: fixed;
+  top: calc(var(--strip-h, 40px) + var(--sp-3, 12px));
+  right: var(--sp-3, 12px);
+  max-height: calc(100vh - var(--strip-h, 40px) - 2 * var(--sp-3, 12px));
+  overflow-y: auto;
+}
+
+#ptp-edge-inspector[hidden] { display: none !important; }
+
+#ptp-orphan-warn.warn {
+  padding: 4px 12px 8px;
+  font-size: var(--fs-11, 11px);
+  color: var(--hx-warn, #e2b049);
+}
+
 

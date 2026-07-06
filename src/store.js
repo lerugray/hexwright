@@ -1,4 +1,9 @@
 import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency, enumerateGridLattice, validateGrid, parseCCRR, isValidCell, hexCenter } from './geometry.js';
+import {
+  validateNodesDocument, nodesDocumentToMap, validateEdgesDocument, edgesArrayToMap,
+  edgesMapToArray, nodePairKey, normalizeNodePair, countEdgesByType,
+  findOrphanNodeIds, findMissingNodeRefs
+} from './ptp.js';
 
 const MAX_UNDO = 64;
 const DEFAULT_PALETTE_URL = 'palettes/default.json';
@@ -237,6 +242,7 @@ export class ProjectStore {
       name: '',
       mapImage: null,
       imageFull: [0, 0],
+      mapFamily: 'hex',
       grid: null,
       terrain: { terrain: {} },
       features: {},
@@ -247,11 +253,19 @@ export class ProjectStore {
       groups: [],
       traces: [],
       loadedHexsides: null,
+      nodes: {},
+      nodesMeta: {},
+      nodesFile: '',
+      ptpEdges: {},
       mapOffset: [0, 0],
       schemaVersion: 2,
       blankLattice: false,
       paletteMigrationCursor: 0
     };
+  }
+
+  isPtp() {
+    return this.state.mapFamily === 'ptp';
   }
 
   onChange(cb) { this.listeners.push(cb); }
@@ -321,6 +335,7 @@ export class ProjectStore {
       name: project.name || '',
       mapImage: project.mapImage || null,
       imageFull: project.imageFull || [0, 0],
+      mapFamily: project.mapFamily === 'ptp' ? 'ptp' : 'hex',
       grid: project.grid || null,
       terrain: { terrain: deepClone(migrated.terrain || {}) },
       features: deepClone(migrated.features || {}),
@@ -331,6 +346,10 @@ export class ProjectStore {
       groups: deepClone(migrated.groups || []),
       traces: project.traces || [],
       loadedHexsides: project.hexsides ? deepClone(project.hexsides) : null,
+      nodes: deepClone(project.nodes || {}),
+      nodesMeta: deepClone(project.nodesMeta || {}),
+      nodesFile: project.nodesFile || '',
+      ptpEdges: {},
       mapOffset: Array.isArray(project.mapOffset)
         ? [Number(project.mapOffset[0]) || 0, Number(project.mapOffset[1]) || 0]
         : [0, 0],
@@ -338,6 +357,12 @@ export class ProjectStore {
       blankLattice: project.blankLattice === true,
       paletteMigrationCursor: terrainMigrations.length
     };
+
+    if (Array.isArray(project.edges?.edges)) {
+      this.state.ptpEdges = edgesArrayToMap(project.edges.edges);
+    } else if (project.ptpEdges && typeof project.ptpEdges === 'object' && !Array.isArray(project.ptpEdges)) {
+      this.state.ptpEdges = deepClone(project.ptpEdges);
+    }
 
     this.rebuildIndex();
     this.notify('project');
@@ -466,6 +491,12 @@ export class ProjectStore {
   }
 
   rebuildIndex() {
+    if (this.isPtp()) {
+      this.centers = null;
+      this.adj = null;
+      this.edgeIndex = null;
+      return;
+    }
     if (!this.state.grid) {
       this.centers = null;
       this.adj = null;
@@ -525,7 +556,8 @@ export class ProjectStore {
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance),
-      groups: deepClone(this.state.groups || [])
+      groups: deepClone(this.state.groups || []),
+      ptpEdges: deepClone(this.state.ptpEdges || {})
     };
     if (this.strokeActive) {
       if (!this.strokeSnap) this.strokeSnap = snap;
@@ -570,7 +602,8 @@ export class ProjectStore {
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance),
-      groups: deepClone(this.state.groups || [])
+      groups: deepClone(this.state.groups || []),
+      ptpEdges: deepClone(this.state.ptpEdges || {})
     });
     this.applySnap(snap);
     this.rebuildIndex();
@@ -588,7 +621,8 @@ export class ProjectStore {
       hexFeatures: deepClone(this.state.hexFeatures),
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance),
-      groups: deepClone(this.state.groups || [])
+      groups: deepClone(this.state.groups || []),
+      ptpEdges: deepClone(this.state.ptpEdges || {})
     });
     this.applySnap(snap);
     this.rebuildIndex();
@@ -604,6 +638,7 @@ export class ProjectStore {
     this.state.hexsides = snap.hexsides;
     this.state.provenance = snap.provenance;
     this.state.groups = snap.groups || [];
+    this.state.ptpEdges = snap.ptpEdges || {};
   }
 
   // ----------------- terrain -----------------
@@ -814,6 +849,98 @@ export class ProjectStore {
 
   exportNamesJson() {
     return JSON.stringify(this.exportNamesObject(), null, 2);
+  }
+
+  importNodes(input, opts = {}) {
+    const data = typeof input === 'string' ? JSON.parse(input) : input;
+    validateNodesDocument(data);
+    const nodes = nodesDocumentToMap(data);
+    if (!opts.skipUndo) this.pushUndo();
+    this.state.mapFamily = 'ptp';
+    this.state.nodes = nodes;
+    this.state.nodesMeta = deepClone(data.meta || {});
+    if (opts.nodesFile) this.state.nodesFile = String(opts.nodesFile);
+    this.rebuildIndex();
+    this.notify('nodes');
+    return Object.keys(nodes).length;
+  }
+
+  importPtpEdges(input, opts = {}) {
+    const data = typeof input === 'string' ? JSON.parse(input) : input;
+    validateEdgesDocument(data);
+    const imported = edgesArrayToMap(data.edges);
+    if (!opts.skipUndo) this.pushUndo();
+    this.state.ptpEdges = imported;
+    if (data.meta && typeof data.meta === 'object') {
+      this.state.nodesMeta = { ...this.state.nodesMeta, ...deepClone(data.meta) };
+    }
+    this.notify('ptpEdges');
+    return data.edges.length;
+  }
+
+  setPtpEdge(a, b, type) {
+    const pair = normalizeNodePair(a, b);
+    if (!pair || !type) return false;
+    if (!this.state.nodes[pair.a] || !this.state.nodes[pair.b]) return false;
+    const key = nodePairKey(pair.a, pair.b);
+    const canonical = String(type).trim();
+    if (this.state.ptpEdges[key] === canonical) return false;
+    this.pushUndo();
+    this.state.ptpEdges[key] = canonical;
+    this.notify('ptpEdges');
+    return true;
+  }
+
+  deletePtpEdge(a, b) {
+    const pair = normalizeNodePair(a, b);
+    if (!pair) return false;
+    const key = nodePairKey(pair.a, pair.b);
+    if (!this.state.ptpEdges[key]) return false;
+    this.pushUndo();
+    delete this.state.ptpEdges[key];
+    this.notify('ptpEdges');
+    return true;
+  }
+
+  getPtpEdge(a, b) {
+    const pair = normalizeNodePair(a, b);
+    if (!pair) return null;
+    return this.state.ptpEdges[nodePairKey(pair.a, pair.b)] || null;
+  }
+
+  countPtpEdges() {
+    return Object.keys(this.state.ptpEdges || {}).length;
+  }
+
+  getPtpEdgeCounts() {
+    return countEdgesByType(this.state.ptpEdges);
+  }
+
+  getOrphanNodeIds() {
+    return findOrphanNodeIds(this.state.nodes, this.state.ptpEdges);
+  }
+
+  getMissingPtpNodeRefs() {
+    return findMissingNodeRefs(this.state.nodes, this.state.ptpEdges);
+  }
+
+  exportPtpEdgesObject() {
+    const edges = edgesMapToArray(this.state.ptpEdges);
+    const count = countEdgesByType(this.state.ptpEdges);
+    const meta = {
+      game: this.state.nodesMeta?.game || this.state.name || '',
+      nodesFile: this.state.nodesFile || '',
+      count
+    };
+    return {
+      _comment: `edited in Hexwright v2.1 ${todayStamp()}`,
+      meta,
+      edges
+    };
+  }
+
+  exportPtpEdgesJson() {
+    return JSON.stringify(this.exportPtpEdgesObject(), null, 2);
   }
 
   // ----------------- groups (multi-hex assignments) -----------------
@@ -1309,11 +1436,12 @@ export class ProjectStore {
   }
 
   exportProjectObject() {
-    return {
+    const base = {
       schemaVersion: 2,
       name: this.state.name,
       mapImage: null, // not serializable
       imageFull: deepClone(this.state.imageFull),
+      mapFamily: this.state.mapFamily || 'hex',
       grid: deepClone(this.state.grid),
       terrain: this.exportTerrainObject(),
       features: this.exportFeaturesObject(),
@@ -1327,6 +1455,13 @@ export class ProjectStore {
       paletteMigrationCursor: this.state.paletteMigrationCursor || 0,
       ...(this.state.blankLattice ? { blankLattice: true } : {})
     };
+    if (this.isPtp()) {
+      base.nodes = deepClone(this.state.nodes);
+      base.nodesMeta = deepClone(this.state.nodesMeta || {});
+      base.nodesFile = this.state.nodesFile || '';
+      base.ptpEdges = deepClone(this.state.ptpEdges || {});
+    }
+    return base;
   }
 
   // ----------------- read helpers -----------------

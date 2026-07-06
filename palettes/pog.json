@@ -1,0 +1,8 @@
+{
+  "name": "Paths of Glory",
+  "edgeFeatures": [
+    { "key": "normal", "label": "Normal", "color": "#4a8f4a" },
+    { "key": "restricted", "label": "Restricted", "color": "#c9a06a", "dash": true },
+    { "key": "sea", "label": "Sea", "color": "#2878ff" }
+  ]
+}

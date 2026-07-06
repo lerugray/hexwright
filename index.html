@@ -66,6 +66,14 @@
             <span>Import TWU layer</span>
             <input type="file" id="import-twu" accept=".json,application/json" hidden />
           </label>
+          <label class="file-btn ptp-only" title="Import nodes.json (point-to-point map)">
+            <span>Nodes</span>
+            <input type="file" id="load-nodes" accept=".json,application/json" hidden />
+          </label>
+          <label class="file-btn ptp-only" title="Import edges.json">
+            <span>Import edges</span>
+            <input type="file" id="import-edges" accept=".json,application/json" hidden />
+          </label>
           <label class="file-btn" title="Load palette JSON">
             <span>Palette</span>
             <input type="file" id="load-palette" accept=".json,application/json" hidden />
@@ -84,7 +92,9 @@
           <button id="export-features-copy" type="button">Copy features</button>
           <button id="export-names-file" type="button">Export names.json</button>
           <button id="export-names-copy" type="button">Copy names</button>
-          <button id="export-twu" type="button">TWU rivers+rail</button>
+          <button id="export-twu" type="button" class="hex-only">TWU rivers+rail</button>
+          <button id="export-edges-file" type="button" class="ptp-only">Export edges.json</button>
+          <button id="export-edges-copy" type="button" class="ptp-only">Copy edges</button>
           <button id="export-overlay" type="button" title="Export classification PNG">Classification PNG</button>
         </div>
       </div>
@@ -128,6 +138,12 @@
     <div class="head">
       <span class="title">Layers</span>
       <span class="head-meta">Land <span id="count-land" class="hx-data">0</span></span>
+    </div>
+
+    <div id="ptp-layer-wrap" hidden>
+      <div class="layer-section-label">Point-to-point</div>
+      <div id="ptp-layer-meta" class="hx-data dimmed"></div>
+      <div id="ptp-orphan-warn" class="hx-data warn" hidden></div>
     </div>
 
     <div id="feature-layer-rows"></div>
@@ -270,6 +286,22 @@
     <div class="foot-hint">
       Click an edge on the diagram, then tap an ink to add or remove it.
       Edges show every ink they carry — nothing hides until checked.
+    </div>
+  </aside>
+
+  <aside id="ptp-edge-inspector" class="panel feature-insp hx-ui" hidden aria-label="Edge inspector">
+    <div class="head">
+      <span class="title" id="ptp-edge-insp-title">Edge</span>
+      <button type="button" id="ptp-edge-insp-close" class="collapse hx-data" aria-label="Close edge inspector">×</button>
+    </div>
+    <div class="sect" style="border-top: 0;">
+      <label class="field-row">
+        <span class="lbl">Type</span>
+        <select id="ptp-edge-insp-type" class="field-input"></select>
+      </label>
+    </div>
+    <div class="feat-insp-actions">
+      <button type="button" id="ptp-edge-insp-delete" class="btn danger">Delete</button>
     </div>
   </aside>
 

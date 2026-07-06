@@ -1,0 +1,7 @@
+{
+  "name": "PTP fixture",
+  "edgeFeatures": [
+    { "key": "road", "label": "Road", "color": "#b96b1f" },
+    { "key": "rail", "label": "Rail", "color": "#7a4fa3", "dash": true }
+  ]
+}
