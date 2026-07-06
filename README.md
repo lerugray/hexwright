@@ -55,6 +55,45 @@ deduped) that round-trips on import. The layers panel warns about orphan
 geographic nodes (zero edges). Verify suite: `node verify/ptp-check.mjs`.
 Hex mode is untouched by all of this.
 
+### Node features (hxw-005)
+
+Nodes carry palette-defined tags via a per-game **node feature palette**
+(`palette.nodeFeatures`, alongside `edgeFeatures`): each entry is a `flag`
+(on/off, e.g. VP space), a `level` (a bounded number, e.g. fortress
+strength) or an `enum` (one of a fixed value set, e.g. terrain type),
+with a display `color` and a short `badge` glyph.
+
+Press `P` in a point-to-point project to enter **Node features** mode (the
+same key as the hex-mode Features tool — it's contextual per map family).
+Pick a feature from the brush card (or `1`–`0`), then:
+
+- **Default (select-not-paint):** click any node to open its **node
+  inspector** — every palette feature for that node, editable at once
+  (checkboxes for flags, a number stepper for levels, a dropdown for
+  enums). Save commits the whole batch in one undo step; Clear all wipes
+  every feature on that node.
+- **Paint mode** (toggle in the brush card): click a node to apply the
+  armed feature+value directly, no inspector — this is the fast path for
+  tagging hundreds of spaces. Alt-click clears the armed feature from a
+  node. For `level`/`enum` features, pick the value to paint (a stepper or
+  value chips) before clicking nodes.
+
+Tagged nodes show small colored **badge chips** stacked above the marker —
+flags show their `badge` glyph, levels show the number, enums show the
+first two letters of the value. The layers panel lists each declared
+feature with a visibility eye toggle, a live tagged-count, and a
+clear-layer control (arm/confirm, same pattern as hexside layers).
+
+Export/import: **node-attrs.json**
+(`{"meta":{version,game,exported},"spaces":{<nodeId>:{<featureKey>:value}}}`,
+sorted by node id, round-trips) via File ▾ / Export ▾. A manifest's
+`"attrs"` field points at a node-attrs.json to pre-load — see
+`local/pog-p2p.json` / `local/ftp-p2p.json`. `tools/convert-space-attrs.mjs`
+converts a commission repo's raw `space-attrs-draft.json` (rules-mining
+output, per-game field names) into this shape reproducibly, via an
+explicit per-game field map — re-run it any time a draft file changes.
+Verify suite: `node verify/attrs-check.mjs`.
+
 ## Terrain display
 
 `L` toggles terrain labels: each hex shows its palette `abbr` (a short code, e.g. `W` for woods)

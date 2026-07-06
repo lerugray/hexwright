@@ -4,5 +4,11 @@
     { "key": "road", "label": "Road", "color": "#b96b1f" },
     { "key": "rail", "label": "Rail", "color": "#7a4fa3", "dash": true },
     { "key": "river", "label": "River", "color": "#2878ff" }
+  ],
+  "nodeFeatures": [
+    { "key": "resource", "label": "Resource", "kind": "flag", "color": "#8a6d3b", "badge": "R" },
+    { "key": "port", "label": "Port", "kind": "flag", "color": "#2878ff", "badge": "P" },
+    { "key": "blockade-runner", "label": "Blockade runner", "kind": "flag", "color": "#7a4fa3", "badge": "BR" },
+    { "key": "capital", "label": "Capital", "kind": "flag", "color": "#b8860b", "badge": "★" }
   ]
 }

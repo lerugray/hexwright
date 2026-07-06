@@ -297,6 +297,43 @@ label.file-btn:focus-within {
   color: var(--muted);
 }
 
+/* Node-features paint controls (brush-card): the paint-mode toggle + the
+   active-feature's value picker (level stepper or enum value chips). */
+.node-paint-controls {
+  padding: var(--sp-2, 8px) var(--sp-2, 8px) var(--sp-3, 12px);
+  border-top: 1px solid var(--hx-hairline, var(--chrome-2));
+}
+
+#node-paint-mode-toggle {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--rad-s, 6px);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: var(--fs-12, 12px);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#node-paint-mode-toggle:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+#node-paint-mode-toggle.on {
+  color: var(--ink, #1a1a1a);
+  background: var(--accent, #ff7a1a);
+  border-color: transparent;
+}
+
+.node-paint-value-row {
+  margin-top: var(--sp-2, 8px);
+}
+
+.node-paint-value-row .ink-list {
+  padding: 0;
+}
+
 #layers-panel {
   position: fixed;
   top: calc(var(--strip-h, 40px) + var(--sp-3, 12px));

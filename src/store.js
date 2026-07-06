@@ -151,6 +151,68 @@ export function syntheticHexFeaturesFromFeatures(featuresState) {
   }));
 }
 
+export function validateNodeAttrsDocument(data, label = 'node-attrs') {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(`Expected ${label} shape: {"meta":{...},"spaces":{<nodeId>:{<featureKey>:value}}}.`);
+  }
+  if (!data.spaces || typeof data.spaces !== 'object' || Array.isArray(data.spaces)) {
+    throw new Error(`Expected ${label}.spaces to be an object.`);
+  }
+  for (const [nodeId, attrs] of Object.entries(data.spaces)) {
+    if (attrs !== null && (typeof attrs !== 'object' || Array.isArray(attrs))) {
+      throw new Error(`${label}.spaces[${JSON.stringify(nodeId)}] must be an object.`);
+    }
+  }
+  return data;
+}
+
+// Converts a commission-repo "space-attrs-draft.json" (arbitrary per-game field
+// names, one row per node id) into the native node-attrs `spaces` shape, given an
+// explicit fieldMap: { draftKey: { feature: paletteFeatureKey, kind: 'flag'|'level'|'enum' } }.
+// - flag: any non-null/true-ish value (typically `true`) sets the palette flag to true.
+// - level: coerced to a finite Number.
+// - enum: coerced to a trimmed string; skipped + reported if not in the palette
+//   feature's declared `values` (never silently written as an invalid enum value).
+// Draft fields absent from fieldMap (e.g. free-text `notes`) are ignored — the
+// mapping is deliberately explicit and per-game, not auto-sniffed.
+export function draftSpacesToNodeAttrs(draftSpaces, fieldMap, paletteNodeFeatures = []) {
+  const featuresByKey = new Map((paletteNodeFeatures || []).map((f) => [f.key, f]));
+  const spaces = {};
+  const skipped = [];
+  for (const [nodeId, draftAttrs] of Object.entries(draftSpaces || {})) {
+    if (!draftAttrs || typeof draftAttrs !== 'object') continue;
+    const bucket = {};
+    for (const [draftKey, mapping] of Object.entries(fieldMap || {})) {
+      if (!mapping || !(draftKey in draftAttrs)) continue;
+      const raw = draftAttrs[draftKey];
+      if (raw === null || raw === undefined || raw === '') continue;
+      const featureKey = mapping.feature;
+      let value;
+      if (mapping.kind === 'flag') {
+        // Any surviving non-null/''/false value counts as tagged — draft flag
+        // fields are sometimes `true`, sometimes a non-boolean marker (e.g. PoG's
+        // `capital` holds a country code string) that still means "flag is set".
+        // Explicit `false` is the one value that means "not tagged".
+        if (raw !== false) value = true;
+      } else if (mapping.kind === 'level') {
+        const n = Number(raw);
+        if (Number.isFinite(n)) value = n;
+      } else if (mapping.kind === 'enum') {
+        const v = String(raw).trim();
+        const decl = featuresByKey.get(featureKey);
+        if (decl?.values && !decl.values.includes(v)) {
+          skipped.push({ nodeId, draftKey, value: v, reason: `"${v}" not in ${featureKey} palette values` });
+        } else if (v) {
+          value = v;
+        }
+      }
+      if (value !== undefined) bucket[featureKey] = value;
+    }
+    if (Object.keys(bucket).length) spaces[nodeId] = bucket;
+  }
+  return { spaces, skipped };
+}
+
 function parseTwuPairArrayEntry(entry, label, index) {
   if (!Array.isArray(entry) || entry.length !== 2) {
     throw new Error(`${label} index ${index} must be a 2-element [a,b] array.`);
@@ -257,6 +319,7 @@ export class ProjectStore {
       nodesMeta: {},
       nodesFile: '',
       ptpEdges: {},
+      nodeAttrs: {},
       mapOffset: [0, 0],
       schemaVersion: 2,
       blankLattice: false,
@@ -350,6 +413,7 @@ export class ProjectStore {
       nodesMeta: deepClone(project.nodesMeta || {}),
       nodesFile: project.nodesFile || '',
       ptpEdges: {},
+      nodeAttrs: {},
       mapOffset: Array.isArray(project.mapOffset)
         ? [Number(project.mapOffset[0]) || 0, Number(project.mapOffset[1]) || 0]
         : [0, 0],
@@ -362,6 +426,14 @@ export class ProjectStore {
       this.state.ptpEdges = edgesArrayToMap(project.edges.edges);
     } else if (project.ptpEdges && typeof project.ptpEdges === 'object' && !Array.isArray(project.ptpEdges)) {
       this.state.ptpEdges = deepClone(project.ptpEdges);
+    }
+
+    // Raw internal nodeAttrs map (nodeId -> {featureKey: value}), the autosave/
+    // exportProjectObject shape. The manifest-pointer `attrs` doc ({meta,spaces})
+    // is a DIFFERENT shape, loaded separately via importNodeAttrs — same split as
+    // ptpEdges (raw map here) vs edges (meta+array doc via importPtpEdges).
+    if (project.nodeAttrs && typeof project.nodeAttrs === 'object' && !Array.isArray(project.nodeAttrs)) {
+      this.state.nodeAttrs = deepClone(project.nodeAttrs);
     }
 
     this.rebuildIndex();
@@ -557,7 +629,8 @@ export class ProjectStore {
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance),
       groups: deepClone(this.state.groups || []),
-      ptpEdges: deepClone(this.state.ptpEdges || {})
+      ptpEdges: deepClone(this.state.ptpEdges || {}),
+      nodeAttrs: deepClone(this.state.nodeAttrs || {})
     };
     if (this.strokeActive) {
       if (!this.strokeSnap) this.strokeSnap = snap;
@@ -603,7 +676,8 @@ export class ProjectStore {
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance),
       groups: deepClone(this.state.groups || []),
-      ptpEdges: deepClone(this.state.ptpEdges || {})
+      ptpEdges: deepClone(this.state.ptpEdges || {}),
+      nodeAttrs: deepClone(this.state.nodeAttrs || {})
     });
     this.applySnap(snap);
     this.rebuildIndex();
@@ -622,7 +696,8 @@ export class ProjectStore {
       hexsides: deepClone(this.state.hexsides),
       provenance: deepClone(this.state.provenance),
       groups: deepClone(this.state.groups || []),
-      ptpEdges: deepClone(this.state.ptpEdges || {})
+      ptpEdges: deepClone(this.state.ptpEdges || {}),
+      nodeAttrs: deepClone(this.state.nodeAttrs || {})
     });
     this.applySnap(snap);
     this.rebuildIndex();
@@ -639,6 +714,7 @@ export class ProjectStore {
     this.state.provenance = snap.provenance;
     this.state.groups = snap.groups || [];
     this.state.ptpEdges = snap.ptpEdges || {};
+    this.state.nodeAttrs = snap.nodeAttrs || {};
   }
 
   // ----------------- terrain -----------------
@@ -941,6 +1017,149 @@ export class ProjectStore {
 
   exportPtpEdgesJson() {
     return JSON.stringify(this.exportPtpEdgesObject(), null, 2);
+  }
+
+  // ----------------- node attrs (point-to-point) -----------------
+  // Palette-defined `nodeFeatures` tagging on p2p nodes: {kind:"flag"|"level"|"enum"}.
+  // Stored as this.state.nodeAttrs = { nodeId: { featureKey: value, ... } }. Mirrors
+  // the hex point-feature pattern (getPointFeature/setPointFeature/etc) one layer
+  // down: value here is a raw scalar (true / level number / enum string), not a
+  // {name, attrs} record, since node features have no free-form sub-attrs.
+
+  getNodeAttrs(nodeId) {
+    return deepClone(this.state.nodeAttrs?.[nodeId] || {});
+  }
+
+  countNodeFeatureTagged(featureKey) {
+    let count = 0;
+    for (const bucket of Object.values(this.state.nodeAttrs || {})) {
+      if (bucket && Object.prototype.hasOwnProperty.call(bucket, featureKey)) count++;
+    }
+    return count;
+  }
+
+  setNodeAttr(nodeId, featureKey, value) {
+    if (!this.state.nodes[nodeId] || !featureKey) return false;
+    if (value === null || value === undefined || value === '') {
+      return this.clearNodeAttr(nodeId, featureKey);
+    }
+    const current = this.state.nodeAttrs[nodeId]?.[featureKey];
+    if (current === value) return false;
+    this.pushUndo();
+    if (!this.state.nodeAttrs[nodeId]) this.state.nodeAttrs[nodeId] = {};
+    this.state.nodeAttrs[nodeId][featureKey] = value;
+    this.notify('nodeAttrs');
+    return true;
+  }
+
+  clearNodeAttr(nodeId, featureKey) {
+    const bucket = this.state.nodeAttrs[nodeId];
+    if (!bucket || !Object.prototype.hasOwnProperty.call(bucket, featureKey)) return false;
+    this.pushUndo();
+    delete bucket[featureKey];
+    if (!Object.keys(bucket).length) delete this.state.nodeAttrs[nodeId];
+    this.notify('nodeAttrs');
+    return true;
+  }
+
+  // Bulk replace for the node inspector's Save: every key present becomes the new
+  // value, EXCEPT null/undefined/'' which explicitly clears that feature — so a
+  // single Save can both add and remove tags on one node in one undo step.
+  setNodeAttrs(nodeId, attrsObject) {
+    if (!this.state.nodes[nodeId]) return false;
+    const bucket = { ...(this.state.nodeAttrs[nodeId] || {}) };
+    let changed = false;
+    for (const [key, value] of Object.entries(attrsObject || {})) {
+      if (value === null || value === undefined || value === '') {
+        if (Object.prototype.hasOwnProperty.call(bucket, key)) { delete bucket[key]; changed = true; }
+      } else if (bucket[key] !== value) {
+        bucket[key] = value;
+        changed = true;
+      }
+    }
+    if (!changed) return false;
+    this.pushUndo();
+    if (Object.keys(bucket).length) this.state.nodeAttrs[nodeId] = bucket;
+    else delete this.state.nodeAttrs[nodeId];
+    this.notify('nodeAttrs');
+    return true;
+  }
+
+  clearNodeFeatureLayer(featureKey) {
+    const count = this.countNodeFeatureTagged(featureKey);
+    if (count === 0) return 0;
+    this.pushUndo();
+    for (const nodeId of Object.keys(this.state.nodeAttrs || {})) {
+      const bucket = this.state.nodeAttrs[nodeId];
+      if (bucket && Object.prototype.hasOwnProperty.call(bucket, featureKey)) {
+        delete bucket[featureKey];
+        if (!Object.keys(bucket).length) delete this.state.nodeAttrs[nodeId];
+      }
+    }
+    this.notify('nodeAttrs');
+    return count;
+  }
+
+  // Strict native shape: {"meta":{...},"spaces":{<nodeId>:{<featureKey>:value}}}.
+  // opts.fieldMap (optional) switches to draft-shape acceptance: an explicit
+  // {draftKey: {feature, kind, values?}} map converts a commission repo's raw
+  // space-attrs-draft.json (arbitrary per-game field names) into palette feature
+  // keys via draftSpacesToNodeAttrs — see tools/convert-space-attrs.mjs for the
+  // real per-game maps used to pre-seed local/pog-attrs.json + local/ftp-attrs.json.
+  importNodeAttrs(input, opts = {}) {
+    const data = typeof input === 'string' ? JSON.parse(input) : input;
+    let spacesDoc;
+    let skipped = [];
+    if (opts.fieldMap) {
+      const spacesSource = data.spaces && typeof data.spaces === 'object' ? data.spaces : data;
+      const converted = draftSpacesToNodeAttrs(spacesSource, opts.fieldMap, this.palette?.nodeFeatures || []);
+      spacesDoc = converted.spaces;
+      skipped = converted.skipped;
+    } else {
+      validateNodeAttrsDocument(data);
+      spacesDoc = data.spaces;
+    }
+
+    const known = this.state.nodes || {};
+    const hasKnownNodes = Object.keys(known).length > 0;
+    const unknown = [];
+    const next = {};
+    for (const [nodeId, attrs] of Object.entries(spacesDoc || {})) {
+      if (hasKnownNodes && !known[nodeId]) { unknown.push(nodeId); continue; }
+      if (!attrs || typeof attrs !== 'object') continue;
+      const bucket = {};
+      for (const [key, value] of Object.entries(attrs)) {
+        if (value === null || value === undefined || value === '') continue;
+        bucket[key] = value;
+      }
+      if (Object.keys(bucket).length) next[nodeId] = bucket;
+    }
+
+    if (!opts.skipUndo) this.pushUndo();
+    this.state.nodeAttrs = next;
+    this.notify('nodeAttrs');
+    return { count: Object.keys(next).length, unknown, skipped };
+  }
+
+  exportNodeAttrsObject() {
+    const spaces = {};
+    const nodeIds = Object.keys(this.state.nodeAttrs || {}).sort((a, b) => a.localeCompare(b));
+    for (const nodeId of nodeIds) {
+      const bucket = this.state.nodeAttrs[nodeId];
+      if (bucket && Object.keys(bucket).length) spaces[nodeId] = deepClone(bucket);
+    }
+    return {
+      meta: {
+        version: 1,
+        game: this.state.nodesMeta?.game || this.state.name || '',
+        exported: todayStamp()
+      },
+      spaces
+    };
+  }
+
+  exportNodeAttrsJson() {
+    return JSON.stringify(this.exportNodeAttrsObject(), null, 2);
   }
 
   // ----------------- groups (multi-hex assignments) -----------------
@@ -1460,6 +1679,7 @@ export class ProjectStore {
       base.nodesMeta = deepClone(this.state.nodesMeta || {});
       base.nodesFile = this.state.nodesFile || '';
       base.ptpEdges = deepClone(this.state.ptpEdges || {});
+      base.nodeAttrs = deepClone(this.state.nodeAttrs || {});
     }
     return base;
   }

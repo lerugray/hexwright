@@ -74,6 +74,10 @@
             <span>Import edges</span>
             <input type="file" id="import-edges" accept=".json,application/json" hidden />
           </label>
+          <label class="file-btn ptp-only" title="Import node-attrs.json">
+            <span>Import node-attrs</span>
+            <input type="file" id="import-attrs" accept=".json,application/json" hidden />
+          </label>
           <label class="file-btn" title="Load palette JSON">
             <span>Palette</span>
             <input type="file" id="load-palette" accept=".json,application/json" hidden />
@@ -95,6 +99,8 @@
           <button id="export-twu" type="button" class="hex-only">TWU rivers+rail</button>
           <button id="export-edges-file" type="button" class="ptp-only">Export edges.json</button>
           <button id="export-edges-copy" type="button" class="ptp-only">Copy edges</button>
+          <button id="export-attrs-file" type="button" class="ptp-only">Export node-attrs.json</button>
+          <button id="export-attrs-copy" type="button" class="ptp-only">Copy node-attrs</button>
           <button id="export-overlay" type="button" title="Export classification PNG">Classification PNG</button>
         </div>
       </div>
@@ -120,6 +126,10 @@
       <span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 2 l2.2 6.7 H21 l-5.5 4 2.1 6.6 L12 15.8 6.4 19.3 l2.1 -6.6 L3 8.7 h6.8 z"/></svg></span>
       <span class="lbl">Features</span><span class="kbd">P</span>
     </button>
+    <button id="tool-node-features" class="tool" type="button" role="radio" aria-checked="false" data-mode="nodeFeatures" hidden>
+      <span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 2 l2.2 6.7 H21 l-5.5 4 2.1 6.6 L12 15.8 6.4 19.3 l2.1 -6.6 L3 8.7 h6.8 z"/></svg></span>
+      <span class="lbl">Features</span><span class="kbd">P</span>
+    </button>
     <button id="tool-nudge" class="tool" type="button" role="radio" aria-checked="false" data-mode="nudge">
       <span class="glyph"><svg viewBox="0 0 24 24"><path d="M12 4 v16 M4 12 h16 M12 4 l-2.5 3 M12 4 l2.5 3 M12 20 l-2.5 -3 M12 20 l2.5 -3"/></svg></span>
       <span class="lbl">Nudge</span><span class="kbd">N</span>
@@ -132,6 +142,10 @@
       <span id="brush-mode-tag" class="mode-tag">Terrain</span>
     </div>
     <div id="brush-ink-list" class="ink-list"></div>
+    <div id="node-paint-controls" class="node-paint-controls" hidden>
+      <button type="button" id="node-paint-mode-toggle" class="label-toggle" aria-pressed="false" title="Paint mode — click a node applies the active feature directly, no inspector">Paint mode</button>
+      <div id="node-paint-value-row" class="node-paint-value-row"></div>
+    </div>
   </aside>
 
   <aside id="layers-panel" class="panel hx-ui" aria-label="Layers">
@@ -144,6 +158,11 @@
       <div class="layer-section-label">Point-to-point</div>
       <div id="ptp-layer-meta" class="hx-data dimmed"></div>
       <div id="ptp-orphan-warn" class="hx-data warn" hidden></div>
+    </div>
+
+    <div id="node-feature-layer-wrap" hidden>
+      <div class="layer-section-label">Node features</div>
+      <div id="node-feature-layer-rows"></div>
     </div>
 
     <div id="feature-layer-rows"></div>
@@ -302,6 +321,20 @@
     </div>
     <div class="feat-insp-actions">
       <button type="button" id="ptp-edge-insp-delete" class="btn danger">Delete</button>
+    </div>
+  </aside>
+
+  <aside id="node-feature-inspector" class="panel feature-insp hx-ui" hidden aria-label="Node feature inspector">
+    <div class="head">
+      <span class="title" id="node-insp-title">Node</span>
+      <button type="button" id="node-insp-close" class="collapse hx-data" aria-label="Close node inspector">×</button>
+    </div>
+    <div class="sect" style="border-top: 0;">
+      <div id="node-insp-fields" class="feat-insp-attrs"></div>
+    </div>
+    <div class="feat-insp-actions">
+      <button type="button" id="node-insp-clear" class="btn danger">Clear all</button>
+      <button type="button" id="node-insp-save" class="btn primary">Save</button>
     </div>
   </aside>
 

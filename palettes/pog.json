@@ -4,5 +4,14 @@
     { "key": "normal", "label": "Normal", "color": "#4a8f4a" },
     { "key": "restricted", "label": "Restricted", "color": "#c9a06a", "dash": true },
     { "key": "sea", "label": "Sea", "color": "#2878ff" }
+  ],
+  "nodeFeatures": [
+    { "key": "fortress", "label": "Fortress", "kind": "level", "max": 5, "color": "#8a6d3b", "badge": "F" },
+    { "key": "supply-source", "label": "Supply source", "kind": "enum", "values": ["AP", "CP"], "color": "#3b7a8a", "badge": "S" },
+    { "key": "vp", "label": "VP space", "kind": "flag", "color": "#c0392b", "badge": "V" },
+    { "key": "capital", "label": "Capital", "kind": "flag", "color": "#b8860b", "badge": "★" },
+    { "key": "port", "label": "Port", "kind": "flag", "color": "#2878ff", "badge": "P" },
+    { "key": "beach", "label": "Beach", "kind": "flag", "color": "#d2b48c", "badge": "B" },
+    { "key": "terrain", "label": "Terrain", "kind": "enum", "values": ["forest", "swamp", "mountain", "desert"], "color": "#4a8f4a", "badge": "T" }
   ]
 }

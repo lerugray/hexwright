@@ -65,6 +65,13 @@ export class UI {
     this.ptpPendingNodeId = null;
     this.ptpSelectedEdge = null;
 
+    this.nodeFeaturePaintActive = false;
+    this.nodeFeaturePaintType = null;
+    this.nodeFeaturePaintValue = null;
+    this.nodeFeaturePaintLevel = 1;
+    this.nodeFeaturePaintMode = false;
+    this.nodeInspector = null;
+
     this.buildHexEditor();
     this._setupInspectorDrag();
     this.bindGlobal();
@@ -74,6 +81,7 @@ export class UI {
     this._setupEdgePaint();
     this._setupFeaturePaint();
     this._setupPtpEdgePaint();
+    this._setupNodeFeaturePaint();
     this.setMode('inspect');
     this.updateUI();
   }
@@ -84,8 +92,11 @@ export class UI {
       'load-map', 'load-grid', 'load-terrain', 'load-sides',
       'fit-view', 'undo', 'clear-select', 'toggle-help',
       'view-mode', 'tool-rail', 'tool-inspect', 'tool-terrain', 'tool-edges', 'tool-features', 'tool-nudge',
+      'tool-node-features',
       'brush-card', 'brush-mode-tag', 'brush-ink-list',
+      'node-paint-controls', 'node-paint-mode-toggle', 'node-paint-value-row',
       'layers-panel', 'feature-layer-rows', 'point-feature-layer-wrap', 'point-feature-layer-rows',
+      'node-feature-layer-wrap', 'node-feature-layer-rows',
       'terrain-layer-wrap', 'terrain-fill-row', 'terrain-fill-eye', 'terrain-fill-count', 'terrain-labels-toggle',
       'group-layer-wrap', 'group-layer-rows', 'group-edit-form', 'group-edit-id', 'group-edit-name', 'group-edit-kind', 'group-edit-value', 'group-edit-save', 'group-edit-cancel',
       'group-create-name', 'group-create-kind', 'group-create-value', 'group-create-btn',
@@ -110,10 +121,12 @@ export class UI {
       'hexed-edchips', 'hexed-inkgrid',
       'count-land', 'layer-counts', 'status',
       'help-overlay', 'close-help',
-      'load-nodes', 'import-edges',
-      'export-edges-file', 'export-edges-copy',
+      'load-nodes', 'import-edges', 'import-attrs',
+      'export-edges-file', 'export-edges-copy', 'export-attrs-file', 'export-attrs-copy',
       'ptp-edge-inspector', 'ptp-edge-insp-close', 'ptp-edge-insp-title',
-      'ptp-edge-insp-type', 'ptp-edge-insp-delete'
+      'ptp-edge-insp-type', 'ptp-edge-insp-delete',
+      'node-feature-inspector', 'node-insp-title', 'node-insp-fields',
+      'node-insp-close', 'node-insp-save', 'node-insp-clear'
     ];
     for (const id of ids) this.els[id] = document.getElementById(id);
   }
@@ -312,13 +325,18 @@ export class UI {
           return;
         }
         const isTextField = tag === 'INPUT' || tag === 'TEXTAREA';
-        if (isTextField && (this.inspectorHex || this.featureInspector)) {
+        if (isTextField && (this.inspectorHex || this.featureInspector || this.nodeInspector)) {
           e.target?.blur();
           return;
         }
         if (this.featureInspector) {
           e.preventDefault();
           this.closeFeatureInspector();
+          return;
+        }
+        if (this.nodeInspector) {
+          e.preventDefault();
+          this.closeNodeInspector();
           return;
         }
         if (this.inspectorHex) {
@@ -365,6 +383,7 @@ export class UI {
         const idx = e.key === '0' ? 9 : parseInt(e.key, 10) - 1;
         if (this.mode === 'edges') this._selectEdgeFeatureByIndex(idx);
         else if (this.mode === 'features') this._selectPointFeatureByIndex(idx);
+        else if (this.mode === 'nodeFeatures') this._selectNodeFeatureByIndex(idx);
         else this._selectTerrainByIndex(idx);
       }
       if (e.key.toLowerCase() === 'f') {
@@ -524,9 +543,62 @@ export class UI {
     });
     this.els['export-edges-file']?.addEventListener('click', () => this._download('edges.json', this.store.exportPtpEdgesJson()));
     this.els['export-edges-copy']?.addEventListener('click', () => this._copy(this.store.exportPtpEdgesJson(), 'edges.json'));
+    this.els['export-attrs-file']?.addEventListener('click', () => this._download('node-attrs.json', this.store.exportNodeAttrsJson()));
+    this.els['export-attrs-copy']?.addEventListener('click', () => this._copy(this.store.exportNodeAttrsJson(), 'node-attrs.json'));
     this.els['ptp-edge-insp-delete']?.addEventListener('click', () => this._deletePtpEdgeInspector());
     this.els['ptp-edge-insp-close']?.addEventListener('click', () => this.closePtpEdgeInspector());
     this.els['ptp-edge-insp-type']?.addEventListener('change', () => this._retypePtpEdgeInspector());
+
+    this.els['node-insp-close']?.addEventListener('click', () => this.closeNodeInspector());
+    this.els['node-insp-save']?.addEventListener('click', () => this._saveNodeInspector());
+    this.els['node-insp-clear']?.addEventListener('click', () => this._clearNodeInspector());
+    ['pointerdown', 'pointerup', 'mousedown', 'mouseup'].forEach((evt) => {
+      this.els['node-feature-inspector']?.addEventListener(evt, (e) => e.stopPropagation());
+    });
+    this.els['node-insp-fields']?.addEventListener('click', (e) => {
+      const flag = e.target.closest('.node-feat-flag[data-node-feat-key]');
+      if (!flag || !this.nodeInspector) return;
+      const key = flag.dataset.nodeFeatKey;
+      const draft = this.nodeInspector.draft;
+      if (draft[key] === true) delete draft[key];
+      else draft[key] = true;
+      this._renderNodeInspectorFields();
+    });
+    this.els['node-insp-fields']?.addEventListener('change', (e) => {
+      if (!this.nodeInspector) return;
+      const level = e.target.closest('.node-feat-level[data-node-feat-key]');
+      if (level) {
+        const key = level.dataset.nodeFeatKey;
+        const n = Number(level.value);
+        if (level.value === '' || !Number.isFinite(n)) delete this.nodeInspector.draft[key];
+        else this.nodeInspector.draft[key] = n;
+        return;
+      }
+      const enumSel = e.target.closest('.node-feat-enum[data-node-feat-key]');
+      if (enumSel) {
+        const key = enumSel.dataset.nodeFeatKey;
+        if (enumSel.value === '') delete this.nodeInspector.draft[key];
+        else this.nodeInspector.draft[key] = enumSel.value;
+      }
+    });
+
+    this.els['node-paint-mode-toggle']?.addEventListener('click', () => {
+      this.nodeFeaturePaintMode = !this.nodeFeaturePaintMode;
+      this._renderNodeFeaturePaintControls();
+      this._updateModeHint();
+    });
+    this.els['node-paint-value-row']?.addEventListener('click', (e) => {
+      const chip = e.target.closest('[data-enum-value]');
+      if (!chip) return;
+      this.nodeFeaturePaintValue = chip.dataset.enumValue;
+      this._renderNodeFeaturePaintControls();
+    });
+    this.els['node-paint-value-row']?.addEventListener('change', (e) => {
+      const input = e.target.closest('#node-paint-level-input');
+      if (!input) return;
+      const n = Number(input.value);
+      this.nodeFeaturePaintLevel = Number.isFinite(n) && n > 0 ? n : 1;
+    });
 
     this.els['brush-ink-list'].addEventListener('click', (e) => {
       const row = e.target.closest('.ink[data-ink-key]');
@@ -537,6 +609,7 @@ export class UI {
         else this.setEdgePaintFeature(key);
       }
       else if (this.mode === 'features') this.setFeaturePaintType(key);
+      else if (this.mode === 'nodeFeatures') this.setNodeFeaturePaintType(key);
       else this.setBrushTerrain(key);
     });
 
@@ -559,6 +632,19 @@ export class UI {
       const row = clearBtn.closest('.layer-row');
       const label = row?.querySelector('.name')?.textContent?.trim() || clearBtn.dataset.pointFeatureKey;
       this.clearPointFeatureLayer(clearBtn.dataset.pointFeatureKey, label);
+    });
+
+    this.els['node-feature-layer-rows']?.addEventListener('click', (e) => {
+      const clearBtn = e.target.closest('.layer-clear[data-node-feature-key]');
+      if (clearBtn) {
+        const row = clearBtn.closest('.layer-row');
+        const label = row?.querySelector('.name')?.textContent?.trim() || clearBtn.dataset.nodeFeatureKey;
+        this.clearNodeFeatureLayer(clearBtn.dataset.nodeFeatureKey, label);
+        return;
+      }
+      const eye = e.target.closest('.eye[data-node-feature-key]');
+      if (!eye) return;
+      this.toggleNodeFeatureLayerVisibility(eye.dataset.nodeFeatureKey);
     });
 
     this.els['group-layer-rows']?.addEventListener('click', (e) => {
@@ -685,6 +771,7 @@ export class UI {
     this.els['import-twu'].addEventListener('change', (e) => handlers.importTwu(e.target.files[0]));
     this.els['load-nodes']?.addEventListener('change', (e) => handlers.nodes?.(e.target.files[0]));
     this.els['import-edges']?.addEventListener('change', (e) => handlers.importEdges?.(e.target.files[0]));
+    this.els['import-attrs']?.addEventListener('change', (e) => handlers.importAttrs?.(e.target.files[0]));
   }
 
   // ----------------- toolbar -----------------
@@ -759,7 +846,8 @@ export class UI {
 
   setMode(mode) {
     if (this.store.isPtp()) {
-      if (mode !== 'edges') mode = 'edges';
+      if (mode === 'features') mode = 'nodeFeatures';
+      if (!['edges', 'nodeFeatures'].includes(mode)) mode = 'edges';
     } else if (!['inspect', 'terrain', 'edges', 'features', 'nudge'].includes(mode)) {
       return;
     }
@@ -767,9 +855,11 @@ export class UI {
     this.brushActive = mode === 'terrain' && !this.store.isPtp();
     this.edgePaintActive = mode === 'edges' && !this.store.isPtp();
     this.featurePaintActive = mode === 'features' && !this.store.isPtp();
+    this.nodeFeaturePaintActive = mode === 'nodeFeatures';
     this.nudgeActive = mode === 'nudge' && !this.store.isPtp();
 
     if (mode !== 'features') this.closeFeatureInspector();
+    if (mode !== 'nodeFeatures') this.closeNodeInspector();
 
     if (this.featurePaintActive) {
       // Select-not-place default: entering features mode must NOT auto-arm a type
@@ -780,11 +870,15 @@ export class UI {
         this.featurePaintType = null;
       }
     }
+    if (this.nodeFeaturePaintActive && this.nodeFeaturePaintType && !this._nodeFeatureDecl(this.nodeFeaturePaintType)) {
+      this.nodeFeaturePaintType = null;
+    }
 
     this._setupBrush();
     this._setupEdgePaint();
     this._setupFeaturePaint();
     this._setupPtpEdgePaint();
+    this._setupNodeFeaturePaint();
     this.renderer.setNudgeMode(this.nudgeActive);
 
     if (this.nudgeActive && this.renderer.viewMode !== 'both') {
@@ -797,6 +891,7 @@ export class UI {
     this._reflectBrush();
     this._reflectEdgePaint();
     this._reflectFeaturePaint();
+    this._reflectNodeFeaturePaint();
     this._renderBrushCard();
     this._renderLayersPanel();
     this._updateCanvasCursor();
@@ -817,6 +912,8 @@ export class UI {
     }
     const ptpWrap = document.getElementById('ptp-layer-wrap');
     if (ptpWrap) ptpWrap.hidden = !this.store.isPtp();
+    const nodeFeatBtn = this.els['tool-node-features'];
+    if (nodeFeatBtn) nodeFeatBtn.hidden = !this.store.isPtp();
   }
 
   _reflectMode() {
@@ -845,6 +942,15 @@ export class UI {
     if (this.mode === 'edges' && this.store.isPtp()) {
       const label = this._activePtpEdgeLabel();
       hint.innerHTML = `<b>Edge trace · ${label}</b> — click node A then node B · click edge to select<span class="hint-extra"> · <span class="kbd">⌥</span> click edge to delete · <span class="kbd">1</span>–<span class="kbd">0</span> switch type</span>`;
+      return;
+    }
+    if (this.mode === 'nodeFeatures') {
+      const feature = this._nodeFeatureDecl(this.nodeFeaturePaintType);
+      if (this.nodeFeaturePaintMode && feature) {
+        hint.innerHTML = `<b>Node features · ${this._activeNodeFeatureLabel()} — paint mode</b> — click a node to tag · <span class="kbd">⌥</span> click to clear<span class="hint-extra"> · <span class="kbd">P</span> features · <span class="kbd">1</span>–<span class="kbd">0</span> switch type</span>`;
+      } else {
+        hint.innerHTML = '<b>Node features</b> — click a node to open its inspector<span class="hint-extra"> · pick a type below + Paint mode to batch-tag · <span class="kbd">1</span>–<span class="kbd">0</span> pick type</span>';
+      }
       return;
     }
     if (this.mode === 'terrain') {
@@ -1065,6 +1171,211 @@ export class UI {
     this._reflectMapFamily();
     this._renderBrushCard();
     this._renderLayersPanel();
+  }
+
+  // ----------------- node features (point-to-point node tagging) -----------------
+  // Two flows share one "active type": (1) default — click a node opens the full
+  // inspector (all palette nodeFeatures for that node, batch-editable, Save
+  // commits); (2) Paint mode ON — click a node applies the armed feature+value
+  // directly (no inspector), alt-click clears it. Paint mode is what makes
+  // tagging hundreds of nodes fast; the inspector is for careful single-node edits.
+
+  _nodeFeatureDecl(key) {
+    return (this.store.getPalette()?.nodeFeatures || []).find((f) => f.key === key) || null;
+  }
+
+  _activeNodeFeatureLabel() {
+    const feature = this._nodeFeatureDecl(this.nodeFeaturePaintType);
+    return feature?.label || feature?.key || 'Feature';
+  }
+
+  _selectNodeFeatureByIndex(idx) {
+    const features = this.store.getPalette()?.nodeFeatures || [];
+    const feature = features[idx];
+    if (!feature) return;
+    this.setNodeFeaturePaintType(feature.key);
+    this.status(`Node feature ${idx + 1}: ${feature.label || feature.key}`, 1200);
+  }
+
+  setNodeFeaturePaintType(key) {
+    this.nodeFeaturePaintType = key;
+    const feature = this._nodeFeatureDecl(key);
+    this.nodeFeaturePaintValue = feature?.kind === 'enum' ? (feature.values?.[0] || null) : null;
+    this.nodeFeaturePaintLevel = 1;
+    this._setupNodeFeaturePaint();
+    this._reflectNodeFeaturePaint();
+    this._renderBrushCard();
+    this._updateCanvasCursor();
+  }
+
+  _setupNodeFeaturePaint() {
+    this.renderer.setPtpFeaturePaint({
+      active: this.store.isPtp() && this.mode === 'nodeFeatures',
+      onNodeClick: (nodeId, opts) => this._onPtpNodeFeatureClick(nodeId, opts)
+    });
+  }
+
+  _reflectNodeFeaturePaint() {
+    const btn = this.els['tool-node-features'];
+    const feature = this._nodeFeatureDecl(this.nodeFeaturePaintType);
+    if (btn) btn.title = `Node features mode (P)${feature ? ` — ${feature.label || feature.key}` : ''}`;
+    this._updateModeHint();
+  }
+
+  _renderNodeFeaturePaintControls() {
+    const wrap = this.els['node-paint-controls'];
+    if (!wrap) return;
+    const feature = this._nodeFeatureDecl(this.nodeFeaturePaintType);
+    wrap.hidden = !feature;
+    const toggle = this.els['node-paint-mode-toggle'];
+    if (toggle) {
+      toggle.classList.toggle('on', this.nodeFeaturePaintMode);
+      toggle.setAttribute('aria-pressed', String(this.nodeFeaturePaintMode));
+    }
+    const valueRow = this.els['node-paint-value-row'];
+    if (!valueRow) return;
+    if (!feature) {
+      valueRow.innerHTML = '';
+      return;
+    }
+    if (feature.kind === 'level') {
+      const max = feature.max || 1;
+      valueRow.innerHTML = `<label class="field-row"><span class="lbl">Level to paint</span>
+        <input type="number" id="node-paint-level-input" class="field-input" min="1" max="${max}" value="${this.nodeFeaturePaintLevel}" /></label>`;
+    } else if (feature.kind === 'enum') {
+      const values = feature.values || [];
+      valueRow.innerHTML = `<div class="ink-list">${values.map((v) => {
+        const active = this.nodeFeaturePaintValue === v;
+        return `<div class="ink${active ? ' is-active' : ''}" data-enum-value="${v}"><span class="name">${v}</span></div>`;
+      }).join('')}</div>`;
+    } else {
+      valueRow.innerHTML = '';
+    }
+  }
+
+  _onPtpNodeFeatureClick(nodeId, opts = {}) {
+    if (this.nodeFeaturePaintMode && this.nodeFeaturePaintType) {
+      const feature = this._nodeFeatureDecl(this.nodeFeaturePaintType);
+      const label = this._activeNodeFeatureLabel();
+      if (opts.altClear) {
+        if (this.store.clearNodeAttr(nodeId, this.nodeFeaturePaintType)) {
+          this.status(`Cleared ${label} on ${nodeId}`, 1200);
+        }
+        return;
+      }
+      let value;
+      if (feature?.kind === 'level') value = this.nodeFeaturePaintLevel;
+      else if (feature?.kind === 'enum') value = this.nodeFeaturePaintValue;
+      else value = true;
+      if (value == null) {
+        this.status('Pick a value below first.', 2000);
+        return;
+      }
+      this.store.setNodeAttr(nodeId, this.nodeFeaturePaintType, value);
+      this.status(`Tagged ${label}${feature?.kind !== 'flag' ? ` = ${value}` : ''} on ${nodeId}`, 1200);
+      return;
+    }
+    // Select-not-paint default: always open the full inspector so the operator
+    // can see/edit every feature on this node, never a silent single-value write.
+    this.openNodeInspector(nodeId);
+  }
+
+  openNodeInspector(nodeId) {
+    const node = this.store.state.nodes?.[nodeId];
+    if (!node) return;
+    this.nodeInspector = { nodeId, draft: this.store.getNodeAttrs(nodeId) };
+    this.els['node-insp-title'].textContent = node.name || nodeId;
+    this._renderNodeInspectorFields();
+    this.els['node-feature-inspector'].hidden = false;
+    this.els['layers-panel'].hidden = true;
+    if (this.ptpSelectedEdge) this.closePtpEdgeInspector();
+  }
+
+  _renderNodeInspectorFields() {
+    const wrap = this.els['node-insp-fields'];
+    if (!wrap || !this.nodeInspector) return;
+    const features = this.store.getPalette()?.nodeFeatures || [];
+    const draft = this.nodeInspector.draft || {};
+    wrap.innerHTML = features.map((f) => {
+      const val = draft[f.key];
+      if (f.kind === 'flag') {
+        const active = val === true;
+        return `<label class="field-row">
+          <span class="lbl">${f.label || f.key}</span>
+          <span class="feat node-feat-flag${active ? ' is-active' : ''}" data-node-feat-key="${f.key}" role="button" tabindex="0">
+            <span class="fdot"></span>${f.badge || f.label || f.key}
+          </span>
+        </label>`;
+      }
+      if (f.kind === 'level') {
+        const shown = Number.isFinite(val) ? val : '';
+        return `<label class="field-row">
+          <span class="lbl">${f.label || f.key} (max ${f.max || 1})</span>
+          <input type="number" class="field-input node-feat-level" data-node-feat-key="${f.key}" min="1" max="${f.max || 99}" value="${shown}" placeholder="—" />
+        </label>`;
+      }
+      const values = f.values || [];
+      return `<label class="field-row">
+        <span class="lbl">${f.label || f.key}</span>
+        <select class="field-input node-feat-enum" data-node-feat-key="${f.key}">
+          <option value="">—</option>
+          ${values.map((v) => `<option value="${v}"${val === v ? ' selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </label>`;
+    }).join('');
+  }
+
+  _saveNodeInspector() {
+    if (!this.nodeInspector) return;
+    const { nodeId, draft } = this.nodeInspector;
+    const features = this.store.getPalette()?.nodeFeatures || [];
+    const payload = {};
+    for (const f of features) payload[f.key] = draft[f.key] !== undefined ? draft[f.key] : null;
+    this.store.setNodeAttrs(nodeId, payload);
+    this.status(`Updated features on ${nodeId}`, 1800);
+    this.closeNodeInspector();
+  }
+
+  _clearNodeInspector() {
+    if (!this.nodeInspector) return;
+    const { nodeId } = this.nodeInspector;
+    const features = this.store.getPalette()?.nodeFeatures || [];
+    const payload = {};
+    for (const f of features) payload[f.key] = null;
+    this.store.setNodeAttrs(nodeId, payload);
+    this.status(`Cleared all features on ${nodeId}`, 1800);
+    this.closeNodeInspector();
+  }
+
+  closeNodeInspector() {
+    this.nodeInspector = null;
+    if (this.els['node-feature-inspector']) this.els['node-feature-inspector'].hidden = true;
+    if (!this.inspectorHex && !this.featureInspector) this.els['layers-panel'].hidden = false;
+  }
+
+  _nodeFeatureVisible(featureKey) {
+    const visibility = this.renderer.nodeFeatureVisibility || {};
+    return visibility[featureKey] !== false;
+  }
+
+  toggleNodeFeatureLayerVisibility(featureKey) {
+    if (!featureKey) return;
+    if (!this.renderer.nodeFeatureVisibility) this.renderer.nodeFeatureVisibility = {};
+    this.renderer.nodeFeatureVisibility[featureKey] = !this._nodeFeatureVisible(featureKey);
+    this._renderLayersPanel();
+    this.renderer.draw();
+  }
+
+  clearNodeFeatureLayer(featureKey, label) {
+    if (!featureKey) return;
+    const count = this.store.countNodeFeatureTagged(featureKey);
+    if (count === 0) return;
+    if (!this._isLayerClearArmed('nodeFeature', featureKey)) {
+      this._armLayerClear('nodeFeature', featureKey);
+      return;
+    }
+    this._disarmLayerClear();
+    this.store.clearNodeFeatureLayer(featureKey);
   }
 
   _setupEdgePaint() {
@@ -1337,14 +1648,39 @@ export class UI {
     const list = this.els['brush-ink-list'];
     if (!card || !list) return;
 
-    const show = this.mode === 'terrain' || this.mode === 'edges' || this.mode === 'features';
+    const show = this.mode === 'terrain' || this.mode === 'edges' || this.mode === 'features' || this.mode === 'nodeFeatures';
     card.style.display = show ? '' : 'none';
+    if (this.mode !== 'nodeFeatures' && this.els['node-paint-controls']) {
+      this.els['node-paint-controls'].hidden = true;
+    }
     if (!show) return;
 
     const palette = this.store.getPalette() || {};
     this.els['brush-mode-tag'].textContent = this.mode === 'edges'
       ? 'Edge paint'
-      : (this.mode === 'features' ? 'Features' : 'Terrain');
+      : (this.mode === 'features' ? 'Features' : (this.mode === 'nodeFeatures' ? 'Node features' : 'Terrain'));
+
+    if (this.mode === 'nodeFeatures') {
+      const features = palette.nodeFeatures || [];
+      // Drop a stale arm that no longer exists in the current palette.
+      if (this.nodeFeaturePaintType && !features.some((f) => f.key === this.nodeFeaturePaintType)) {
+        this.nodeFeaturePaintType = null;
+        this._setupNodeFeaturePaint();
+      }
+      list.innerHTML = features.map((f, idx) => {
+        const active = f.key === this.nodeFeaturePaintType;
+        const keycap = this._shortcutLabel(idx);
+        const count = this.store.countNodeFeatureTagged(f.key);
+        return `<div class="ink${active ? ' is-active' : ''}" data-ink-key="${f.key}">
+          <span class="swatch" style="background:${f.color || '#888'}"></span>
+          <span class="name">${f.label || f.key}</span>
+          <span class="count">${count}</span>
+          ${keycap ? `<span class="kbd">${keycap}</span>` : ''}
+        </div>`;
+      }).join('');
+      this._renderNodeFeaturePaintControls();
+      return;
+    }
 
     if (this.mode === 'features') {
       const counts = this._pointFeatureCounts();
@@ -1691,6 +2027,30 @@ export class UI {
           ? `${orphans.length} orphan node${orphans.length === 1 ? '' : 's'} (no edges)`
           : '';
       }
+
+      const nodeFeatures = palette.nodeFeatures || [];
+      const nodeFeatWrap = this.els['node-feature-layer-wrap'];
+      const nodeFeatRows = this.els['node-feature-layer-rows'];
+      if (nodeFeatWrap && nodeFeatRows) {
+        nodeFeatWrap.hidden = nodeFeatures.length === 0;
+        nodeFeatRows.innerHTML = nodeFeatures.map((f) => {
+          const on = this._nodeFeatureVisible(f.key);
+          const n = this.store.countNodeFeatureTagged(f.key);
+          const armed = this._isLayerClearArmed('nodeFeature', f.key);
+          const clearBtn = n > 0
+            ? `<button type="button" class="layer-clear${armed ? ' confirming' : ''}" data-node-feature-key="${f.key}" aria-label="${armed ? `Confirm clear ${f.label || f.key} — click again to permanently remove ${n} entries` : `Clear ${f.label || f.key}`}" title="${armed ? 'Click again to permanently clear this layer' : 'Clear layer'}">${armed ? '✓' : '×'}</button>`
+            : '';
+          return `<div class="layer-row${on ? '' : ' dimmed'}">
+            <button type="button" class="eye${on ? '' : ' off'}" data-node-feature-key="${f.key}" aria-label="Toggle ${f.label || f.key}">
+              ${on ? EYE_OPEN_SVG : EYE_OFF_SVG}
+            </button>
+            <span class="swatch" style="background:${f.color || '#888'}"></span>
+            <span class="name">${f.label || f.key}</span>
+            <span class="count">${n}</span>
+            ${clearBtn}
+          </div>`;
+        }).join('');
+      }
       return;
     }
 
@@ -1817,7 +2177,7 @@ export class UI {
       wrap.style.cursor = 'move';
       return;
     }
-    if (this.mode === 'features') {
+    if (this.mode === 'features' || this.mode === 'nodeFeatures') {
       wrap.style.cursor = 'crosshair';
       return;
     }
@@ -2303,6 +2663,7 @@ export class UI {
       this._setupEdgePaint();
       this._setupFeaturePaint();
       this._setupPtpEdgePaint();
+      this._setupNodeFeaturePaint();
       if (this.inspectorHex) this._refreshInspector();
     }
     this._reflectMapFamily();
@@ -2319,6 +2680,7 @@ export class UI {
     this._reflectBrush();
     this._reflectEdgePaint();
     this._reflectFeaturePaint();
+    this._reflectNodeFeaturePaint();
     this._updateCanvasCursor();
 
     if (this.inspectorHex && !paletteChanged) {

@@ -78,6 +78,12 @@ export class MapRenderer {
     this.selectedPtpEdge = null;
     this.ptpHover = null;
 
+    this.ptpFeaturePaint = {
+      active: false,
+      onNodeClick: null
+    };
+    this.nodeFeatureVisibility = {}; // View-only per-feature visibility map (node badges)
+
     this.shiftHeld = false;
     this.altHeld = false;
     this.lastPointerPt = null;
@@ -188,6 +194,12 @@ export class MapRenderer {
       this.ptpEdgePaint.pendingNodeId = null;
       this.ptpHover = null;
     }
+    this.draw();
+  }
+
+  setPtpFeaturePaint(config) {
+    this.ptpFeaturePaint = { ...this.ptpFeaturePaint, ...config };
+    if (!this.ptpFeaturePaint.active) this.ptpHover = null;
     this.draw();
   }
 
@@ -400,6 +412,13 @@ export class MapRenderer {
         wrap.setPointerCapture(e.pointerId);
         return;
       }
+      if (this.store.isPtp() && this.ptpFeaturePaint.active) {
+        this.isDragging = true;
+        this.clickMoved = false;
+        this.dragStart = { x: e.clientX, y: e.clientY };
+        wrap.setPointerCapture(e.pointerId);
+        return;
+      }
       if (this.nudgeMode) {
         this.isDragging = true;
         const off = this.store.state.mapOffset || [0, 0];
@@ -463,6 +482,18 @@ export class MapRenderer {
           const node = this._ptpNodeAtScreen(pt);
           const edge = node ? null : this._ptpEdgeAtScreen(pt);
           this.ptpHover = node || edge;
+          this.draw();
+          return;
+        }
+        const dx = e.clientX - this.dragStart.x;
+        const dy = e.clientY - this.dragStart.y;
+        if (Math.hypot(dx, dy) > 3) this.clickMoved = true;
+        return;
+      }
+      if (this.store.isPtp() && this.ptpFeaturePaint.active) {
+        const pt = this._eventToScreen(e);
+        if (!this.isDragging) {
+          this.ptpHover = this._ptpNodeAtScreen(pt);
           this.draw();
           return;
         }
@@ -567,6 +598,16 @@ export class MapRenderer {
       if (this.store.isPtp() && this.ptpEdgePaint.active) {
         const pt = this._eventToScreen(e);
         if (!this.clickMoved) this._ptpClickAt(pt, e);
+        return;
+      }
+      if (this.store.isPtp() && this.ptpFeaturePaint.active) {
+        const pt = this._eventToScreen(e);
+        if (!this.clickMoved) {
+          const node = this._ptpNodeAtScreen(pt);
+          if (node && this.ptpFeaturePaint.onNodeClick) {
+            this.ptpFeaturePaint.onNodeClick(node.id, { altClear: !!e.altKey });
+          }
+        }
         return;
       }
       if (this.nudgeMode) {
@@ -1001,6 +1042,9 @@ export class MapRenderer {
     const s = view.baseScale * view.zoom;
     const pending = this.ptpEdgePaint.pendingNodeId;
     const hoverId = this.ptpHover?.id || null;
+    const nodeFeatures = this.store.getPalette()?.nodeFeatures || [];
+    const visibility = this.nodeFeatureVisibility || {};
+    const nodeAttrs = this.store.state.nodeAttrs || {};
     ctx.save();
     ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
@@ -1021,8 +1065,52 @@ export class MapRenderer {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillText(label, node.x, node.y + r + 2 / s);
+
+      this._drawNodeFeatureBadges(ctx, node, r, s, nodeFeatures, visibility, nodeAttrs[node.id]);
     }
     ctx.restore();
+  }
+
+  // Tagged-node badge chips: small colored labels stacked horizontally above the
+  // node marker, one per visible+tagged palette nodeFeature (in palette order).
+  // Content per kind: flag -> feature.badge glyph; level -> the number itself;
+  // enum -> the first two letters of the value, uppercased.
+  _drawNodeFeatureBadges(ctx, node, nodeRadius, s, nodeFeatures, visibility, attrs) {
+    if (!attrs || !nodeFeatures.length) return;
+    const chips = [];
+    for (const f of nodeFeatures) {
+      if (visibility[f.key] === false) continue;
+      const val = attrs[f.key];
+      if (val === undefined || val === null) continue;
+      let text;
+      if (f.kind === 'level') text = String(val);
+      else if (f.kind === 'enum') text = String(val).slice(0, 2).toUpperCase();
+      else text = f.badge || (f.label || f.key).slice(0, 1).toUpperCase();
+      chips.push({ text, color: f.color || '#888' });
+    }
+    if (!chips.length) return;
+
+    const chipH = 11 / s;
+    const chipGap = 2 / s;
+    const chipPad = 3 / s;
+    ctx.font = `${Math.max(8, 9 / s)}px var(--font-data)`;
+    const widths = chips.map((c) => Math.max(chipH, ctx.measureText(c.text).width + chipPad * 2));
+    const totalW = widths.reduce((a, b) => a + b, 0) + chipGap * (chips.length - 1);
+    let cx = node.x - totalW / 2;
+    const cy = node.y - nodeRadius - chipH - 3 / s;
+    for (let i = 0; i < chips.length; i++) {
+      const w = widths[i];
+      ctx.fillStyle = chips[i].color;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(cx, cy, w, chipH, chipH / 3);
+      else ctx.rect(cx, cy, w, chipH);
+      ctx.fill();
+      ctx.fillStyle = '#111';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(chips[i].text, cx + w / 2, cy + chipH / 2 + 0.5 / s);
+      cx += w + chipGap;
+    }
   }
 
   _drawTraces(ctx, view) {

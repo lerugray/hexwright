@@ -265,6 +265,7 @@ function makeBlankProject({ grid = null, blankLattice = false, mapFamily = 'hex'
     nodesMeta: {},
     nodesFile: '',
     ptpEdges: {},
+    nodeAttrs: {},
     ...(blankLattice ? { blankLattice: true } : {})
   };
 }
@@ -367,11 +368,12 @@ async function loadProjectFromManifest(manifestUrl) {
   const namesUrl = manifest.names ? new URL(manifest.names, base).href : null;
   const nodesUrl = manifest.nodes ? new URL(manifest.nodes, base).href : null;
   const edgesUrl = manifest.edges ? new URL(manifest.edges, base).href : null;
+  const attrsUrl = manifest.attrs ? new URL(manifest.attrs, base).href : null;
   const paletteUrl = typeof manifest.palette === 'string'
     ? new URL(manifest.palette, base).href
     : null;
 
-  const [mapImg, grid, terrain, hexsides, features, names, nodesDoc, edgesDoc, palette] = await Promise.all([
+  const [mapImg, grid, terrain, hexsides, features, names, nodesDoc, edgesDoc, attrsDoc, palette] = await Promise.all([
     mapUrl ? loadImage(mapUrl) : Promise.resolve(null),
     gridUrl ? fetch(gridUrl).then(r => r.json()) : Promise.resolve(null),
     terrainUrl ? fetch(terrainUrl).then(r => r.json()) : Promise.resolve(isPtp ? { terrain: {} } : null),
@@ -380,6 +382,7 @@ async function loadProjectFromManifest(manifestUrl) {
     namesUrl ? fetch(namesUrl).then(r => r.json()) : Promise.resolve(null),
     nodesUrl ? fetch(nodesUrl).then(r => r.json()) : Promise.resolve(null),
     edgesUrl ? fetch(edgesUrl).then(r => r.json()) : Promise.resolve(null),
+    attrsUrl ? fetch(attrsUrl).then(r => r.json()) : Promise.resolve(null),
     paletteUrl ? fetch(paletteUrl).then(r => r.json()) : Promise.resolve(manifest.palette && typeof manifest.palette === 'object' ? manifest.palette : null)
   ]);
 
@@ -414,6 +417,7 @@ async function loadProjectFromManifest(manifestUrl) {
     nodesMeta: nodesDoc?.meta || {},
     nodesFile: manifest.nodes || '',
     edges: edgesDoc || null,
+    attrs: attrsDoc || null,
     groups: Array.isArray(manifest.groups) ? manifest.groups : null,
     palette,
     traces,
@@ -568,6 +572,12 @@ async function main() {
       await store.loadProject(project);
       store.importNodes(nodesDoc, { nodesFile: project.nodesFile || '', skipUndo: true });
       if (project.edges) store.importPtpEdges(project.edges, { skipUndo: true });
+      if (project.attrs) {
+        const res = store.importNodeAttrs(project.attrs, { skipUndo: true });
+        if (res?.unknown?.length) {
+          ui.status(`Node-attrs: ${res.unknown.length} unknown node id(s) skipped (${res.unknown.slice(0, 5).join(', ')}${res.unknown.length > 5 ? '…' : ''})`, 8000);
+        }
+      }
       ui.onPtpProjectLoaded();
     } else {
       await store.loadProject(project);
@@ -669,6 +679,26 @@ async function main() {
           }
         }
         restored.groups = restoredGroups;
+      }
+      // Manifest node-attrs pre-seed merges UNDER the autosave's own nodeAttrs: an
+      // operator-set (nodeId, featureKey) always wins; manifest-only tags backfill
+      // nodes/features the operator hasn't touched yet. Same policy as the features
+      // merge above, one layer down (p2p node tags vs hex point features).
+      if (project.attrs && project.attrs.spaces) {
+        const restoredAttrs = restored.nodeAttrs && typeof restored.nodeAttrs === 'object'
+          ? { ...restored.nodeAttrs }
+          : {};
+        for (const [nodeId, attrs] of Object.entries(project.attrs.spaces)) {
+          if (!attrs || typeof attrs !== 'object') continue;
+          const bucket = { ...(restoredAttrs[nodeId] || {}) };
+          for (const [key, value] of Object.entries(attrs)) {
+            if (value === null || value === undefined || value === '') continue;
+            if (bucket[key] !== undefined) continue; // operator value wins
+            bucket[key] = value;
+          }
+          if (Object.keys(bucket).length) restoredAttrs[nodeId] = bucket;
+        }
+        restored.nodeAttrs = restoredAttrs;
       }
       await loadAndRender(restored);
       renderer.setViewMode('both');
@@ -787,6 +817,23 @@ async function main() {
         ui._renderLayersPanel();
       } catch (err) {
         ui.status(`Edges import failed: ${err.message}`, 7000);
+      }
+    },
+    importAttrs: async (file) => {
+      if (!file) return;
+      try {
+        const text = await readFile(file);
+        const res = store.importNodeAttrs(text);
+        let msg = `Imported node-attrs (${res.count} node${res.count === 1 ? '' : 's'} tagged)`;
+        if (res.unknown.length) {
+          msg += ` — ${res.unknown.length} unknown id(s) skipped: ${res.unknown.slice(0, 5).join(', ')}${res.unknown.length > 5 ? '…' : ''}`;
+        }
+        ui.status(msg, res.unknown.length ? 8000 : 3000);
+        ui._renderBrushCard();
+        ui._renderLayersPanel();
+        renderer.draw();
+      } catch (err) {
+        ui.status(`Node-attrs import failed: ${err.message}`, 7000);
       }
     },
     importNames: async (file) => {
