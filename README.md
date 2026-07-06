@@ -39,6 +39,22 @@ Middle-mouse drag pans in every mode. `v` cycles view: Map, Classification, Both
 header to reposition (clamped inside the viewport); double-click the header to re-dock. `Esc`
 closes it — if a text field inside has focus, the first `Esc` blurs the field instead of closing.
 
+## Point-to-point maps (second map family, hxw-004)
+
+Hexwright also edits point-to-point (node/edge) boards — the map family of
+card-driven wargames (Paths of Glory, For the People class). A project
+becomes point-to-point by importing a **nodes.json**
+(`{"meta":{...},"nodes":[{"id","name","x","y"}]}` — typically generated
+from a Vassal-module extraction) over a loaded board image; nodes are
+imported, never hand-placed. Then trace edges: click node A, click node B,
+pick the edge type from a per-game **edge palette** (see
+`palettes/pog.json`, `palettes/ftp.json` — road/rail/sea etc.); click an
+existing edge to retype or delete it via the edge inspector. Export
+produces a versioned **edges.json** (undirected, stored once a<b, sorted,
+deduped) that round-trips on import. The layers panel warns about orphan
+geographic nodes (zero edges). Verify suite: `node verify/ptp-check.mjs`.
+Hex mode is untouched by all of this.
+
 ## Terrain display
 
 `L` toggles terrain labels: each hex shows its palette `abbr` (a short code, e.g. `W` for woods)
