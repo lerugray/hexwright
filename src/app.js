@@ -144,6 +144,38 @@ function countGroups(project) {
   return project.groups.length;
 }
 
+// p2p (point-to-point) edges — the connections drawn between nodes in ptp
+// mode. A p2p project can have 0 land hexes / 0 hexsides / 0 groups and
+// still carry hundreds of hours of real work here (the 2026-07-06 incident:
+// 466 Paths-of-Glory edges silently discarded on reload because nothing
+// counted them as "content").
+function countPtpEdges(project) {
+  if (!project) return 0;
+  if (project.ptpEdges && typeof project.ptpEdges === 'object' && !Array.isArray(project.ptpEdges)) {
+    return Object.keys(project.ptpEdges).length;
+  }
+  if (Array.isArray(project.edges?.edges)) return project.edges.edges.length;
+  return 0;
+}
+
+function countNodeAttrs(project) {
+  if (!project || !project.nodeAttrs || typeof project.nodeAttrs !== 'object') return 0;
+  let count = 0;
+  for (const bucket of Object.values(project.nodeAttrs)) {
+    if (bucket && typeof bucket === 'object') count += Object.keys(bucket).length;
+  }
+  return count;
+}
+
+function countNamedHexes(project) {
+  const names = project?.names;
+  if (!names || typeof names !== 'object' || Array.isArray(names)) return 0;
+  if (names.names && typeof names.names === 'object' && !Array.isArray(names.names)) {
+    return Object.keys(names.names).length;
+  }
+  return Object.keys(names).length;
+}
+
 function countPointFeatures(project) {
   const features = project?.features;
   if (!features) return 0;
@@ -182,8 +214,35 @@ function parseSessionRecord(raw) {
     savedAt,
     land: countLandHexes(project),
     sides: countHexsideEdges(project),
-    groups: countGroups(project)
+    groups: countGroups(project),
+    edges: countPtpEdges(project),
+    attrs: countNodeAttrs(project),
+    named: countNamedHexes(project),
+    feats: countPointFeatures(project)
   };
+}
+
+// A slot counts as having real operator work when ANY of these are non-zero.
+// Deliberately excludes bare `nodes` (structural, comes free from the
+// manifest) — a p2p project with nodes but zero edges/attrs/etc. is not
+// "meaningful" in the sense this gate cares about.
+function slotHasContent(slot) {
+  if (!slot) return false;
+  return slot.land > 0 || slot.sides > 0 || slot.groups > 0 ||
+    slot.edges > 0 || slot.attrs > 0 || slot.named > 0 || slot.feats > 0;
+}
+
+function describeSlotContent(slot) {
+  if (!slot) return 'no content yet';
+  const parts = [];
+  if (slot.land > 0) parts.push(`${slot.land} hex${slot.land === 1 ? '' : 'es'}`);
+  if (slot.sides > 0) parts.push(`${slot.sides} hexside${slot.sides === 1 ? '' : 's'}`);
+  if (slot.edges > 0) parts.push(`${slot.edges} edge${slot.edges === 1 ? '' : 's'}`);
+  if (slot.attrs > 0) parts.push(`${slot.attrs} tag${slot.attrs === 1 ? '' : 's'}`);
+  if (slot.groups > 0) parts.push(`${slot.groups} group${slot.groups === 1 ? '' : 's'}`);
+  if (slot.named > 0) parts.push(`${slot.named} name${slot.named === 1 ? '' : 's'}`);
+  if (slot.feats > 0) parts.push(`${slot.feats} feature${slot.feats === 1 ? '' : 's'}`);
+  return parts.length ? parts.join(', ') : 'no content yet';
 }
 
 function encodeSessionRecord(project, savedAt = Date.now()) {
@@ -287,9 +346,8 @@ function promptRestore(slot, kind = 'boot') {
 
     const name = slot.project.name || 'untitled';
     const when = slot.savedAt ? formatRelativeTime(slot.savedAt) : 'unknown time';
-    msg.textContent = kind === 'project'
-      ? `Restore autosave for ${name} (${when})?`
-      : `Restore autosave for ${name} (${when})?`;
+    const content = describeSlotContent(slot);
+    msg.textContent = `Autosaved session from ${when} found for ${name} (${content}). Resume it, or start fresh?`;
 
     const finish = (choice) => {
       prompt.hidden = true;
@@ -468,6 +526,13 @@ async function main() {
   const coachCard = document.getElementById('coach-card');
   let _awaitingBlankGrid = false;
   let _coachHiddenSession = false;
+  // True while loadAndRender() is actively (re)populating the store. The
+  // autosave writer skips writes while this is set, so choosing "start
+  // fresh" over an offered restore doesn't immediately clobber the
+  // (rejected-but-still-present) session slot for that project name via the
+  // 800ms debounce firing off the mere act of loading — only a REAL edit
+  // made after the load completes should overwrite it.
+  let _suppressAutosave = false;
 
   function isStartScreenVisible() {
     return startScreen && !startScreen.hidden;
@@ -540,8 +605,7 @@ async function main() {
       name.textContent = slot.project.name || 'untitled';
       const detail = document.createElement('span');
       detail.className = 'detail hx-data';
-      const summary = slot.land > 0 ? `${slot.land} hexes` : slot.sides > 0 ? `${slot.sides} edges` : slot.groups > 0 ? `${slot.groups} groups` : 'empty';
-      detail.textContent = `${summary} · ${formatRelativeTime(slot.savedAt)}`;
+      detail.textContent = `${describeSlotContent(slot)} · ${formatRelativeTime(slot.savedAt)}`;
       row.append(name, detail);
       row.addEventListener('click', () => restoreFromSlot(slot));
       recentList.appendChild(row);
@@ -565,23 +629,36 @@ async function main() {
   }
 
   async function loadAndRender(project) {
-    if (project._nodesDocument) {
-      const nodesDoc = project._nodesDocument;
-      delete project._nodesDocument;
-      project.nodes = {};
-      await store.loadProject(project);
-      store.importNodes(nodesDoc, { nodesFile: project.nodesFile || '', skipUndo: true });
-      if (project.edges) store.importPtpEdges(project.edges, { skipUndo: true });
-      if (project.attrs) {
-        const res = store.importNodeAttrs(project.attrs, { skipUndo: true });
-        if (res?.unknown?.length) {
-          ui.status(`Node-attrs: ${res.unknown.length} unknown node id(s) skipped (${res.unknown.slice(0, 5).join(', ')}${res.unknown.length > 5 ? '…' : ''})`, 8000);
+    // Suppression covers ONLY the synchronous store-populating calls below —
+    // it is lifted the instant they're done, NOT after the rest of this
+    // function (rAF waits + renderer calls) finishes. Those later steps can
+    // span real animation frames, during which a genuine user edit (or, in
+    // tests, a scripted one racing a DOM-visible signal like #count-land)
+    // can land; that edit must always be able to schedule its own autosave.
+    // Narrowing the window to "just the load" — with no await between the
+    // last mutating call and clearing the flag — closes that race.
+    _suppressAutosave = true;
+    try {
+      if (project._nodesDocument) {
+        const nodesDoc = project._nodesDocument;
+        delete project._nodesDocument;
+        project.nodes = {};
+        await store.loadProject(project);
+        store.importNodes(nodesDoc, { nodesFile: project.nodesFile || '', skipUndo: true });
+        if (project.edges) store.importPtpEdges(project.edges, { skipUndo: true });
+        if (project.attrs) {
+          const res = store.importNodeAttrs(project.attrs, { skipUndo: true });
+          if (res?.unknown?.length) {
+            ui.status(`Node-attrs: ${res.unknown.length} unknown node id(s) skipped (${res.unknown.slice(0, 5).join(', ')}${res.unknown.length > 5 ? '…' : ''})`, 8000);
+          }
         }
+        ui.onPtpProjectLoaded();
+      } else {
+        await store.loadProject(project);
+        if (store.isPtp()) ui.onPtpProjectLoaded();
       }
-      ui.onPtpProjectLoaded();
-    } else {
-      await store.loadProject(project);
-      if (store.isPtp()) ui.onPtpProjectLoaded();
+    } finally {
+      _suppressAutosave = false;
     }
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     renderer.resize();
@@ -603,7 +680,7 @@ async function main() {
     const manifestLabel = String(manifestUrl || '').split('/').pop() || '';
     const project = await loadProjectFromManifest(manifestUrl);
     const slot = getSessionSlotForName(project.name);
-    if (slot && (slot.land > 0 || slot.sides > 0 || slot.groups > 0) && await promptRestore(slot, 'project')) {
+    if (slot && slotHasContent(slot) && await promptRestore(slot, 'project')) {
       const restored = slot.project;
       restored.mapImage = project.mapImage;
       restored.traces = project.traces || [];
@@ -1010,6 +1087,10 @@ async function main() {
 
   let _autosaveTimer = null;
   store.onChange(() => {
+    // A load in progress isn't an edit — don't let the debounce fire off
+    // the load itself and overwrite a session slot nobody chose to discard
+    // yet (see _suppressAutosave declaration above).
+    if (_suppressAutosave) return;
     clearTimeout(_autosaveTimer);
     _autosaveTimer = setTimeout(() => {
       try {
