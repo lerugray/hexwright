@@ -164,6 +164,10 @@ label.file-btn:focus-within {
   box-shadow: var(--shadow-panel, 0 4px 18px rgba(0, 0, 0, 0.45));
 }
 
+.tool[hidden] {
+  display: none;
+}
+
 .tool {
   display: flex;
   flex-direction: column;
