@@ -129,6 +129,48 @@ rec('parallel edges export round-trip',
 const parallelDupes = findDuplicateEdges(parallelExported.edges);
 rec('parallel export no duplicate (a,b,type)', parallelDupes.length === 0, parallelDupes.join(','));
 
+// --- Unit: explicit edge deletion (per-type identity) ---
+{
+  const delStore = new ProjectStore();
+  delStore.setPalette(FIXTURE_PALETTE);
+  delStore.importNodes(FIXTURE_NODES, { skipUndo: true });
+  delStore.setPtpEdge('alpha', 'beta', 'road');
+  delStore.setPtpEdge('alpha', 'beta', 'rail');
+  delStore.deletePtpEdge('alpha', 'beta', 'road');
+  rec('delete: removes only the selected edge type on a parallel pair',
+    delStore.getPtpEdge('alpha', 'beta', 'road') === null &&
+    delStore.getPtpEdge('alpha', 'beta', 'rail') === 'rail' &&
+    delStore.countPtpEdges() === 1,
+    `count=${delStore.countPtpEdges()}`);
+
+  const undoStore = new ProjectStore();
+  undoStore.setPalette(FIXTURE_PALETTE);
+  undoStore.importNodes(FIXTURE_NODES, { skipUndo: true });
+  undoStore.setPtpEdge('alpha', 'beta', 'road');
+  undoStore.setPtpEdge('alpha', 'beta', 'rail');
+  undoStore.deletePtpEdge('alpha', 'beta', 'road');
+  undoStore.undo();
+  rec('delete: undo restores the deleted edge',
+    undoStore.getPtpEdge('alpha', 'beta', 'road') === 'road' &&
+    undoStore.getPtpEdge('alpha', 'beta', 'rail') === 'rail');
+
+  const expStore = new ProjectStore();
+  expStore.setPalette(FIXTURE_PALETTE);
+  expStore.importNodes(FIXTURE_NODES, { skipUndo: true });
+  expStore.setPtpEdge('alpha', 'beta', 'road');
+  expStore.setPtpEdge('alpha', 'beta', 'rail');
+  expStore.deletePtpEdge('alpha', 'beta', 'road');
+  const afterDelExport = expStore.exportPtpEdgesObject();
+  const impStore = new ProjectStore();
+  impStore.setPalette(FIXTURE_PALETTE);
+  impStore.importNodes(FIXTURE_NODES, { skipUndo: true });
+  impStore.importPtpEdges(afterDelExport, { skipUndo: true });
+  rec('delete: export/import round-trip keeps deletion',
+    impStore.countPtpEdges() === 1 &&
+    impStore.getPtpEdge('alpha', 'beta', 'rail') === 'rail' &&
+    !impStore.getPtpEdge('alpha', 'beta', 'road'));
+}
+
 // --- Headless UI harness ---
 const PORT = 8040;
 const srv = spawn('python3', ['-m', 'http.server', String(PORT)], { cwd: REPO, stdio: 'ignore' });
@@ -288,6 +330,54 @@ try {
   rec('inspect: node hit wins over edge within node radius',
     !nodeWins.nodeHidden && nodeWins.edgeHidden && /alpha/i.test(nodeWins.title),
     JSON.stringify(nodeWins));
+
+  // --- Edge inspector Delete: per-type removal on a parallel pair, undo, export ---
+  await page.evaluate(() => {
+    const { store, ui } = window.hexwright;
+    store.setPtpEdge('alpha', 'beta', 'rail');
+    ui.setMode('edges');
+    ui._onPtpEdgeSelect({ a: 'alpha', b: 'beta', type: 'road', edgeKey: 'alpha|beta|road' });
+  });
+  await sleep(150);
+  const inspOpen = await page.evaluate(() => ({
+    hidden: document.getElementById('ptp-edge-inspector').hidden,
+    which: document.getElementById('ptp-edge-insp-which')?.value || '',
+    whichVisible: !document.getElementById('ptp-edge-insp-which-wrap')?.hidden
+  }));
+  rec('delete UI: parallel pair opens inspector with connection picker',
+    !inspOpen.hidden && inspOpen.whichVisible && inspOpen.which === 'road',
+    JSON.stringify(inspOpen));
+
+  await page.click('#ptp-edge-insp-delete');
+  await sleep(150);
+  const afterDelete = await page.evaluate(() => ({
+    road: window.hexwright.store.getPtpEdge('alpha', 'beta', 'road'),
+    rail: window.hexwright.store.getPtpEdge('alpha', 'beta', 'rail'),
+    panelHidden: document.getElementById('ptp-edge-inspector').hidden
+  }));
+  rec('delete UI: inspector Delete removes only the selected parallel edge',
+    afterDelete.road === null && afterDelete.rail === 'rail' && afterDelete.panelHidden,
+    JSON.stringify(afterDelete));
+
+  await page.evaluate(() => window.hexwright.store.undo());
+  const afterUndo = await page.evaluate(() => ({
+    road: window.hexwright.store.getPtpEdge('alpha', 'beta', 'road'),
+    rail: window.hexwright.store.getPtpEdge('alpha', 'beta', 'rail')
+  }));
+  rec('delete UI: undo restores the inspector-deleted edge',
+    afterUndo.road === 'road' && afterUndo.rail === 'rail',
+    JSON.stringify(afterUndo));
+
+  const exportAfterDelete = await page.evaluate(() => {
+    const { store } = window.hexwright;
+    store.deletePtpEdge('alpha', 'beta', 'road');
+    return store.exportPtpEdgesObject();
+  });
+  const roadInExport = exportAfterDelete.edges.some((e) => e.a === 'alpha' && e.b === 'beta' && e.type === 'road');
+  const railInExport = exportAfterDelete.edges.some((e) => e.a === 'alpha' && e.b === 'beta' && e.type === 'rail');
+  rec('delete UI: export after deletion omits the removed edge type',
+    !roadInExport && railInExport,
+    `edges=${JSON.stringify(exportAfterDelete.edges.filter((e) => e.a === 'alpha' && e.b === 'beta'))}`);
 
   rec('no uncaught console/page errors', errors.length === 0, errors.slice(0, 4).join(' | '));
 } catch (err) {

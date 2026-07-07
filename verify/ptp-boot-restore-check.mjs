@@ -260,6 +260,56 @@ const browser = await chromium.launch();
   await ctx.close();
 }
 
+// --- Case F: an edge deleted in-session must survive autosave + resume (per-type
+// identity — parallel siblings on the same pair must not be wiped).
+{
+  const errors = [];
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage({ viewport: { width: 1200, height: 900 } });
+  pageWithErrors(errors)(page);
+
+  const seededEdges = {
+    ...SEEDED_EDGES,
+    'alpha|beta|rail': 'rail'
+  };
+  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+  await page.evaluate(({ key, slot }) => localStorage.setItem(key, JSON.stringify(slot)),
+    { key: SESSION_KEY, slot: seededSession({ ptpEdges: seededEdges }) });
+
+  await page.goto(`http://localhost:${PORT}/?project=${PTP_PROJECT_URL}`, { waitUntil: 'load' });
+  await page.waitForSelector('#restore-prompt:not([hidden])', { timeout: 10000 });
+  await page.click('#restore-prompt-restore');
+  await page.waitForFunction(() => window.hexwright?.store?.isPtp?.(), { timeout: 15000 });
+  await sleep(400);
+
+  await page.evaluate(() => window.hexwright.store.deletePtpEdge('alpha', 'beta', 'road'));
+  await sleep(1200);
+  const slotEdges = await page.evaluate((key) => {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw).project.ptpEdges || {} : {};
+  }, SESSION_KEY);
+  rec('autosave after delete drops only the removed (a,b,type) key',
+    !('alpha|beta|road' in slotEdges) && slotEdges['alpha|beta|rail'] === 'rail',
+    JSON.stringify(Object.keys(slotEdges).filter((k) => k.startsWith('alpha|beta'))));
+
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#restore-prompt:not([hidden])', { timeout: 10000 });
+  await page.click('#restore-prompt-restore');
+  await page.waitForFunction(() => window.hexwright?.store?.isPtp?.(), { timeout: 15000 });
+  await sleep(400);
+  const afterResume = await page.evaluate(() => ({
+    road: window.hexwright.store.getPtpEdge('alpha', 'beta', 'road'),
+    rail: window.hexwright.store.getPtpEdge('alpha', 'beta', 'rail'),
+    count: window.hexwright.store.countPtpEdges()
+  }));
+  rec('resume after delete restores the session without the deleted edge type',
+    afterResume.road === null && afterResume.rail === 'rail' && afterResume.count === 3,
+    JSON.stringify(afterResume));
+
+  rec('case F: no console/page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
+  await ctx.close();
+}
+
 await browser.close();
 srv.kill();
 

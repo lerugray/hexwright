@@ -550,6 +550,9 @@ export class UI {
     this.els['ptp-edge-insp-close']?.addEventListener('click', () => this.closePtpEdgeInspector());
     this.els['ptp-edge-insp-which']?.addEventListener('change', () => this._switchPtpEdgeInspector());
     this.els['ptp-edge-insp-type']?.addEventListener('change', () => this._retypePtpEdgeInspector());
+    ['pointerdown', 'pointerup', 'mousedown', 'mouseup'].forEach((evt) => {
+      this.els['ptp-edge-inspector']?.addEventListener(evt, (e) => e.stopPropagation());
+    });
 
     this.els['node-insp-close']?.addEventListener('click', () => this.closeNodeInspector());
     this.els['node-insp-save']?.addEventListener('click', () => this._saveNodeInspector());
@@ -951,7 +954,7 @@ export class UI {
     }
     if (this.mode === 'edges' && this.store.isPtp()) {
       const label = this._activePtpEdgeLabel();
-      hint.innerHTML = `<b>Edge trace · ${label}</b> — click node A then node B · click edge to select<span class="hint-extra"> · <span class="kbd">⌥</span> click edge to delete · <span class="kbd">1</span>–<span class="kbd">0</span> switch type</span>`;
+      hint.innerHTML = `<b>Edge trace · ${label}</b> — click node A then node B (same pair toggles off) · click edge to inspect<span class="hint-extra"> · inspector <b>Delete</b> removes one connection · <span class="kbd">⌥</span> click edge to delete · <span class="kbd">1</span>–<span class="kbd">0</span> switch type</span>`;
       return;
     }
     if (this.mode === 'nodeFeatures') {
@@ -1120,8 +1123,15 @@ export class UI {
     const from = this.ptpPendingNodeId;
     this.ptpPendingNodeId = null;
     this._setupPtpEdgePaint();
-    if (this.store.setPtpEdge(from, nodeId, this.edgePaintFeature)) {
-      this.status(`Edge ${from}–${nodeId} (${this.edgePaintFeature})`, 2500);
+    const type = this.edgePaintFeature;
+    if (this.store.getPtpEdge(from, nodeId, type)) {
+      if (this.store.deletePtpEdge(from, nodeId, type)) {
+        this.status(`Removed edge ${from}–${nodeId} (${type})`, 2500);
+        this._renderBrushCard();
+        this._renderLayersPanel();
+      }
+    } else if (this.store.setPtpEdge(from, nodeId, type)) {
+      this.status(`Edge ${from}–${nodeId} (${type})`, 2500);
       this._renderBrushCard();
       this._renderLayersPanel();
     }
@@ -1132,6 +1142,7 @@ export class UI {
     this.ptpSelectedEdge = edge;
     this.ptpPendingNodeId = null;
     this._setupPtpEdgePaint();
+    if (this.mode === 'inspect') this._setupPtpInspect();
     this.openPtpEdgeInspector(edge);
     this.renderer.setSelectedPtpEdge(edge);
   }
