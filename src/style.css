@@ -1265,8 +1265,16 @@ button.active {
    stacking rules (positioned elements always paint above non-positioned
    in-flow content, z-index or not). It rendered with correct data every time —
    just invisible under the map. Docked fixed, same corner as #hex-editor
-   (the two are always mutually exclusive, see closeInspector()/openFeatureInspector). */
-#feature-inspector {
+   (the two are always mutually exclusive, see closeInspector()/openFeatureInspector).
+   Recurrence (2026-07-06, hxw-005): #node-feature-inspector was added for the
+   p2p node-features mode but never got its own positioning rule, so it hit the
+   identical bug — openNodeInspector() ran correctly (fields populated, no
+   errors) and hid #layers-panel, but the inspector itself rendered position:static
+   at (0,0), invisible under the map. Symptom: clicking a node in features mode
+   looked like "nothing happens and the right window closes" — the layers panel
+   really did close, nothing visibly replaced it. Same fix, same corner. */
+#feature-inspector,
+#node-feature-inspector {
   position: fixed;
   top: calc(var(--strip-h, 40px) + var(--sp-3, 12px));
   right: var(--sp-3, 12px);
@@ -1275,7 +1283,8 @@ button.active {
   overflow-x: hidden;
 }
 
-#feature-inspector[hidden] {
+#feature-inspector[hidden],
+#node-feature-inspector[hidden] {
   display: none !important;
 }
 
