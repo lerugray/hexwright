@@ -26,8 +26,8 @@ const PORT = 8052;
 const PTP_PROJECT_URL = 'samples/ptp-fixture-project.json';
 const SESSION_KEY = 'hexwright.session.ptp-fixture';
 
-// alphabetical nodePairKey: alpha<beta<delta<gamma
-const SEEDED_EDGES = { 'alpha|beta': 'road', 'beta|gamma': 'rail', 'alpha|delta': 'road' };
+// canonical ptpEdgeKey: alpha<beta<delta<gamma
+const SEEDED_EDGES = { 'alpha|beta|road': 'road', 'beta|gamma|rail': 'rail', 'alpha|delta|road': 'road' };
 const FIXTURE_NODES = {
   alpha: { id: 'alpha', name: 'Alpha', x: 80, y: 150 },
   beta: { id: 'beta', name: 'Beta', x: 200, y: 80 },
@@ -141,7 +141,7 @@ const browser = await chromium.launch();
   }, SESSION_KEY);
   const slotEdgesAfterFresh = slotAfterFresh ? Object.keys(slotAfterFresh.project.ptpEdges || {}) : null;
   rec('choosing "start fresh" does not overwrite the rejected session slot',
-    !!slotEdgesAfterFresh && slotEdgesAfterFresh.includes('alpha|delta') && slotEdgesAfterFresh.length === 3,
+    !!slotEdgesAfterFresh && slotEdgesAfterFresh.includes('alpha|delta|road') && slotEdgesAfterFresh.length === 3,
     JSON.stringify(slotEdgesAfterFresh));
 
   // Now make a REAL edit post-load — autosave must still work normally.
@@ -153,7 +153,7 @@ const browser = await chromium.launch();
   }, SESSION_KEY);
   const edgesAfterEdit = slotAfterEdit ? slotAfterEdit.project.ptpEdges || {} : {};
   rec('a real edit after "start fresh" still autosaves (reflects fresh state + the new edit, not the stale session)',
-    edgesAfterEdit['delta|gamma'] === 'road' && !('alpha|delta' in edgesAfterEdit) && Object.keys(edgesAfterEdit).length === 3,
+    edgesAfterEdit['delta|gamma|road'] === 'road' && !('alpha|delta|road' in edgesAfterEdit) && Object.keys(edgesAfterEdit).length === 3,
     JSON.stringify(edgesAfterEdit));
 
   rec('case B: no console/page errors', errors.length === 0, errors.slice(0, 3).join(' | '));

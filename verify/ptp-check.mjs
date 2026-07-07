@@ -64,11 +64,11 @@ rec('orphan-node warning lists delta (zero edges)', orphans.includes('delta') &&
   orphans.join(','));
 
 // Missing node ref detection
-store.state.ptpEdges['alpha|ghost'] = 'road';
+store.state.ptpEdges['alpha|ghost|road'] = 'road';
 const missing = findMissingNodeRefs(store.state.nodes, store.state.ptpEdges);
 rec('missing node ref detected', missing.some((m) => m.nodeId === 'ghost'), JSON.stringify(missing));
 
-delete store.state.ptpEdges['alpha|ghost'];
+delete store.state.ptpEdges['alpha|ghost|road'];
 
 try {
   validateEdgesDocument(exported);
@@ -92,14 +92,31 @@ try {
   rec('non-canonical a<b rejected on import', /canonical/i.test(err.message), err.message.slice(0, 60));
 }
 
-// Per-type dedup: setting same pair twice keeps one entry
-const dedupStore = new ProjectStore();
-dedupStore.setPalette(FIXTURE_PALETTE);
-dedupStore.importNodes(FIXTURE_NODES, { skipUndo: true });
-dedupStore.setPtpEdge('alpha', 'beta', 'road');
-dedupStore.setPtpEdge('alpha', 'beta', 'rail');
-rec('per-type dedup: one edge per pair', dedupStore.countPtpEdges() === 1,
-  `count=${dedupStore.countPtpEdges()} type=${dedupStore.getPtpEdge('alpha', 'beta')}`);
+// Per-type dedup: parallel types on same pair coexist; same-type dup rejected
+const parallelStore = new ProjectStore();
+parallelStore.setPalette(FIXTURE_PALETTE);
+parallelStore.importNodes(FIXTURE_NODES, { skipUndo: true });
+parallelStore.setPtpEdge('alpha', 'beta', 'road');
+parallelStore.setPtpEdge('alpha', 'beta', 'rail');
+rec('parallel edges: road+rail same pair coexist', parallelStore.countPtpEdges() === 2,
+  `count=${parallelStore.countPtpEdges()}`);
+
+const sameTypeDup = parallelStore.setPtpEdge('alpha', 'beta', 'road');
+rec('same-type duplicate rejected', sameTypeDup === false && parallelStore.countPtpEdges() === 2,
+  `ret=${sameTypeDup} count=${parallelStore.countPtpEdges()}`);
+
+const parallelExported = parallelStore.exportPtpEdgesObject();
+const parallelRound = new ProjectStore();
+parallelRound.setPalette(FIXTURE_PALETTE);
+parallelRound.importNodes(FIXTURE_NODES, { skipUndo: true });
+parallelRound.importPtpEdges(parallelExported, { skipUndo: true });
+rec('parallel edges export round-trip',
+  parallelRound.countPtpEdges() === 2 &&
+  parallelRound.getPtpEdge('alpha', 'beta', 'road') === 'road' &&
+  parallelRound.getPtpEdge('alpha', 'beta', 'rail') === 'rail');
+
+const parallelDupes = findDuplicateEdges(parallelExported.edges);
+rec('parallel export no duplicate (a,b,type)', parallelDupes.length === 0, parallelDupes.join(','));
 
 // --- Headless UI harness ---
 const PORT = 8040;

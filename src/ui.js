@@ -124,6 +124,7 @@ export class UI {
       'load-nodes', 'import-edges', 'import-attrs',
       'export-edges-file', 'export-edges-copy', 'export-attrs-file', 'export-attrs-copy',
       'ptp-edge-inspector', 'ptp-edge-insp-close', 'ptp-edge-insp-title',
+      'ptp-edge-insp-which-wrap', 'ptp-edge-insp-which',
       'ptp-edge-insp-type', 'ptp-edge-insp-delete',
       'node-feature-inspector', 'node-insp-title', 'node-insp-fields',
       'node-insp-close', 'node-insp-save', 'node-insp-clear'
@@ -547,6 +548,7 @@ export class UI {
     this.els['export-attrs-copy']?.addEventListener('click', () => this._copy(this.store.exportNodeAttrsJson(), 'node-attrs.json'));
     this.els['ptp-edge-insp-delete']?.addEventListener('click', () => this._deletePtpEdgeInspector());
     this.els['ptp-edge-insp-close']?.addEventListener('click', () => this.closePtpEdgeInspector());
+    this.els['ptp-edge-insp-which']?.addEventListener('change', () => this._switchPtpEdgeInspector());
     this.els['ptp-edge-insp-type']?.addEventListener('change', () => this._retypePtpEdgeInspector());
 
     this.els['node-insp-close']?.addEventListener('click', () => this.closeNodeInspector());
@@ -1112,8 +1114,8 @@ export class UI {
   }
 
   _onPtpEdgeDelete(edge) {
-    if (this.store.deletePtpEdge(edge.a, edge.b)) {
-      this.status(`Deleted edge ${edge.a}–${edge.b}`, 2000);
+    if (this.store.deletePtpEdge(edge.a, edge.b, edge.type)) {
+      this.status(`Deleted ${edge.type} edge ${edge.a}–${edge.b}`, 2000);
       this.closePtpEdgeInspector();
       this._renderBrushCard();
       this._renderLayersPanel();
@@ -1125,13 +1127,38 @@ export class UI {
     const panel = this.els['ptp-edge-inspector'];
     if (!panel || !edge) return;
     const features = this._effectiveEdgeFeatures();
-    const select = this.els['ptp-edge-insp-type'];
+    const onPair = this.store.getPtpEdgesOnPair(edge.a, edge.b);
+    const whichWrap = this.els['ptp-edge-insp-which-wrap'];
+    const which = this.els['ptp-edge-insp-which'];
     this.els['ptp-edge-insp-title'].textContent = `${edge.a} ↔ ${edge.b}`;
+    if (whichWrap && which) {
+      if (onPair.length > 1) {
+        whichWrap.hidden = false;
+        which.innerHTML = onPair.map((e) => {
+          const label = features.find((f) => f.key === e.type)?.label || e.type;
+          return `<option value="${e.type}"${e.type === edge.type ? ' selected' : ''}>${label}</option>`;
+        }).join('');
+      } else {
+        whichWrap.hidden = true;
+        which.innerHTML = '';
+      }
+    }
+    const select = this.els['ptp-edge-insp-type'];
     select.innerHTML = features.map((f) =>
       `<option value="${f.key}"${f.key === edge.type ? ' selected' : ''}>${f.label || f.key}</option>`
     ).join('');
     panel.hidden = false;
     this.els['layers-panel'].hidden = true;
+  }
+
+  _switchPtpEdgeInspector() {
+    if (!this.ptpSelectedEdge) return;
+    const type = this.els['ptp-edge-insp-which']?.value;
+    if (!type || type === this.ptpSelectedEdge.type) return;
+    const { a, b } = this.ptpSelectedEdge;
+    const edge = this.store.getPtpEdgesOnPair(a, b).find((e) => e.type === type);
+    if (!edge) return;
+    this._onPtpEdgeSelect(edge);
   }
 
   closePtpEdgeInspector() {
@@ -1145,10 +1172,18 @@ export class UI {
     if (!this.ptpSelectedEdge) return;
     const type = this.els['ptp-edge-insp-type']?.value;
     if (!type) return;
-    const { a, b } = this.ptpSelectedEdge;
-    if (this.store.setPtpEdge(a, b, type)) {
-      this.ptpSelectedEdge = { ...this.ptpSelectedEdge, type, edgeKey: `${a < b ? a : b}|${a < b ? b : a}` };
-      this.status(`Retyped ${a}–${b} as ${type}`, 2000);
+    const { a, b, type: oldType } = this.ptpSelectedEdge;
+    if (type === oldType) return;
+    if (this.store.getPtpEdge(a, b, type)) {
+      this.status(`A ${type} edge already exists on ${a}–${b}.`, 2500);
+      this.els['ptp-edge-insp-type'].value = oldType;
+      return;
+    }
+    if (this.store.deletePtpEdge(a, b, oldType) && this.store.setPtpEdge(a, b, type)) {
+      const edgeKey = `${a < b ? a : b}|${a < b ? b : a}|${type}`;
+      this.ptpSelectedEdge = { a, b, type, edgeKey };
+      this.status(`Retyped ${a}–${b} from ${oldType} to ${type}`, 2000);
+      this.openPtpEdgeInspector(this.ptpSelectedEdge);
       this._renderBrushCard();
       this._renderLayersPanel();
       this.renderer.setSelectedPtpEdge(this.ptpSelectedEdge);

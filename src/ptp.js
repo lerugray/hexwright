@@ -6,6 +6,99 @@ export function nodePairKey(a, b) {
   return sa < sb ? `${sa}|${sb}` : `${sb}|${sa}`;
 }
 
+/** Storage key for one p2p edge: canonical pair + connection type. */
+export function ptpEdgeKey(a, b, type) {
+  const pair = normalizeNodePair(a, b);
+  const t = String(type || '').trim();
+  if (!pair || !t) return null;
+  return `${nodePairKey(pair.a, pair.b)}|${t}`;
+}
+
+export const PTP_PARALLEL_OFFSET = 5;
+
+export function parsePtpEdgeKey(key, fallbackType = '') {
+  const parts = String(key || '').split('|');
+  if (parts.length === 2) {
+    const pair = normalizeNodePair(parts[0], parts[1]);
+    if (!pair) return null;
+    const type = String(fallbackType || '').trim();
+    if (!type) return { a: pair.a, b: pair.b, pairKey: nodePairKey(pair.a, pair.b), type: '', edgeKey: key };
+    return {
+      a: pair.a, b: pair.b, pairKey: nodePairKey(pair.a, pair.b), type,
+      edgeKey: ptpEdgeKey(pair.a, pair.b, type)
+    };
+  }
+  if (parts.length >= 3) {
+    const pair = normalizeNodePair(parts[0], parts[1]);
+    if (!pair) return null;
+    const type = String(parts[2] || fallbackType || '').trim();
+    return {
+      a: pair.a, b: pair.b, pairKey: nodePairKey(pair.a, pair.b), type,
+      edgeKey: ptpEdgeKey(pair.a, pair.b, type)
+    };
+  }
+  return null;
+}
+
+/** Migrate legacy pair-only keys (`a|b` -> type) to `a|b|type`. */
+export function normalizePtpEdgeMap(map) {
+  const out = {};
+  for (const [key, type] of Object.entries(map || {})) {
+    const parsed = parsePtpEdgeKey(key, type);
+    if (!parsed) continue;
+    const edgeType = parsed.type || String(type || '').trim();
+    if (!edgeType) continue;
+    const canon = ptpEdgeKey(parsed.a, parsed.b, edgeType);
+    out[canon] = edgeType;
+  }
+  return out;
+}
+
+function perpendicularDelta(na, nb, offsetPx) {
+  const dx = nb.x - na.x;
+  const dy = nb.y - na.y;
+  const len = Math.hypot(dx, dy) || 1;
+  return { x: (-dy / len) * offsetPx, y: (dx / len) * offsetPx };
+}
+
+/** Enumerate edges with render/hit-test offsets for parallel connections on one pair. */
+export function enumeratePtpEdges(edgeMap, nodes) {
+  const byPair = new Map();
+  for (const [key, type] of Object.entries(edgeMap || {})) {
+    const parsed = parsePtpEdgeKey(key, type);
+    if (!parsed || !parsed.type) continue;
+    const na = nodes?.[parsed.a];
+    const nb = nodes?.[parsed.b];
+    if (!na || !nb) continue;
+    const pk = parsed.pairKey;
+    if (!byPair.has(pk)) byPair.set(pk, []);
+    byPair.get(pk).push({
+      a: parsed.a,
+      b: parsed.b,
+      pairKey: pk,
+      type: parsed.type,
+      edgeKey: ptpEdgeKey(parsed.a, parsed.b, parsed.type),
+      na,
+      nb
+    });
+  }
+  const out = [];
+  for (const list of byPair.values()) {
+    list.sort((e1, e2) => e1.type.localeCompare(e2.type));
+    const n = list.length;
+    list.forEach((edge, i) => {
+      let offset = 0;
+      if (n > 1) {
+        const step = (2 * PTP_PARALLEL_OFFSET) / (n - 1);
+        offset = (i - (n - 1) / 2) * step;
+      }
+      const delta = perpendicularDelta(edge.na, edge.nb, offset);
+      out.push({ ...edge, offset, x1: edge.na.x + delta.x, y1: edge.na.y + delta.y, x2: edge.nb.x + delta.x, y2: edge.nb.y + delta.y });
+    });
+  }
+  return out;
+}
+
 export function normalizeNodePair(a, b) {
   const sa = String(a || '').trim();
   const sb = String(b || '').trim();
@@ -84,8 +177,11 @@ export function edgesArrayToMap(edges) {
   for (const edge of edges || []) {
     const pair = normalizeNodePair(edge.a, edge.b);
     if (!pair) continue;
-    const key = nodePairKey(pair.a, pair.b);
-    map[key] = String(edge.type).trim();
+    const type = String(edge.type).trim();
+    if (!type) continue;
+    const key = ptpEdgeKey(pair.a, pair.b, type);
+    if (!key) continue;
+    map[key] = type;
   }
   return map;
 }
@@ -93,15 +189,17 @@ export function edgesArrayToMap(edges) {
 export function edgesMapToArray(edgeMap) {
   const out = [];
   for (const [key, type] of Object.entries(edgeMap || {})) {
-    const parts = key.split('|');
-    if (parts.length !== 2) continue;
-    const pair = normalizeNodePair(parts[0], parts[1]);
-    if (!pair || !type) continue;
-    out.push({ a: pair.a, b: pair.b, type: String(type) });
+    const parsed = parsePtpEdgeKey(key, type);
+    if (!parsed || !parsed.type) continue;
+    out.push({ a: parsed.a, b: parsed.b, type: parsed.type });
   }
-  out.sort((e1, e2) =>
-    (e1.a < e2.a ? -1 : e1.a > e2.a ? 1 : e1.b < e2.b ? -1 : e1.b > e2.b ? 1 : 0)
-  );
+  out.sort((e1, e2) => {
+    const c = e1.a.localeCompare(e2.a);
+    if (c) return c;
+    const d = e1.b.localeCompare(e2.b);
+    if (d) return d;
+    return e1.type.localeCompare(e2.type);
+  });
   return out;
 }
 
@@ -117,11 +215,10 @@ export function countEdgesByType(edgeMap) {
 export function findOrphanNodeIds(nodes, edgeMap) {
   const connected = new Set();
   for (const key of Object.keys(edgeMap || {})) {
-    const parts = key.split('|');
-    if (parts.length === 2) {
-      connected.add(parts[0]);
-      connected.add(parts[1]);
-    }
+    const parsed = parsePtpEdgeKey(key, edgeMap[key]);
+    if (!parsed) continue;
+    connected.add(parsed.a);
+    connected.add(parsed.b);
   }
   const orphans = [];
   for (const id of Object.keys(nodes || {})) {
@@ -134,9 +231,9 @@ export function findOrphanNodeIds(nodes, edgeMap) {
 export function findMissingNodeRefs(nodes, edgeMap) {
   const missing = [];
   for (const key of Object.keys(edgeMap || {})) {
-    const parts = key.split('|');
-    if (parts.length !== 2) continue;
-    for (const id of parts) {
+    const parsed = parsePtpEdgeKey(key, edgeMap[key]);
+    if (!parsed) continue;
+    for (const id of [parsed.a, parsed.b]) {
       if (!nodes?.[id]) missing.push({ edge: key, nodeId: id });
     }
   }
@@ -147,7 +244,8 @@ export function findDuplicateEdges(edges) {
   const seen = new Set();
   const dupes = [];
   for (const edge of edges || []) {
-    const key = nodePairKey(edge.a, edge.b);
+    const key = ptpEdgeKey(edge.a, edge.b, edge.type);
+    if (!key) continue;
     if (seen.has(key)) dupes.push(key);
     else seen.add(key);
   }
@@ -184,19 +282,30 @@ export function nearestPtpEdge(worldPt, nodes, edgeMap, tolerance) {
   if (!worldPt || !nodes || !edgeMap) return null;
   let best = null;
   let bestD = tolerance;
-  for (const [key, type] of Object.entries(edgeMap)) {
-    const parts = key.split('|');
-    if (parts.length !== 2) continue;
-    const na = nodes[parts[0]];
-    const nb = nodes[parts[1]];
-    if (!na || !nb) continue;
-    const d = distPointToSegment(worldPt.x, worldPt.y, na.x, na.y, nb.x, nb.y);
+  for (const edge of enumeratePtpEdges(edgeMap, nodes)) {
+    const d = distPointToSegment(worldPt.x, worldPt.y, edge.x1, edge.y1, edge.x2, edge.y2);
     if (d <= bestD) {
       bestD = d;
-      best = { a: parts[0], b: parts[1], edgeKey: key, type };
+      best = { a: edge.a, b: edge.b, edgeKey: edge.edgeKey, type: edge.type, pairKey: edge.pairKey };
     }
   }
   return best;
+}
+
+export function ptpEdgesOnPair(edgeMap, a, b) {
+  const pair = normalizeNodePair(a, b);
+  if (!pair) return [];
+  const prefix = `${nodePairKey(pair.a, pair.b)}|`;
+  const legacy = nodePairKey(pair.a, pair.b);
+  const out = [];
+  for (const [key, type] of Object.entries(edgeMap || {})) {
+    if (key === legacy || key.startsWith(prefix)) {
+      const parsed = parsePtpEdgeKey(key, type);
+      if (parsed?.type) out.push({ a: parsed.a, b: parsed.b, type: parsed.type, edgeKey: ptpEdgeKey(parsed.a, parsed.b, parsed.type) });
+    }
+  }
+  out.sort((e1, e2) => e1.type.localeCompare(e2.type));
+  return out;
 }
 
 export const NODE_HIT_TOLERANCE = 14;

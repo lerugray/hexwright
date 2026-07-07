@@ -1,8 +1,8 @@
 import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency, enumerateGridLattice, validateGrid, parseCCRR, isValidCell, hexCenter } from './geometry.js';
 import {
   validateNodesDocument, nodesDocumentToMap, validateEdgesDocument, edgesArrayToMap,
-  edgesMapToArray, nodePairKey, normalizeNodePair, countEdgesByType,
-  findOrphanNodeIds, findMissingNodeRefs
+  edgesMapToArray, nodePairKey, ptpEdgeKey, normalizeNodePair, normalizePtpEdgeMap,
+  countEdgesByType, findOrphanNodeIds, findMissingNodeRefs, ptpEdgesOnPair
 } from './ptp.js';
 
 const MAX_UNDO = 64;
@@ -425,7 +425,7 @@ export class ProjectStore {
     if (Array.isArray(project.edges?.edges)) {
       this.state.ptpEdges = edgesArrayToMap(project.edges.edges);
     } else if (project.ptpEdges && typeof project.ptpEdges === 'object' && !Array.isArray(project.ptpEdges)) {
-      this.state.ptpEdges = deepClone(project.ptpEdges);
+      this.state.ptpEdges = normalizePtpEdgeMap(deepClone(project.ptpEdges));
     }
 
     // Raw internal nodeAttrs map (nodeId -> {featureKey: value}), the autosave/
@@ -958,30 +958,39 @@ export class ProjectStore {
     const pair = normalizeNodePair(a, b);
     if (!pair || !type) return false;
     if (!this.state.nodes[pair.a] || !this.state.nodes[pair.b]) return false;
-    const key = nodePairKey(pair.a, pair.b);
+    const key = ptpEdgeKey(pair.a, pair.b, type);
     const canonical = String(type).trim();
-    if (this.state.ptpEdges[key] === canonical) return false;
+    if (!key || this.state.ptpEdges[key] === canonical) return false;
     this.pushUndo();
     this.state.ptpEdges[key] = canonical;
     this.notify('ptpEdges');
     return true;
   }
 
-  deletePtpEdge(a, b) {
+  deletePtpEdge(a, b, type) {
     const pair = normalizeNodePair(a, b);
-    if (!pair) return false;
-    const key = nodePairKey(pair.a, pair.b);
-    if (!this.state.ptpEdges[key]) return false;
+    if (!pair || !type) return false;
+    const key = ptpEdgeKey(pair.a, pair.b, type);
+    if (!key || !this.state.ptpEdges[key]) return false;
     this.pushUndo();
     delete this.state.ptpEdges[key];
     this.notify('ptpEdges');
     return true;
   }
 
-  getPtpEdge(a, b) {
+  getPtpEdge(a, b, type) {
     const pair = normalizeNodePair(a, b);
     if (!pair) return null;
-    return this.state.ptpEdges[nodePairKey(pair.a, pair.b)] || null;
+    if (type) {
+      const key = ptpEdgeKey(pair.a, pair.b, type);
+      return key ? (this.state.ptpEdges[key] || null) : null;
+    }
+    const onPair = ptpEdgesOnPair(this.state.ptpEdges, pair.a, pair.b);
+    return onPair[0]?.type || null;
+  }
+
+  getPtpEdgesOnPair(a, b) {
+    return ptpEdgesOnPair(this.state.ptpEdges, a, b);
   }
 
   countPtpEdges() {

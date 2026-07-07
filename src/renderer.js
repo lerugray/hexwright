@@ -5,7 +5,8 @@ import {
   isValidCell, parseCCRR, EDGE_HIT_TOLERANCE, EDGE_SNAP_ASSIST_TOLERANCE
 } from './geometry.js';
 import {
-  nearestNode, nearestPtpEdge, nodePairKey, NODE_HIT_TOLERANCE, PTP_EDGE_HIT_TOLERANCE
+  nearestNode, nearestPtpEdge, enumeratePtpEdges, ptpEdgesOnPair,
+  NODE_HIT_TOLERANCE, PTP_EDGE_HIT_TOLERANCE, PTP_PARALLEL_OFFSET
 } from './ptp.js';
 
 const TERRAIN_LABEL_MIN_SCALE = 0.08;
@@ -999,18 +1000,13 @@ export class MapRenderer {
     ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
     ctx.lineCap = 'round';
-    for (const [key, type] of Object.entries(edges)) {
-      const parts = key.split('|');
-      if (parts.length !== 2) continue;
-      const na = nodes[parts[0]];
-      const nb = nodes[parts[1]];
-      if (!na || !nb) continue;
-      const selected = this.selectedPtpEdge?.edgeKey === key;
-      const feature = this._ptpEdgeFeatureDecl(type);
+    for (const edge of enumeratePtpEdges(edges, nodes)) {
+      const selected = this.selectedPtpEdge?.edgeKey === edge.edgeKey;
+      const feature = this._ptpEdgeFeatureDecl(edge.type);
       const stroke = this._ptpEdgeStroke(feature, selected);
       ctx.beginPath();
-      ctx.moveTo(na.x, na.y);
-      ctx.lineTo(nb.x, nb.y);
+      ctx.moveTo(edge.x1, edge.y1);
+      ctx.lineTo(edge.x2, edge.y2);
       ctx.strokeStyle = stroke.color;
       ctx.lineWidth = stroke.width / s;
       ctx.setLineDash(stroke.dash.map((d) => d / s));
@@ -1023,9 +1019,25 @@ export class MapRenderer {
       if (b.id !== pending) {
         const feature = this._ptpEdgeFeatureDecl(this.ptpEdgePaint.typeKey);
         const stroke = this._ptpEdgeStroke(feature, false);
+        const pairEdges = ptpEdgesOnPair(edges, pending, b.id);
+        const draftType = String(this.ptpEdgePaint.typeKey || '').trim();
+        const types = pairEdges.map((e) => e.type);
+        if (draftType && !types.includes(draftType)) types.push(draftType);
+        types.sort();
+        let offset = 0;
+        if (draftType && types.length > 1) {
+          const idx = types.indexOf(draftType);
+          const step = (2 * PTP_PARALLEL_OFFSET) / (types.length - 1);
+          offset = (idx - (types.length - 1) / 2) * step;
+        }
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const ox = (-dy / len) * offset;
+        const oy = (dx / len) * offset;
         ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
+        ctx.moveTo(a.x + ox, a.y + oy);
+        ctx.lineTo(b.x + ox, b.y + oy);
         ctx.globalAlpha = 0.45;
         ctx.strokeStyle = stroke.color;
         ctx.lineWidth = stroke.width / s;
