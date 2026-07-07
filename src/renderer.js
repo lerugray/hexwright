@@ -83,6 +83,14 @@ export class MapRenderer {
       active: false,
       onNodeClick: null
     };
+    // Inspect tool for p2p: node-then-edge hit precedence, no painting. Node
+    // wins within NODE_HIT_TOLERANCE, else the nearest (possibly parallel)
+    // edge — same precedence _ptpClickAt uses for the edge-trace mode.
+    this.ptpInspect = {
+      active: false,
+      onNodeClick: null,
+      onEdgeSelect: null
+    };
     this.nodeFeatureVisibility = {}; // View-only per-feature visibility map (node badges)
 
     this.shiftHeld = false;
@@ -201,6 +209,12 @@ export class MapRenderer {
   setPtpFeaturePaint(config) {
     this.ptpFeaturePaint = { ...this.ptpFeaturePaint, ...config };
     if (!this.ptpFeaturePaint.active) this.ptpHover = null;
+    this.draw();
+  }
+
+  setPtpInspect(config) {
+    this.ptpInspect = { ...this.ptpInspect, ...config };
+    if (!this.ptpInspect.active) this.ptpHover = null;
     this.draw();
   }
 
@@ -420,6 +434,14 @@ export class MapRenderer {
         wrap.setPointerCapture(e.pointerId);
         return;
       }
+      if (this.store.isPtp() && this.ptpInspect.active) {
+        this.isDragging = true;
+        this.clickMoved = false;
+        this.dragStart = { x: e.clientX, y: e.clientY };
+        this.panStart = { x: this.view.panX, y: this.view.panY };
+        wrap.setPointerCapture(e.pointerId);
+        return;
+      }
       if (this.nudgeMode) {
         this.isDragging = true;
         const off = this.store.state.mapOffset || [0, 0];
@@ -501,6 +523,24 @@ export class MapRenderer {
         const dx = e.clientX - this.dragStart.x;
         const dy = e.clientY - this.dragStart.y;
         if (Math.hypot(dx, dy) > 3) this.clickMoved = true;
+        return;
+      }
+      if (this.store.isPtp() && this.ptpInspect.active) {
+        const pt = this._eventToScreen(e);
+        if (!this.isDragging) {
+          const node = this._ptpNodeAtScreen(pt);
+          const edge = node ? null : this._ptpEdgeAtScreen(pt);
+          this.ptpHover = node || edge;
+          this.draw();
+          return;
+        }
+        // Drag pans, like hex-mode Inspect — inspect has nothing to paint.
+        const dx = e.clientX - this.dragStart.x;
+        const dy = e.clientY - this.dragStart.y;
+        if (Math.hypot(dx, dy) > 3) this.clickMoved = true;
+        this.view.panX = this.panStart.x + dx;
+        this.view.panY = this.panStart.y + dy;
+        this.draw();
         return;
       }
       if (this.nudgeMode) {
@@ -608,6 +648,24 @@ export class MapRenderer {
           if (node && this.ptpFeaturePaint.onNodeClick) {
             this.ptpFeaturePaint.onNodeClick(node.id, { altClear: !!e.altKey });
           }
+        }
+        return;
+      }
+      if (this.store.isPtp() && this.ptpInspect.active) {
+        const pt = this._eventToScreen(e);
+        if (!this.clickMoved) {
+          const node = this._ptpNodeAtScreen(pt);
+          if (node) {
+            if (this.ptpInspect.onNodeClick) this.ptpInspect.onNodeClick(node.id);
+            return;
+          }
+          const edge = this._ptpEdgeAtScreen(pt);
+          if (edge) {
+            if (this.ptpInspect.onEdgeSelect) this.ptpInspect.onEdgeSelect(edge);
+            return;
+          }
+          this.clearPtpSelection();
+          this.onPtpClear?.();
         }
         return;
       }
@@ -1095,7 +1153,10 @@ export class MapRenderer {
       const val = attrs[f.key];
       if (val === undefined || val === null) continue;
       let text;
-      if (f.kind === 'level') text = String(val);
+      // Legacy migration: a feature retyped flag->level in the palette can carry
+      // `true` from older sessions — render the flag glyph, never "true". The
+      // value itself is preserved until the operator types a real number.
+      if (f.kind === 'level' && val !== true) text = String(val);
       else if (f.kind === 'enum') text = String(val).slice(0, 2).toUpperCase();
       else text = f.badge || (f.label || f.key).slice(0, 1).toUpperCase();
       chips.push({ text, color: f.color || '#888' });

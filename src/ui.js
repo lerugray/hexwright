@@ -126,7 +126,7 @@ export class UI {
       'ptp-edge-inspector', 'ptp-edge-insp-close', 'ptp-edge-insp-title',
       'ptp-edge-insp-which-wrap', 'ptp-edge-insp-which',
       'ptp-edge-insp-type', 'ptp-edge-insp-delete',
-      'node-feature-inspector', 'node-insp-title', 'node-insp-fields',
+      'node-feature-inspector', 'node-insp-title', 'node-insp-meta', 'node-insp-fields',
       'node-insp-close', 'node-insp-save', 'node-insp-clear'
     ];
     for (const id of ids) this.els[id] = document.getElementById(id);
@@ -849,7 +849,7 @@ export class UI {
   setMode(mode) {
     if (this.store.isPtp()) {
       if (mode === 'features') mode = 'nodeFeatures';
-      if (!['edges', 'nodeFeatures'].includes(mode)) mode = 'edges';
+      if (!['inspect', 'edges', 'nodeFeatures'].includes(mode)) mode = 'edges';
     } else if (!['inspect', 'terrain', 'edges', 'features', 'nudge'].includes(mode)) {
       return;
     }
@@ -881,6 +881,7 @@ export class UI {
     this._setupFeaturePaint();
     this._setupPtpEdgePaint();
     this._setupNodeFeaturePaint();
+    this._setupPtpInspect();
     this.renderer.setNudgeMode(this.nudgeActive);
 
     if (this.nudgeActive && this.renderer.viewMode !== 'both') {
@@ -902,11 +903,14 @@ export class UI {
 
   _reflectMapFamily() {
     document.body.classList.toggle('map-family-ptp', this.store.isPtp());
-    const ptpOnly = ['tool-inspect', 'tool-terrain', 'tool-features', 'tool-nudge'];
-    for (const id of ptpOnly) {
+    // Inspect is shared between families; terrain/hex-features/nudge stay hex-only.
+    const hexOnlyTools = ['tool-terrain', 'tool-features', 'tool-nudge'];
+    for (const id of hexOnlyTools) {
       const el = this.els[id];
       if (el) el.hidden = this.store.isPtp();
     }
+    const inspectBtn = this.els['tool-inspect'];
+    if (inspectBtn) inspectBtn.hidden = false;
     const hexOnly = ['hex-editor', 'terrain-layer-wrap', 'group-layer-wrap', 'feature-layer-rows'];
     for (const id of hexOnly) {
       const el = document.getElementById(id);
@@ -941,6 +945,10 @@ export class UI {
   _updateModeHint() {
     const hint = this.els['mode-hint'];
     if (!hint) return;
+    if (this.mode === 'inspect' && this.store.isPtp()) {
+      hint.innerHTML = '<b>Inspect</b> — click a node or an edge to inspect it<span class="hint-extra"> · node wins over edge · <span class="kbd">Esc</span> close</span>';
+      return;
+    }
     if (this.mode === 'edges' && this.store.isPtp()) {
       const label = this._activePtpEdgeLabel();
       hint.innerHTML = `<b>Edge trace · ${label}</b> — click node A then node B · click edge to select<span class="hint-extra"> · <span class="kbd">⌥</span> click edge to delete · <span class="kbd">1</span>–<span class="kbd">0</span> switch type</span>`;
@@ -1050,7 +1058,22 @@ export class UI {
       onEdgeSelect: (edge) => this._onPtpEdgeSelect(edge),
       onEdgeDelete: (edge) => this._onPtpEdgeDelete(edge)
     });
-    this.renderer.onPtpClear = () => this.closePtpEdgeInspector();
+    this.renderer.onPtpClear = () => {
+      this.closePtpEdgeInspector();
+      this.closeNodeInspector();
+    };
+  }
+
+  // Inspect tool in p2p: click a node -> full node inspector (id/zone + every
+  // palette nodeFeature, editable); click an edge -> the per-edge inspector
+  // (same panel the edge-trace mode uses, parallel-edge picker included).
+  // Hit precedence lives in the renderer: node wins within its radius, else edge.
+  _setupPtpInspect() {
+    this.renderer.setPtpInspect({
+      active: this.store.isPtp() && this.mode === 'inspect',
+      onNodeClick: (nodeId) => this.openNodeInspector(nodeId),
+      onEdgeSelect: (edge) => this._onPtpEdgeSelect(edge)
+    });
   }
 
   _effectiveEdgeFeatures() {
@@ -1126,6 +1149,7 @@ export class UI {
   openPtpEdgeInspector(edge) {
     const panel = this.els['ptp-edge-inspector'];
     if (!panel || !edge) return;
+    if (this.nodeInspector) this.closeNodeInspector();
     const features = this._effectiveEdgeFeatures();
     const onPair = this.store.getPtpEdgesOnPair(edge.a, edge.b);
     const whichWrap = this.els['ptp-edge-insp-which-wrap'];
@@ -1320,6 +1344,12 @@ export class UI {
     if (!node) return;
     this.nodeInspector = { nodeId, draft: this.store.getNodeAttrs(nodeId) };
     this.els['node-insp-title'].textContent = node.name || nodeId;
+    const meta = this.els['node-insp-meta'];
+    if (meta) {
+      const bits = [`id ${node.id}`];
+      if (node.zone) bits.push(`zone ${node.zone}`);
+      meta.textContent = bits.join(' · ');
+    }
     this._renderNodeInspectorFields();
     this.els['node-feature-inspector'].hidden = false;
     this.els['layers-panel'].hidden = true;
@@ -1344,9 +1374,12 @@ export class UI {
       }
       if (f.kind === 'level') {
         const shown = Number.isFinite(val) ? val : '';
+        // Legacy flag->level migration: a bare `true` from an older session stays
+        // tagged (Save preserves it untouched) until the operator types a number.
+        const placeholder = val === true ? 'tagged — type a value' : '—';
         return `<label class="field-row">
           <span class="lbl">${f.label || f.key} (max ${f.max || 1})</span>
-          <input type="number" class="field-input node-feat-level" data-node-feat-key="${f.key}" min="1" max="${f.max || 99}" value="${shown}" placeholder="—" />
+          <input type="number" class="field-input node-feat-level" data-node-feat-key="${f.key}" min="1" max="${f.max || 99}" value="${shown}" placeholder="${placeholder}" />
         </label>`;
       }
       const values = f.values || [];

@@ -35,6 +35,17 @@ try {
   rec('nodes fixture validates', false, err.message);
 }
 
+// --- Unit: FtP palette declares resource as a numeric level feature (the
+// printed Strategic Will value on Confederate resource spaces) — guards
+// against a regression back to flag-only tagging.
+{
+  const ftpPalette = JSON.parse(readFileSync(resolve(REPO, 'palettes/ftp.json'), 'utf8'));
+  const resource = (ftpPalette.nodeFeatures || []).find((f) => f.key === 'resource');
+  rec('FtP palette: resource is a level (numeric) node feature',
+    resource?.kind === 'level' && Number.isFinite(resource?.max),
+    JSON.stringify(resource));
+}
+
 try {
   validateNodesDocument({ nodes: [{ id: 'a', name: 'A', x: 1, y: 2 }, { id: 'a', name: 'B', x: 3, y: 4 }] });
   rec('duplicate node id fails loudly', false, 'no throw');
@@ -194,6 +205,89 @@ try {
   rec('UI round-trip import/export equality',
     importRound.before === JSON.stringify(exportFromUi.edges) &&
     importRound.after === JSON.stringify(exportFromUi.edges));
+
+  // --- Inspect tool (p2p): toolbar entry, panel actually visible on-screen
+  // (the 2026-07-05/06 position:fixed lesson — check geometry, not just
+  // hidden=false), in-place numeric edit, node-vs-edge hit precedence. ---
+  const inspectToolState = await page.evaluate(() => {
+    const { ui } = window.hexwright;
+    ui.setMode('inspect');
+    const btn = document.getElementById('tool-inspect');
+    return { hidden: btn.hidden, mode: ui.mode, active: btn.classList.contains('is-active') };
+  });
+  rec('inspect tool visible + selectable in p2p',
+    !inspectToolState.hidden && inspectToolState.mode === 'inspect' && inspectToolState.active,
+    JSON.stringify(inspectToolState));
+
+  const alphaPt = await page.evaluate(() => {
+    const { store, renderer } = window.hexwright;
+    const n = store.state.nodes.alpha;
+    const pt = renderer.worldToScreen({ x: n.x, y: n.y });
+    const box = document.getElementById('map-canvas').getBoundingClientRect();
+    return { x: box.x + pt.x, y: box.y + pt.y };
+  });
+  await page.mouse.click(alphaPt.x, alphaPt.y);
+  await sleep(200);
+
+  const nodeInsp = await page.evaluate(() => {
+    const panel = document.getElementById('node-feature-inspector');
+    const r = panel.getBoundingClientRect();
+    return {
+      hidden: panel.hidden,
+      onScreen: r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0 &&
+        r.right <= window.innerWidth && r.bottom <= window.innerHeight,
+      meta: document.getElementById('node-insp-meta')?.textContent || '',
+      hasLevelInput: !!panel.querySelector('.node-feat-level[data-node-feat-key="fortress"]')
+    };
+  });
+  rec('inspect: node click opens node inspector, visibly on-screen',
+    !nodeInsp.hidden && nodeInsp.onScreen, JSON.stringify(nodeInsp));
+  rec('inspect: node inspector shows id meta + numeric level field',
+    /id alpha/.test(nodeInsp.meta) && nodeInsp.hasLevelInput, `meta="${nodeInsp.meta}"`);
+
+  await page.fill('#node-feature-inspector .node-feat-level[data-node-feat-key="fortress"]', '3');
+  await page.click('#node-insp-save');
+  await sleep(150);
+  const savedLevel = await page.evaluate(() => window.hexwright.store.getNodeAttrs('alpha').fortress);
+  rec('inspect: numeric value editable in place (fortress=3 saved)',
+    savedLevel === 3, `value=${JSON.stringify(savedLevel)}`);
+
+  const precision = await page.evaluate(() => {
+    const { store, renderer } = window.hexwright;
+    const a = store.state.nodes.alpha;
+    const b = store.state.nodes.beta;
+    const pa = renderer.worldToScreen({ x: a.x, y: a.y });
+    const pb = renderer.worldToScreen({ x: b.x, y: b.y });
+    const len = Math.hypot(pb.x - pa.x, pb.y - pa.y) || 1;
+    const ux = (pb.x - pa.x) / len;
+    const uy = (pb.y - pa.y) / len;
+    const box = document.getElementById('map-canvas').getBoundingClientRect();
+    return {
+      nearNode: { x: box.x + pa.x + ux * 8, y: box.y + pa.y + uy * 8 },
+      midEdge: { x: box.x + (pa.x + pb.x) / 2, y: box.y + (pa.y + pb.y) / 2 }
+    };
+  });
+  await page.mouse.click(precision.midEdge.x, precision.midEdge.y);
+  await sleep(200);
+  const edgeInsp = await page.evaluate(() => ({
+    edgeHidden: document.getElementById('ptp-edge-inspector').hidden,
+    nodeHidden: document.getElementById('node-feature-inspector').hidden,
+    title: document.getElementById('ptp-edge-insp-title').textContent
+  }));
+  rec('inspect: edge click opens per-edge inspector (node inspector closed)',
+    !edgeInsp.edgeHidden && edgeInsp.nodeHidden && /alpha/.test(edgeInsp.title) && /beta/.test(edgeInsp.title),
+    JSON.stringify(edgeInsp));
+
+  await page.mouse.click(precision.nearNode.x, precision.nearNode.y);
+  await sleep(200);
+  const nodeWins = await page.evaluate(() => ({
+    nodeHidden: document.getElementById('node-feature-inspector').hidden,
+    edgeHidden: document.getElementById('ptp-edge-inspector').hidden,
+    title: document.getElementById('node-insp-title').textContent
+  }));
+  rec('inspect: node hit wins over edge within node radius',
+    !nodeWins.nodeHidden && nodeWins.edgeHidden && /alpha/i.test(nodeWins.title),
+    JSON.stringify(nodeWins));
 
   rec('no uncaught console/page errors', errors.length === 0, errors.slice(0, 4).join(' | '));
 } catch (err) {

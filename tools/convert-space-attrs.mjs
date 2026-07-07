@@ -75,10 +75,12 @@ const pog = convertGame({
   }
 });
 
-// For the People: port / blockadeRunnerPort / capital / resourceSpace all map to
-// flags. `fort` is deliberately unmapped (6.81 adjudication: built forts are a
-// dynamic counter pool, not a static map attribute — see the draft's
-// _adjudication_fort note). `notes` carries no palette mapping — ignored.
+// For the People: port / blockadeRunnerPort / capital map to flags;
+// resourceSpace carries the printed Strategic Will value, so it maps to the
+// `resource` level feature (numeric, like PoG's fortress). `fort` is
+// deliberately unmapped (6.81 adjudication: built forts are a dynamic counter
+// pool, not a static map attribute — see the draft's _adjudication_fort note).
+// `notes` carries no palette mapping — ignored.
 const ftp = convertGame({
   game: 'For the People',
   draftPath: path.resolve(root, '../for-the-people-digital/data/space-attrs-draft.json'),
@@ -88,7 +90,7 @@ const ftp = convertGame({
     port: { feature: 'port', kind: 'flag' },
     blockadeRunnerPort: { feature: 'blockade-runner', kind: 'flag' },
     capital: { feature: 'capital', kind: 'flag' },
-    resourceSpace: { feature: 'resource', kind: 'flag' }
+    resourceSpace: { feature: 'resource', kind: 'level' }
   }
 });
 

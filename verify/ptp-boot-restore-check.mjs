@@ -207,6 +207,59 @@ const browser = await chromium.launch();
   await ctx.close();
 }
 
+// --- Case E: numeric node-attr values (level features, e.g. FtP resource
+// Strategic Will) must survive resume as NUMBERS, and a legacy boolean `true`
+// on a feature later retyped flag->level must load untouched (migration is
+// lossless — never coerced, never dropped).
+{
+  const errors = [];
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage({ viewport: { width: 1200, height: 900 } });
+  pageWithErrors(errors)(page);
+
+  const seededAttrs = {
+    alpha: { fortress: 3 },        // numeric level value
+    beta: { vp: true },            // ordinary flag
+    gamma: { fortress: true }      // legacy flag-value on a level feature
+  };
+  await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
+  await page.evaluate(({ key, slot }) => localStorage.setItem(key, JSON.stringify(slot)),
+    { key: SESSION_KEY, slot: seededSession({ ptpEdges: SEEDED_EDGES, nodeAttrs: seededAttrs }) });
+
+  await page.goto(`http://localhost:${PORT}/?project=${PTP_PROJECT_URL}`, { waitUntil: 'load' });
+  await page.waitForSelector('#restore-prompt:not([hidden])', { timeout: 10000 });
+  await page.click('#restore-prompt-restore');
+  await page.waitForFunction(() => window.hexwright?.store?.isPtp?.(), { timeout: 15000 });
+  await sleep(400);
+
+  const restored = await page.evaluate(() => ({
+    alphaFortress: window.hexwright.store.getNodeAttrs('alpha').fortress,
+    betaVp: window.hexwright.store.getNodeAttrs('beta').vp,
+    gammaFortress: window.hexwright.store.getNodeAttrs('gamma').fortress
+  }));
+  rec('resume restores a numeric level value as a number (fortress=3)',
+    restored.alphaFortress === 3, `value=${JSON.stringify(restored.alphaFortress)}`);
+  rec('resume preserves a legacy true on a level feature untouched (lossless migration)',
+    restored.gammaFortress === true && restored.betaVp === true,
+    JSON.stringify(restored));
+
+  // A real edit re-autosaves — the numeric + legacy values must round-trip
+  // through the session slot, not just the live store.
+  await page.evaluate(() => window.hexwright.store.setNodeAttr('delta', 'fortress', 2));
+  await sleep(1200);
+  const slotAttrs = await page.evaluate((key) => {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw).project.nodeAttrs : null;
+  }, SESSION_KEY);
+  rec('autosave round-trips numeric + legacy node-attr values',
+    !!slotAttrs && slotAttrs.alpha?.fortress === 3 && slotAttrs.gamma?.fortress === true &&
+      slotAttrs.delta?.fortress === 2,
+    JSON.stringify(slotAttrs));
+
+  rec('case E: no console/page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
+  await ctx.close();
+}
+
 await browser.close();
 srv.kill();
 

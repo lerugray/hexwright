@@ -1292,6 +1292,16 @@ button.active {
   display: none !important;
 }
 
+/* Node identity line (id · zone) under the node inspector title. */
+#node-insp-meta {
+  margin: 0 0 8px;
+  font-size: 11px;
+}
+
+#node-insp-meta:empty {
+  display: none;
+}
+
 .feature-insp {
   width: 260px;
   z-index: 46;

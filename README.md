@@ -94,6 +94,24 @@ output, per-game field names) into this shape reproducibly, via an
 explicit per-game field map — re-run it any time a draft file changes.
 Verify suite: `node verify/attrs-check.mjs`.
 
+Numeric values ride the `level` kind: e.g. For the People's Confederate
+resource spaces print a Strategic Will number on the map, so
+`palettes/ftp.json` declares `resource` as a `level` (max 12) and the
+badge chip shows the number itself. A feature retyped `flag`→`level`
+migrates losslessly — an old session's bare `true` keeps rendering as the
+flag glyph and the inspector shows a "tagged — type a value" placeholder
+until a real number is typed; nothing is coerced or dropped.
+
+### Inspect tool (point-to-point)
+
+`I` (or the Inspect tool in the rail) works in point-to-point projects
+the same way it does on hex maps: click a **node** to open the node
+inspector — id/zone identity line plus every palette feature, editable in
+place — or click an **edge** to open the per-edge inspector (parallel
+edges on one pair are picked apart there, as in edge-trace mode). A node
+hit wins within its radius, otherwise the nearest edge is taken; clicking
+empty board closes both. Drag pans, like hex-mode Inspect.
+
 ## Terrain display
 
 `L` toggles terrain labels: each hex shows its palette `abbr` (a short code, e.g. `W` for woods)
