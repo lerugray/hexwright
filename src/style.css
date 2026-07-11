@@ -462,11 +462,14 @@ label.file-btn:focus-within {
 }
 
 .terr-clear {
+  flex: none;
   margin-left: auto;
-  padding: 0 5px;
+  min-width: 18px;
+  text-align: center;
+  padding: 1px 5px;
   border-radius: 3px;
-  opacity: 0.45;
-  font-size: 12px;
+  opacity: 0.55;
+  font-size: 13px;
   line-height: 1.4;
   cursor: pointer;
 }
@@ -1406,9 +1409,10 @@ button.active {
   text-align: left;
 }
 
-.terr > span:last-child {
+.terr > span:not(.tswatch):not(.terr-clear) {
   min-width: 0;
   overflow-wrap: anywhere;
+  flex: 1;
 }
 
 .terr:hover { background: var(--hx-bg-hover, var(--chrome-2)); }
