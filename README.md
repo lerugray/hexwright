@@ -295,7 +295,7 @@ Palettes live in JSON. A neutral example ships at `palettes/default.json`.
 
 - **terrain**: base fill per hex; `color` drives Classification view and overlay export. `abbr` sets the short label shown by the terrain-labels toggle (`""` suppresses it); `colors: [a, b]` (instead of `color`) renders a two-color diagonal split fill for composite classes.
 - **hexFeatures**: point markers; optional `attrs` define inspector fields (`type: "number"` today).
-- **hexsideFeatures**: `kind` is `edge` or `crossing`; optional `dash`; `exportLayer` names the v1 export bucket.
+- **hexsideFeatures**: `kind` is `edge` or `crossing`; optional `dash` (`true` for the default pattern, or a verbatim dash array like `[6, 5]`); optional `width` overrides the class's stroke width (defaults unchanged when omitted) — together these let a palette define e.g. a heavy solid impassable/board-edge class; `exportLayer` names the v1 export bucket.
 - **Aliases**: map legacy import names to palette keys.
 
 Hexwright loads `palettes/default.json` when a manifest omits `palette`. You can also load a palette file from the File menu.
