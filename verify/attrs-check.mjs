@@ -11,7 +11,7 @@ import { ProjectStore, validateNodeAttrsDocument, draftSpacesToNodeAttrs } from 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE_PALETTE = JSON.parse(readFileSync(resolve(REPO, 'verify/fixtures/ptp-palette.json'), 'utf8'));
 const FIXTURE_NODES = JSON.parse(readFileSync(resolve(REPO, 'verify/fixtures/ptp-nodes.json'), 'utf8'));
-const PTP_PROJECT_URL = 'samples/ptp-fixture-project.json';
+const PTP_PROJECT_URL = 'verify/fixtures/ptp-fixture-project.json';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = [];

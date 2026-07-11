@@ -1,0 +1,8 @@
+{
+  "name": "PTP fixture",
+  "mapFamily": "ptp",
+  "nodes": "verify/fixtures/ptp-nodes.json",
+  "edges": "verify/fixtures/ptp-edges.json",
+  "palette": "verify/fixtures/ptp-palette.json",
+  "imageFull": [400, 300]
+}

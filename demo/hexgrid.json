@@ -1,0 +1,15 @@
+{
+  "_comment": "Hexwright demo calibration — synthetic 12x9 flat-top even-q grid, no scan needed (blankLattice)",
+  "grid_version": 1,
+  "image_full": [
+    1330,
+    1180
+  ],
+  "n_cols": 12,
+  "n_rows": 9,
+  "x_intercept_col0": 100,
+  "col_pitch_x": 100,
+  "y_intercept_row0": 100,
+  "row_pitch_y": 115,
+  "even_col_y_offset": 57.5
+}

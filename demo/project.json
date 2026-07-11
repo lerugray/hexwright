@@ -1,0 +1,14 @@
+{
+  "name": "Hexwright Demo — Ferrum Valley",
+  "_comment": "Bundled synthetic demo — no map scan required (blankLattice renders the calibrated grid). Open with ?project=demo/project.json",
+  "imageFull": [
+    1330,
+    1180
+  ],
+  "hexgrid": "demo/hexgrid.json",
+  "terrain": "demo/terrain.json",
+  "hexsides": "demo/hexsides.json",
+  "features": "demo/features.json",
+  "names": "demo/names.json",
+  "blankLattice": true
+}

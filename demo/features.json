@@ -1,0 +1,38 @@
+{
+  "_comment": "Hexwright demo point features",
+  "features": [
+    {
+      "code": "0604",
+      "type": "city",
+      "name": "Ferrum",
+      "attrs": {
+        "vp": 2,
+        "bp": 1
+      }
+    },
+    {
+      "code": "0902",
+      "type": "city",
+      "name": "Norwick",
+      "attrs": {
+        "vp": 1
+      }
+    },
+    {
+      "code": "0305",
+      "type": "fort",
+      "name": "Fort Lakewatch",
+      "attrs": {
+        "strength": 3
+      }
+    },
+    {
+      "code": "1006",
+      "type": "objective",
+      "name": "Quarry Ridge",
+      "attrs": {
+        "vp": 3
+      }
+    }
+  ]
+}

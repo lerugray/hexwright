@@ -23,7 +23,7 @@ const rec = (name, ok, note = '') => {
 };
 
 const PORT = 8052;
-const PTP_PROJECT_URL = 'samples/ptp-fixture-project.json';
+const PTP_PROJECT_URL = 'verify/fixtures/ptp-fixture-project.json';
 const SESSION_KEY = 'hexwright.session.ptp-fixture';
 
 // canonical ptpEdgeKey: alpha<beta<delta<gamma

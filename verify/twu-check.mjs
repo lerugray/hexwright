@@ -153,7 +153,7 @@ try {
 
   rec(
     'wrong-shaped TWU file fails loudly',
-    /twu import failed/i.test(afterInvalid.status) && /expected rivers/i.test(afterInvalid.status),
+    /pair-list import failed/i.test(afterInvalid.status) && /expected rivers/i.test(afterInvalid.status),
     afterInvalid.status.slice(0, 120)
   );
   rec(

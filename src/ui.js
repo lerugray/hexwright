@@ -914,10 +914,18 @@ export class UI {
     }
     const inspectBtn = this.els['tool-inspect'];
     if (inspectBtn) inspectBtn.hidden = false;
-    const hexOnly = ['hex-editor', 'terrain-layer-wrap', 'group-layer-wrap', 'feature-layer-rows'];
+    const hexOnly = ['terrain-layer-wrap', 'group-layer-wrap', 'feature-layer-rows'];
     for (const id of hexOnly) {
       const el = document.getElementById(id);
       if (el) el.hidden = this.store.isPtp();
+    }
+    // The hex inspector popup is hex-only too, but its visibility is
+    // click-driven: force-hide it on ptp, never force-show it on hex
+    // (setting hidden=false here opened an empty inspector on every hex
+    // boot, covering the layers panel).
+    if (this.store.isPtp()) {
+      const hexEd = document.getElementById('hex-editor');
+      if (hexEd) hexEd.hidden = true;
     }
     const ptpWrap = document.getElementById('ptp-layer-wrap');
     if (ptpWrap) ptpWrap.hidden = !this.store.isPtp();

@@ -2,6 +2,20 @@
 
 Engine-agnostic hex-map editor for digitizing printed wargame boards. Zero build, vanilla JavaScript and Canvas2D. Load a calibrated grid over a scan, assign terrain, hexside features, and point features by hand, then export canonical JSON your game engine consumes.
 
+## Try it in 30 seconds
+
+A tiny synthetic demo map ships in `demo/` — no scan, no calibration, no setup beyond a static file server:
+
+```
+cd hexwright
+python3 -m http.server 8000
+# open http://localhost:8000/?project=demo/project.json
+```
+
+(Or start the server, open `http://localhost:8000/`, and click **open the bundled demo map** on the start screen.)
+
+You get a 12×9 hex valley with painted terrain, a river, a road, a rail line, a bridge, named towns, and point features — every editor mode works on it. Poke at it, then bring your own board: see [docs/CREATING-A-CALIBRATION.md](docs/CREATING-A-CALIBRATION.md) for how to calibrate a grid over your own scan.
+
 ## Quick start
 
 No runtime dependencies. Install dev tools once for the verify suite:
@@ -290,7 +304,7 @@ Hexwright loads `palettes/default.json` when a manifest omits `palette`. You can
 | `features.json` | `{"_comment", "features": [{code, type, name?, attrs}]}` sorted by code |
 | `names.json` | `{"names": {"CCRR": "Name", ...}}` |
 | Classification PNG | Raster at `imageFull` resolution |
-| TWU rivers / rail | Strict pair-array contracts for games that use that on-ramp |
+| Rivers+rail pair lists | `rivers.json` (`{"hexsides":[["a","b"],...]}`) + `rail.json` (`{"links":[...],"hexes":[...]}`) — strict pair-array contracts for engines that consume that on-ramp (used in production by TWU-class projects) |
 
 **Import menu:**
 
@@ -299,7 +313,7 @@ Hexwright loads `palettes/default.json` when a manifest omits `palette`. You can
 | Raw `hexsides.json` / `terrain.json` | Replace current layer data |
 | `names.json` | Merges into current names (operator entries win on conflict) |
 | WMP draft | Classifier output with alias mapping; marks hexes `draft` until touched |
-| TWU layer | Validates shape strictly; wrong files fail loud with no mutation |
+| Pair-list layer | One `rivers.json` or `rail.json` pair-array file; validates shape strictly, wrong files fail loud with no mutation |
 
 Copy-to-clipboard actions use the same canonical objects as file export.
 
@@ -341,7 +355,7 @@ own placements and renames from a prior editing session are never clobbered by R
 npm test
 ```
 
-Runs headless Playwright checks under `verify/`: smoke load, functional store/renderer API, UI interactions, edge and terrain paint, shift-snap, TWU import/export round-trip, blank lattice, class-layer load, hexsides export dedup, v2 terrain fill, autosave slots, per-layer clear, and point features.
+Runs headless Playwright checks under `verify/`: the bundled demo map (loads with zero console errors and renders painted hexes), smoke load, functional store/renderer API, UI interactions, edge and terrain paint, shift-snap, pair-list import/export round-trip, blank lattice, class-layer load, hexsides export dedup, v2 terrain fill, autosave slots, per-layer clear, and point features. CI (GitHub Actions) runs the same suite on every push and pull request.
 
 Checks that need operator data under `local/` print `SKIP local game data not present (...)` and exit 0 when those files are absent, so a fresh public clone passes `npm test`. With `local/` populated, the full suite runs unchanged.
 

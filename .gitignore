@@ -12,3 +12,10 @@ verify/wmp-out.json
 local/
 samples/
 Launch Hexwright - *.command
+
+# internal design/session tooling (not part of the shipped editor;
+# opendesign/design-systems/ stays tracked — index.html loads its tokens+fonts)
+.claude/
+opendesign/mockups/
+opendesign/manifest.json
+opendesign/design-register.md

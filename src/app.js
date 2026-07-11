@@ -68,7 +68,7 @@ function parseFlexiblePairArray(list, fieldName) {
 
 function detectTwuLayer(payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new Error(`Expected a TWU JSON object: rivers ${TWU_RIVERS_SHAPE} OR rail ${TWU_RAIL_SHAPE}.`);
+    throw new Error(`Expected a pair-list JSON object: rivers ${TWU_RIVERS_SHAPE} OR rail ${TWU_RAIL_SHAPE}.`);
   }
 
   const hasHexsides = Object.prototype.hasOwnProperty.call(payload, 'hexsides');
@@ -98,13 +98,13 @@ function detectTwuLayer(payload) {
   if (riversValid && !railValid) return 'rivers';
   if (railValid && !riversValid) return 'rail';
   if (riversValid && railValid) {
-    throw new Error('File matches both rivers and rail shapes. Import one TWU layer per file.');
+    throw new Error('File matches both rivers and rail shapes. Import one pair-list layer per file.');
   }
 
   if (errors.length) {
-    throw new Error(`TWU import validation failed: ${errors[0]} Expected rivers ${TWU_RIVERS_SHAPE} OR rail ${TWU_RAIL_SHAPE}.`);
+    throw new Error(`Pair-list import validation failed: ${errors[0]} Expected rivers ${TWU_RIVERS_SHAPE} OR rail ${TWU_RAIL_SHAPE}.`);
   }
-  throw new Error(`TWU import validation failed: expected rivers ${TWU_RIVERS_SHAPE} OR rail ${TWU_RAIL_SHAPE}.`);
+  throw new Error(`Pair-list import validation failed: expected rivers ${TWU_RIVERS_SHAPE} OR rail ${TWU_RAIL_SHAPE}.`);
 }
 
 function twuCommentDate() {
@@ -856,13 +856,13 @@ async function main() {
         const layer = detectTwuLayer(payload);
         if (layer === 'rivers') {
           const touched = store.importTwuRivers(payload, { provenance: 'draft' });
-          ui.status(`Imported TWU rivers (${touched} touched hexes, marked draft).`, 4500);
+          ui.status(`Imported rivers pair list (${touched} touched hexes, marked draft).`, 4500);
         } else {
           const touched = store.importTwuRail(payload, { provenance: 'draft' });
-          ui.status(`Imported TWU rail (${touched} touched hexes, marked draft).`, 4500);
+          ui.status(`Imported rail pair list (${touched} touched hexes, marked draft).`, 4500);
         }
       } catch (err) {
-        ui.status(`TWU import failed: ${err.message}`, 7000);
+        ui.status(`Pair-list import failed: ${err.message}`, 7000);
       }
     },
     nodes: async (file) => {
@@ -935,7 +935,7 @@ async function main() {
 
       downloadObject('rivers.json', rivers);
       downloadObject('rail.json', rail);
-      ui.status('Exported TWU rivers.json + rail.json', 3000);
+      ui.status('Exported rivers.json + rail.json pair lists', 3000);
     }
   });
 

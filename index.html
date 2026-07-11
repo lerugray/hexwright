@@ -62,8 +62,8 @@
             <span>Import WMP draft</span>
             <input type="file" id="import-wmp" accept=".json,application/json" hidden />
           </label>
-          <label class="file-btn" title="Import one TWU layer file (rivers.json or rail.json)">
-            <span>Import TWU layer</span>
+          <label class="file-btn" title="Import one pair-list layer file (rivers.json or rail.json — strict pair-array contract)">
+            <span>Import pair layer</span>
             <input type="file" id="import-twu" accept=".json,application/json" hidden />
           </label>
           <label class="file-btn ptp-only" title="Import nodes.json (point-to-point map)">
@@ -96,7 +96,7 @@
           <button id="export-features-copy" type="button">Copy features</button>
           <button id="export-names-file" type="button">Export names.json</button>
           <button id="export-names-copy" type="button">Copy names</button>
-          <button id="export-twu" type="button" class="hex-only">TWU rivers+rail</button>
+          <button id="export-twu" type="button" class="hex-only" title="Export rivers.json + rail.json pair-list layers (strict pair-array contract)">Rivers+rail pair lists</button>
           <button id="export-edges-file" type="button" class="ptp-only">Export edges.json</button>
           <button id="export-edges-copy" type="button" class="ptp-only">Copy edges</button>
           <button id="export-attrs-file" type="button" class="ptp-only">Export node-attrs.json</button>
@@ -412,7 +412,7 @@
           <div class="helprow"><span>Export ▾</span><span class="keys plain">terrain / hexsides / features JSON</span></div>
         </div>
       </div>
-      <p class="help-footer hx-data">Getting loaded: use <strong>File ▾</strong> pickers, drag &amp; drop files, or open with <code>?project=&lt;manifest-url&gt;</code> (e.g. <code>?project=samples/gota-project.json</code>).</p>
+      <p class="help-footer hx-data">Getting loaded: use <strong>File ▾</strong> pickers, drag &amp; drop files, or open with <code>?project=&lt;manifest-url&gt;</code> (e.g. the bundled demo, <code>?project=demo/project.json</code>).</p>
     </div>
   </div>
 
@@ -420,7 +420,7 @@
     <div class="start-wrap">
       <div class="brand">
         <h1>Hexwright</h1>
-        <span class="ver hx-data">v2 — instrument build</span>
+        <span class="ver hx-data">v2.1 — instrument build</span>
       </div>
 
       <div class="start-grid">
@@ -445,7 +445,7 @@
           <span class="ic"><svg viewBox="0 0 24 24"><path d="M3 6 h6 l2 2.5 h10 v10.5 H3 z"/></svg></span>
           <h2>Load a project</h2>
           <p>A ?project= manifest or individual map / grid / terrain / sides files.</p>
-          <span class="meta hx-data">drag &amp; drop works anywhere</span>
+          <span class="meta hx-data">drag &amp; drop works anywhere — or <a href="?project=demo/project.json">open the bundled demo map</a></span>
           <div class="start-load-chooser" id="load-chooser" hidden>
             <div class="load-manifest-row">
               <input id="manifest-url" type="text" placeholder="local/my-game/project.json" />
