@@ -126,6 +126,13 @@ edges on one pair are picked apart there, as in edge-trace mode). A node
 hit wins within its radius, otherwise the nearest edge is taken; clicking
 empty board closes both. Drag pans, like hex-mode Inspect.
 
+### Terrain per-class bulk clear (2026-07-11)
+
+In the hex editor, every terrain class row carries an `×` — click once to arm
+(shows the count), click again to clear every hex of that class map-wide. One
+undo step restores them. Useful when a parser prefill misclassifies a class
+(e.g. two similar tan shades) and repainting beats correcting hex-by-hex.
+
 ## Terrain display
 
 `L` toggles terrain labels: each hex shows its palette `abbr` (a short code, e.g. `W` for woods)
