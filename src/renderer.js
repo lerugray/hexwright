@@ -1379,8 +1379,11 @@ export class MapRenderer {
       if (f) {
         return {
           stroke: f.color,
-          width: f.key === 'rail' ? 3.0 : 4.2,
-          dash: f.dash ? [6, 5] : []
+          // Optional per-class width (e.g. heavy impassable board-edge strokes);
+          // defaults preserve the long-standing rail/other split exactly.
+          width: Number.isFinite(f.width) ? f.width : (f.key === 'rail' ? 3.0 : 4.2),
+          // dash: true keeps the legacy [6,5]; an array is used verbatim.
+          dash: Array.isArray(f.dash) ? f.dash.slice() : (f.dash ? [6, 5] : [])
         };
       }
     }

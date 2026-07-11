@@ -349,6 +349,32 @@ try {
   }, setup.code);
   rec('hex click still opens inspector with edge-paint off', selectWorks, setup.code);
 
+  // _hexsideStyle contract: optional palette width (heavy impassable board-edge
+  // strokes) + dash arrays used verbatim; legacy defaults byte-identical.
+  const styleContract = await page.evaluate(() => {
+    const { store, renderer } = window.hexwright;
+    const saved = store.getPalette();
+    store.setPalette({ terrain: [], hexFeatures: [], hexsideFeatures: [
+      { key: 'impassible', label: 'Impassable', color: '#14161c', kind: 'edge', width: 7 },
+      { key: 'border', label: 'Border', color: '#d926a9', kind: 'edge', dash: true },
+      { key: 'rail', label: 'Rail', color: '#7a4fa3', kind: 'crossing', dash: [2, 3] }
+    ] });
+    const imp = renderer._hexsideStyle('impassible');
+    const bor = renderer._hexsideStyle('border');
+    const rail = renderer._hexsideStyle('rail');
+    store.setPalette(saved);
+    return { imp, bor, rail };
+  });
+  rec('hexside style honors palette width (impassable heavy solid)',
+    styleContract.imp.width === 7 && styleContract.imp.dash.length === 0 && styleContract.imp.stroke === '#14161c',
+    JSON.stringify(styleContract.imp));
+  rec('hexside style legacy defaults hold (dash:true -> [6,5], width 4.2)',
+    styleContract.bor.width === 4.2 && styleContract.bor.dash.join(',') === '6,5',
+    JSON.stringify(styleContract.bor));
+  rec('hexside style dash array verbatim; rail width 3.0 preserved',
+    styleContract.rail.dash.join(',') === '2,3' && styleContract.rail.width === 3.0,
+    JSON.stringify(styleContract.rail));
+
   rec('no uncaught console/page errors', errors.length === 0, errors.slice(0, 4).join(' | '));
 } catch (err) {
   rec('edge-paint harness completed', false, err.message);
