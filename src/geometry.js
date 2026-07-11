@@ -82,6 +82,10 @@ export function gridVersion(grid) {
   if (!grid || typeof grid !== 'object') return 1;
   const v = Number(grid.grid_version);
   if (Number.isFinite(v) && v >= 1) return v;
+  // No explicit grid_version: infer v2 when the file carries the v2 stagger
+  // field. A v2-style grid silently read with v1 semantics applies zero
+  // column stagger and renders overlapping hex sides (TWU Serbia, 2026-07-11).
+  if (Number.isFinite(Number(grid.odd_col_y_offset))) return 2;
   // Legacy grids have no grid_version field.
   return 1;
 }
