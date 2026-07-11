@@ -13,6 +13,8 @@ const rec = (name, ok, note = '') => {
 };
 
 rec('terrainAbbrForKey derives singles', terrainAbbrForKey('woods', null) === 'W' && terrainAbbrForKey('swamp', null) === 'SW');
+rec('rough derives R, not MT (regression: rough/mountain conflation)',
+  terrainAbbrForKey('rough', null) === 'R' && terrainAbbrForKey('mountain', null) === 'MT');
 rec('terrainAbbrForKey derives compounds', terrainAbbrForKey('woods_mountain', null) === 'W+M');
 rec('terrainAbbrForKey honors abbr empty', terrainAbbrForKey('clear', { key: 'clear', abbr: '' }) === '');
 

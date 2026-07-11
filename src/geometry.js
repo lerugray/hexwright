@@ -30,7 +30,7 @@ export function terrainAbbrForKey(key, entry) {
   const p = (parts[0] || '').toLowerCase();
   const singles = {
     woods: 'W', forest: 'W', swamp: 'SW', marsh: 'SW', urban: 'U',
-    mountain: 'MT', rough: 'MT', water: 'WTR', lake: 'WTR', clear: ''
+    mountain: 'MT', rough: 'R', water: 'WTR', lake: 'WTR', clear: ''
   };
   if (Object.prototype.hasOwnProperty.call(singles, p)) return singles[p];
   return p ? p.charAt(0).toUpperCase() : '';
