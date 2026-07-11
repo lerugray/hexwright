@@ -461,6 +461,18 @@ label.file-btn:focus-within {
   color: var(--muted);
 }
 
+.terr-clear {
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 3px;
+  opacity: 0.45;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.terr-clear:hover { opacity: 1; background: rgba(255, 255, 255, 0.12); }
+.terr-clear.confirming { opacity: 1; background: #8b2f2f; color: #fff; }
+
 .layer-clear {
   width: 20px;
   height: 20px;

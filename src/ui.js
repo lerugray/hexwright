@@ -224,12 +224,16 @@ export class UI {
     const hexFeatures = palette?.hexFeatures || [];
     const hexsideFeatures = palette?.hexsideFeatures || [];
 
-    this.els['hexed-terrain-grid'].innerHTML = terrain.map(t => `
+    this.els['hexed-terrain-grid'].innerHTML = terrain.map(t => {
+      const armed = this._isLayerClearArmed('terrain', t.key);
+      return `
       <button type="button" class="terr" data-terrain="${t.key}">
         <span class="tswatch" style="background:${terrainSwatchBackground(t)}"></span>
         <span>${t.label || t.key}</span>
+        <span class="terr-clear${armed ? ' confirming' : ''}" data-terrain-clear="${t.key}" role="button" title="${armed ? 'Click again to clear ALL hexes of this class' : 'Clear all hexes of this class'}">${armed ? '✓' : '×'}</span>
       </button>
-    `).join('');
+    `;
+    }).join('');
 
     this.els['hexed-featrow'].innerHTML = hexFeatures.map(f => `
       <button type="button" class="feat" data-feature="${f.key}">
@@ -479,6 +483,12 @@ export class UI {
       this.els['hex-editor'].addEventListener(evt, (e) => e.stopPropagation()));
 
     this.els['hex-editor'].addEventListener('click', (e) => {
+      const tclear = e.target.closest('.terr-clear[data-terrain-clear]');
+      if (tclear) {
+        e.stopPropagation();
+        this.clearTerrainClass(tclear.dataset.terrainClear);
+        return;
+      }
       const terr = e.target.closest('.terr[data-terrain]');
       if (terr && this.inspectorHex) {
         this.store.setTerrain(this.inspectorHex, terr.dataset.terrain);
@@ -1583,6 +1593,23 @@ export class UI {
   // arms a short "confirming" window on that exact button; a second click on
   // the SAME button within the window performs the clear; anything else
   // (timeout, clicking a different layer's button) disarms it.
+  clearTerrainClass(key) {
+    const palette = this.store.getPalette();
+    const label = (palette?.terrain || []).find((t) => t.key === key)?.label || key;
+    const count = this.store.countTerrainClass(key);
+    if (!count) { this.status(`No ${label} hexes to clear`, 2000); return; }
+    if (!this._isLayerClearArmed('terrain', key)) {
+      this._armLayerClear('terrain', key);
+      this._rebuildHexEditorPalette();
+      this.status(`Click × again to clear all ${count} ${label} hex${count === 1 ? '' : 'es'}`, 3000);
+      return;
+    }
+    this._disarmLayerClear();
+    const n = this.store.clearTerrainClass(key);
+    this._rebuildHexEditorPalette();
+    this.status(`Cleared ${n} ${label} hex${n === 1 ? '' : 'es'} — Undo restores them`, 4000);
+  }
+
   _isLayerClearArmed(kind, key) {
     return !!(this.pendingLayerClear && this.pendingLayerClear.kind === kind && this.pendingLayerClear.key === key);
   }

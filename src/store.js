@@ -738,6 +738,27 @@ export class ProjectStore {
     this.notify('terrain');
   }
 
+  countTerrainClass(key) {
+    const t = this.state.terrain?.terrain || {};
+    let n = 0;
+    for (const code of Object.keys(t)) if (t[code] === key) n++;
+    return n;
+  }
+
+  clearTerrainClass(key) {
+    const t = this.state.terrain?.terrain || {};
+    const codes = Object.keys(t).filter((code) => t[code] === key);
+    if (!codes.length) return 0;
+    this.pushUndo();
+    for (const code of codes) {
+      delete t[code];
+      delete this.state.provenance[code];
+    }
+    this.rebuildIndex();
+    this.notify('terrain');
+    return codes.length;
+  }
+
   applyTerrainBrush(code, key) {
     const current = this.state.terrain.terrain[code];
     if (current === key) this.clearTerrain(code);
