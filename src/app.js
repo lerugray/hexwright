@@ -329,7 +329,22 @@ function makeBlankProject({ grid = null, blankLattice = false, mapFamily = 'hex'
   };
 }
 
-function promptRestore(slot, kind = 'boot') {
+function comparableGrid(value) {
+  if (Array.isArray(value)) return value.map(comparableGrid);
+  if (!value || typeof value !== 'object') return value;
+  const normalized = {};
+  for (const key of Object.keys(value).sort()) {
+    if (key === 'fit_quality' || key.startsWith('_')) continue;
+    normalized[key] = comparableGrid(value[key]);
+  }
+  return normalized;
+}
+
+function gridsEqual(a, b) {
+  return JSON.stringify(comparableGrid(a)) === JSON.stringify(comparableGrid(b));
+}
+
+function promptRestore(slot, kind = 'boot', gridDiverged = false) {
   return new Promise((resolve) => {
     if (!slot || !slot.project) {
       resolve(false);
@@ -347,7 +362,10 @@ function promptRestore(slot, kind = 'boot') {
     const name = slot.project.name || 'untitled';
     const when = slot.savedAt ? formatRelativeTime(slot.savedAt) : 'unknown time';
     const content = describeSlotContent(slot);
-    msg.textContent = `Autosaved session from ${when} found for ${name} (${content}). Resume it, or start fresh?`;
+    const gridNotice = gridDiverged
+      ? " The project's grid changed on disk since this session was saved. Resume will use the updated grid and reset the map nudge."
+      : '';
+    msg.textContent = `Autosaved session from ${when} found for ${name} (${content}).${gridNotice} Resume it, or start fresh?`;
 
     const finish = (choice) => {
       prompt.hidden = true;
@@ -368,7 +386,10 @@ function promptRestore(slot, kind = 'boot') {
     };
 
     restoreBtn.onclick = () => finish(true);
-    freshBtn.onclick = () => finish(false);
+    freshBtn.onclick = () => {
+      if (kind === 'project' && slot.key) localStorage.removeItem(slot.key);
+      finish(false);
+    };
     document.addEventListener('keydown', onKey);
     prompt.hidden = false;
     restoreBtn.focus();
@@ -527,11 +548,10 @@ async function main() {
   let _awaitingBlankGrid = false;
   let _coachHiddenSession = false;
   // True while loadAndRender() is actively (re)populating the store. The
-  // autosave writer skips writes while this is set, so choosing "start
-  // fresh" over an offered restore doesn't immediately clobber the
-  // (rejected-but-still-present) session slot for that project name via the
-  // 800ms debounce firing off the mere act of loading — only a REAL edit
-  // made after the load completes should overwrite it.
+  // autosave writer skips writes while this is set, so loading a project
+  // doesn't create or replace a session slot via the 800ms debounce firing
+  // off the mere act of loading — only a REAL edit made after the load
+  // completes should write one.
   let _suppressAutosave = false;
 
   function isStartScreenVisible() {
@@ -680,12 +700,18 @@ async function main() {
     const manifestLabel = String(manifestUrl || '').split('/').pop() || '';
     const project = await loadProjectFromManifest(manifestUrl);
     const slot = getSessionSlotForName(project.name);
-    if (slot && slotHasContent(slot) && await promptRestore(slot, 'project')) {
+    const gridDiverged = !!slot && !gridsEqual(project.grid, slot.project.grid);
+    if (slot && slotHasContent(slot) && await promptRestore(slot, 'project', gridDiverged)) {
       const restored = slot.project;
       restored.mapImage = project.mapImage;
-      restored.traces = project.traces || [];
+      if (!gridDiverged) restored.traces = project.traces || [];
       if (!restored.imageFull || !restored.imageFull[0]) restored.imageFull = project.imageFull;
-      if (!restored.grid) restored.grid = project.grid;
+      if (gridDiverged) {
+        restored.grid = project.grid;
+        restored.mapOffset = [0, 0];
+      } else if (!restored.grid) {
+        restored.grid = project.grid;
+      }
       if (project.palette) restored.palette = project.palette;
       // Hexside-only autosaves (common during GotA tracing) must not discard the
       // manifest's production terrain layer on restore. But this must ONLY backfill

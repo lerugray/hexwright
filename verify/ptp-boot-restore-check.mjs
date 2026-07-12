@@ -6,9 +6,8 @@
 // (`slot.land>0 || slot.sides>0 || slot.groups>0`) never counted ptpEdges or
 // nodeAttrs, so the restore prompt never fired and boot silently loaded fresh.
 //
-// Also guards: choosing "start fresh" must not let the autosave debounce
-// immediately clobber the still-present (rejected) session slot — it should
-// survive untouched until a REAL edit happens post-load.
+// Also guards: choosing "start fresh" clears the rejected session slot, while
+// a later REAL edit still creates a new autosave normally.
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
 import { resolve, dirname } from 'path';
@@ -111,8 +110,8 @@ const browser = await chromium.launch();
   await ctx.close();
 }
 
-// --- Case B: choosing "start fresh" must not immediately clobber the rejected
-// session slot, but a REAL edit made afterward must still autosave normally.
+// --- Case B: choosing "start fresh" clears the rejected session slot, but a
+// REAL edit made afterward must still autosave normally.
 {
   const errors = [];
   const ctx = await browser.newContext();
@@ -133,16 +132,14 @@ const browser = await chromium.launch();
   rec('start-fresh loads the manifest baseline (2 edges, fewer than the session\'s 3)',
     freshEdgeCount === 2, `edges=${freshEdgeCount}`);
 
-  // Past the 800ms debounce with no edit made — the rejected slot must survive untouched.
+  // Past the 800ms debounce with no edit made — the rejected slot stays gone.
   await sleep(1500);
   const slotAfterFresh = await page.evaluate((key) => {
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : null;
   }, SESSION_KEY);
-  const slotEdgesAfterFresh = slotAfterFresh ? Object.keys(slotAfterFresh.project.ptpEdges || {}) : null;
-  rec('choosing "start fresh" does not overwrite the rejected session slot',
-    !!slotEdgesAfterFresh && slotEdgesAfterFresh.includes('alpha|delta|road') && slotEdgesAfterFresh.length === 3,
-    JSON.stringify(slotEdgesAfterFresh));
+  rec('choosing "start fresh" removes the rejected session slot',
+    slotAfterFresh === null, JSON.stringify(slotAfterFresh));
 
   // Now make a REAL edit post-load — autosave must still work normally.
   await page.evaluate(() => window.hexwright.store.setPtpEdge('gamma', 'delta', 'road'));
