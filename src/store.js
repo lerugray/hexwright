@@ -910,6 +910,13 @@ export class ProjectStore {
     return this.state.names?.[code] || '';
   }
 
+  // Operator-facing hex id: the printed/board number (names map) when the
+  // project provides one, else the internal grid code. Every UI surface a
+  // human reads should go through this; raw codes are for data plumbing.
+  displayCode(code) {
+    return this.state.names?.[code]?.trim() || code;
+  }
+
   setHexName(code, name) {
     const trimmed = name != null ? String(name).trim() : '';
     const current = this.state.names?.[code] || '';

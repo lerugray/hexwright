@@ -419,7 +419,7 @@ export class UI {
           if (existing) this.openFeatureInspector(code, this.featurePaintType);
           else {
             this.store.setPointFeature(code, this.featurePaintType, { name: '', attrs: undefined });
-            this.status(`Placed ${this._activePointFeatureLabel()} on ${code}`, 1800);
+            this.status(`Placed ${this._activePointFeatureLabel()} on ${this.store.displayCode(code)}`, 1800);
           }
           return;
         }
@@ -1651,7 +1651,7 @@ export class UI {
     const rec = this.store.getPointFeature(code, type);
     if (!rec) return;
     this.featureInspector = { code, type };
-    this.els['feat-insp-title'].textContent = `${pf?.label || type} · ${code}`;
+    this.els['feat-insp-title'].textContent = `${pf?.label || type} · ${this.store.displayCode(code)}`;
     // Name inheritance: hexes are named separately (Inspect panel's Name field,
     // the names layer). A feature with no name of its own defaults to the
     // hex's name — pre-filled, still editable — instead of presenting a blank
@@ -1703,7 +1703,7 @@ export class UI {
     const { code, type } = this.featureInspector;
     const values = this._collectFeatureInspectorValues();
     this.store.setPointFeature(code, type, values);
-    this.status(`Updated ${type} on ${code}`, 1800);
+    this.status(`Updated ${type} on ${this.store.displayCode(code)}`, 1800);
     this.closeFeatureInspector();
   }
 
@@ -1714,7 +1714,7 @@ export class UI {
     // (autosave + export both cover it) and a native dialog silently no-ops
     // under browser dialog-suppression, which reads as a broken Delete button.
     this.store.deletePointFeature(code, type);
-    this.status(`Deleted ${type} on ${code}`, 1800);
+    this.status(`Deleted ${type} on ${this.store.displayCode(code)}`, 1800);
     this.closeFeatureInspector();
   }
 
@@ -2542,7 +2542,7 @@ export class UI {
 
   _updateInspectorTitle(code) {
     const name = this.store.getHexName(code);
-    this.els['hexed-title'].textContent = name ? `Hex ${code} — ${name}` : `Hex ${code}`;
+    this.els['hexed-title'].textContent = `Hex ${this.store.displayCode(code)}`;
   }
 
   _setHexEditorFill(terrain) {
@@ -2702,7 +2702,7 @@ export class UI {
     // Same store mutation path as features-mode placement (blank name/attrs —
     // openFeatureInspector below pre-fills the name from the hex name if set).
     this.store.setPointFeature(code, type, { name: '', attrs: undefined });
-    this.status(`Added ${label} on ${code}`, 1800);
+    this.status(`Added ${label} on ${this.store.displayCode(code)}`, 1800);
     this.openFeatureInspector(code, type);
   }
 
@@ -2715,7 +2715,7 @@ export class UI {
     // above: single-feature delete is low-stakes, and a suppressed confirm()
     // silently vetoes the × button with no visible failure.
     this.store.deletePointFeature(code, type);
-    this.status(`Deleted ${label} on ${code}`, 1800);
+    this.status(`Deleted ${label} on ${this.store.displayCode(code)}`, 1800);
     // onChange -> updateUI -> _refreshInspector re-renders the list.
   }
 
