@@ -323,7 +323,8 @@ export class ProjectStore {
       mapOffset: [0, 0],
       schemaVersion: 2,
       blankLattice: false,
-      paletteMigrationCursor: 0
+      paletteMigrationCursor: 0,
+      reviewMode: false
     };
   }
 
@@ -419,7 +420,8 @@ export class ProjectStore {
         : [0, 0],
       schemaVersion: 2,
       blankLattice: project.blankLattice === true,
-      paletteMigrationCursor: terrainMigrations.length
+      paletteMigrationCursor: terrainMigrations.length,
+      reviewMode: project.reviewMode === true
     };
 
     if (Array.isArray(project.edges?.edges)) {

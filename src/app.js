@@ -501,6 +501,8 @@ async function loadProjectFromManifest(manifestUrl) {
     palette,
     traces,
     blankLattice: manifest.blankLattice === true,
+    reviewMode: manifest.reviewMode === true,
+    reviewModeHiddenLayers: Array.isArray(manifest.reviewModeHiddenLayers) ? manifest.reviewModeHiddenLayers : null,
     ...(nodesDoc ? { _nodesDocument: nodesDoc } : {})
   };
 }
@@ -680,6 +682,20 @@ async function main() {
     } finally {
       _suppressAutosave = false;
     }
+
+    // Apply manifest review-mode defaults: hide specified point-feature layers and
+    // suppress numeric attr labels (e.g. raw confidence decimals). These are view
+    // state only — the data stays loaded and each layer can be toggled back on.
+    if (project.reviewMode) {
+      renderer.pointFeatureVisibility = {};
+      const hidden = Array.isArray(project.reviewModeHiddenLayers) ? project.reviewModeHiddenLayers : [];
+      for (const key of hidden) {
+        if (key) renderer.pointFeatureVisibility[key] = false;
+      }
+      renderer.pointFeatureLabelsVisible = false;
+      ui._renderLayersPanel();
+    }
+
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     renderer.resize();
     renderer.setBaseScale();
@@ -803,6 +819,12 @@ async function main() {
         }
         restored.nodeAttrs = restoredAttrs;
       }
+      // Review-mode is a manifest-time view directive, not operator data; ensure
+      // the restored session inherits it so the sitting opens clean every time.
+      restored.reviewMode = project.reviewMode === true;
+      restored.reviewModeHiddenLayers = Array.isArray(project.reviewModeHiddenLayers)
+        ? project.reviewModeHiddenLayers
+        : null;
       await loadAndRender(restored);
       renderer.setViewMode('both');
       ui.setProjectSource(manifestLabel);

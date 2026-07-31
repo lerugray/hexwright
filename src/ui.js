@@ -643,10 +643,14 @@ export class UI {
 
     this.els['point-feature-layer-rows'].addEventListener('click', (e) => {
       const clearBtn = e.target.closest('.layer-clear[data-point-feature-key]');
-      if (!clearBtn) return;
-      const row = clearBtn.closest('.layer-row');
-      const label = row?.querySelector('.name')?.textContent?.trim() || clearBtn.dataset.pointFeatureKey;
-      this.clearPointFeatureLayer(clearBtn.dataset.pointFeatureKey, label);
+      if (clearBtn) {
+        const row = clearBtn.closest('.layer-row');
+        const label = row?.querySelector('.name')?.textContent?.trim() || clearBtn.dataset.pointFeatureKey;
+        this.clearPointFeatureLayer(clearBtn.dataset.pointFeatureKey, label);
+        return;
+      }
+      const eye = e.target.closest('.eye[data-point-feature-key]');
+      if (eye) this.togglePointFeatureLayerVisibility(eye.dataset.pointFeatureKey);
     });
 
     this.els['node-feature-layer-rows']?.addEventListener('click', (e) => {
@@ -1858,6 +1862,19 @@ export class UI {
     return visibility[featureKey] !== false;
   }
 
+  _pointFeatureVisible(featureKey) {
+    const visibility = this.renderer.pointFeatureVisibility || {};
+    return visibility[featureKey] !== false;
+  }
+
+  togglePointFeatureLayerVisibility(featureKey) {
+    if (!featureKey) return;
+    if (!this.renderer.pointFeatureVisibility) this.renderer.pointFeatureVisibility = {};
+    this.renderer.pointFeatureVisibility[featureKey] = !this._pointFeatureVisible(featureKey);
+    this._renderLayersPanel();
+    this.renderer.draw();
+  }
+
   toggleTerrainLabels(force) {
     const next = typeof force === 'boolean' ? force : !this.renderer.terrainLabelsVisible;
     this.renderer.terrainLabelsVisible = next;
@@ -1988,6 +2005,15 @@ export class UI {
     const rows = this.els['group-layer-rows'];
     if (!wrap || !rows) return;
     const groups = this.store.getGroups();
+    // Review mode is a manifest-time "sitting-unblocker" view: the operator only
+    // needs base map + terrain fill + anomaly cross-hatch + click-to-paint. The
+    // groups machinery (Create from selection / Add to group / group chips) is
+    // engine-jargon noise for that pass, so hide it entirely. Groups still exist
+    // in the data and reappear in normal mode or non-review projects.
+    if (this.store.state.reviewMode) {
+      wrap.hidden = true;
+      return;
+    }
     wrap.hidden = false;
     rows.innerHTML = groups.map((g) => {
       const selected = this._selectedGroupId === g.id;
@@ -2197,11 +2223,15 @@ export class UI {
       pointWrap.hidden = pointFeatures.length === 0;
       pointRows.innerHTML = pointFeatures.map((f) => {
         const n = pointCounts[f.key] || 0;
+        const on = this._pointFeatureVisible(f.key);
         const armed = this._isLayerClearArmed('point', f.key);
         const clearBtn = n > 0
           ? `<button type="button" class="layer-clear${armed ? ' confirming' : ''}" data-point-feature-key="${f.key}" aria-label="${armed ? `Confirm clear ${f.label || f.key} — click again to permanently remove ${n} entries` : `Clear ${f.label || f.key}`}" title="${armed ? 'Click again to permanently clear this layer' : 'Clear layer'}">${armed ? '✓' : '×'}</button>`
           : '';
-        return `<div class="layer-row">
+        return `<div class="layer-row${on ? '' : ' dimmed'}">
+          <button type="button" class="eye${on ? '' : ' off'}" data-point-feature-key="${f.key}" aria-label="Toggle ${f.label || f.key}">
+            ${on ? EYE_OPEN_SVG : EYE_OFF_SVG}
+          </button>
           <span class="swatch point-feat-glyph hx-data">${f.glyph || '•'}</span>
           <span class="name">${f.label || f.key}</span>
           <span class="count">${n}</span>

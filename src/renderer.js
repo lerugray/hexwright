@@ -92,6 +92,8 @@ export class MapRenderer {
       onEdgeSelect: null
     };
     this.nodeFeatureVisibility = {}; // View-only per-feature visibility map (node badges)
+    this.pointFeatureVisibility = {}; // View-only per-feature visibility map (hex point glyphs)
+    this.pointFeatureLabelsVisible = true; // View-only numeric attr labels under point glyphs
 
     this.shiftHeld = false;
     this.altHeld = false;
@@ -1515,6 +1517,8 @@ export class MapRenderer {
     const palette = this.store.getPalette();
     if (!palette || !palette.hexFeatures) return;
     const featureTypes = palette.hexFeatures || [];
+    const visibility = this.pointFeatureVisibility || {};
+    const labelsVisible = this.pointFeatureLabelsVisible !== false;
     ctx.save();
     ctx.translate(view.panX, view.panY);
     ctx.scale(s, s);
@@ -1528,7 +1532,7 @@ export class MapRenderer {
       const entries = Object.keys(byType).map((type) => {
         const pf = featureTypes.find((x) => x.key === type);
         return { type, rec: byType[type], pf };
-      }).filter((e) => e.pf && e.pf.glyph);
+      }).filter((e) => e.pf && e.pf.glyph && visibility[e.type] !== false);
       if (!entries.length) continue;
 
       const fontPx = Math.max(10, Math.min(26, r * 0.65 * s));
@@ -1555,7 +1559,7 @@ export class MapRenderer {
           const y = center.y;
           ctx.fillStyle = '#1a1a1a';
           ctx.fillText(entry.pf.glyph, x, y);
-          const num = this._firstNumericAttr(entry.rec?.attrs, entry.pf.attrs);
+          const num = labelsVisible ? this._firstNumericAttr(entry.rec?.attrs, entry.pf.attrs) : null;
           if (num != null) drawLabel(num, x, y);
         });
       } else {
@@ -1566,7 +1570,7 @@ export class MapRenderer {
           const y = center.y + startY + i * step;
           ctx.fillStyle = '#1a1a1a';
           ctx.fillText(entry.pf.glyph, x, y);
-          const num = this._firstNumericAttr(entry.rec?.attrs, entry.pf.attrs);
+          const num = labelsVisible ? this._firstNumericAttr(entry.rec?.attrs, entry.pf.attrs) : null;
           if (num != null) drawLabel(num, x, y);
         });
       }
