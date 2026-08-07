@@ -45,7 +45,7 @@ Hexwright has five tool modes on the left rail:
 | **Terrain paint** | `b` | Brush-assign base terrain. Click toggles off a hex already painted with the active ink. Drag paints a stroke (one undo entry per stroke). |
 | **Hexside edges** | `e` | Paint shared edges. Click toggles the active feature. Drag sets on. **Shift** snaps the cursor to the nearest valid edge (cyan preview). **Alt+click** or **Alt+drag** erases only the active ink. **Alt+click** with no active ink strips every feature on that edge. A **stroke-opacity** slider fades line strength without affecting terrain fill. |
 | **Point features** | `p` | Place typed markers (city, fort, objective, etc.) with optional numeric attributes. Click an existing marker to edit name and attrs. |
-| **Grid nudge** | `n` | Drag the scan under the fixed grid, or use arrow keys for 1 px steps (Shift = 10 px). Offset persists in the project autosave. |
+| **Grid nudge** | `n` | Drag the scan under the fixed grid, or use arrow keys for 1 px steps. Shift+arrows adjust col/row PITCH by 0.05 px (Alt+Shift = 0.5 px), anchored at the viewport-center hex, with a live numeric readout — fit a lattice by eye without edit-reload loops. Offset and pitch persist in the project autosave; export the adjusted grid from the File menu. |
 
 Middle-mouse drag pans in every mode. `v` cycles view: Map, Classification, Both. `?` opens the in-app help and shortcut table.
 
