@@ -4,7 +4,19 @@
 // page errors, count real land hexes, load the hexside layers, and actually
 // paint hexes onto the canvas.
 import { chromium } from 'playwright';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
+import path from 'path';
+
+// Pure geometry gate (anchored pitch) — kept in npm test without touching package.json.
+{
+  const pitch = spawnSync(process.execPath, [path.join('verify', 'pitch-anchor-check.mjs')], {
+    cwd: process.cwd(),
+    encoding: 'utf8'
+  });
+  if (pitch.stdout) process.stdout.write(pitch.stdout);
+  if (pitch.stderr) process.stderr.write(pitch.stderr);
+  if (pitch.status !== 0) process.exit(pitch.status || 1);
+}
 
 const DIR = process.cwd();
 const PORT = 8057;

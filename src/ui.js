@@ -1,6 +1,6 @@
 import {
   TERRAIN_COLORS, EDITABLE_LAYERS, HEXSIDE_COLORS, terrainSwatchBackground,
-  hexCenter, hexPolygon, edgeNeighbor
+  hexCenter, hexPolygon, edgeNeighbor, parseCCRR, nearestCenterCode, gridPitchReadout
 } from './geometry.js';
 import { syntheticHexFeaturesFromFeatures } from './store.js';
 
@@ -112,6 +112,7 @@ export class UI {
       'import-twu',
       'export-sides-file', 'export-sides-copy', 'export-terrain-file', 'export-terrain-copy',
       'export-features-file', 'export-features-copy', 'export-names-file', 'export-names-copy', 'export-twu',
+      'export-grid-file', 'export-grid-copy',
       'feature-inspector', 'feat-insp-close', 'feat-insp-title', 'feat-insp-name', 'feat-insp-attrs',
       'feat-insp-delete', 'feat-insp-save',
       'hex-editor', 'hexed-close', 'hexed-title', 'hexed-name', 'hexed-terrain-current', 'hexed-terrain-grid',
@@ -374,13 +375,26 @@ export class UI {
       if (e.key.toLowerCase() === 'n') this.setMode('nudge');
       if (this.nudgeActive && e.key.startsWith('Arrow')) {
         e.preventDefault();
-        const step = e.shiftKey ? 10 : 1; // world (full-image) pixels
-        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
-        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-        this.store.nudgeMapOffset(dx, dy);
-        this.renderer.draw();
-        const off = this.store.state.mapOffset || [0, 0];
-        this.status(`Map offset: ${Math.round(off[0])}, ${Math.round(off[1])} px`, 2500);
+        if (e.shiftKey) {
+          // Pitch (scale): Shift = ±0.05 px, Shift+Alt = ±0.5 px. Anchored to
+          // the hex nearest the current viewport center so the lattice doesn't slide.
+          const step = e.altKey ? 0.5 : 0.05;
+          let dCol = 0;
+          let dRow = 0;
+          if (e.key === 'ArrowLeft') dCol = -step;
+          else if (e.key === 'ArrowRight') dCol = step;
+          else if (e.key === 'ArrowUp') dRow = -step;
+          else if (e.key === 'ArrowDown') dRow = step;
+          this._nudgeGridPitch(dCol, dRow);
+        } else {
+          const step = 1; // world (full-image) pixels
+          const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+          const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+          this.store.nudgeMapOffset(dx, dy);
+          this.renderer.draw();
+          const off = this.store.state.mapOffset || [0, 0];
+          this.status(`Map offset: ${Math.round(off[0])}, ${Math.round(off[1])} px`, 2500);
+        }
       }
       if (e.key.toLowerCase() === 'v') this.cycleViewMode();
       if (e.key.toLowerCase() === 'l') this.toggleTerrainLabels();
@@ -549,6 +563,8 @@ export class UI {
     this.els['export-features-copy'].addEventListener('click', () => this._copy(this.store.exportFeaturesJson(), 'features.json'));
     this.els['export-names-file'].addEventListener('click', () => this._download('names.json', this.store.exportNamesJson()));
     this.els['export-names-copy'].addEventListener('click', () => this._copy(this.store.exportNamesJson(), 'names.json'));
+    this.els['export-grid-file']?.addEventListener('click', () => this._download('hexgrid.json', this.store.exportGridJson()));
+    this.els['export-grid-copy']?.addEventListener('click', () => this._copy(this.store.exportGridJson(), 'hexgrid.json'));
     this.els['export-twu'].addEventListener('click', () => {
       if (this.loadHandlers?.exportTwu) this.loadHandlers.exportTwu();
     });
@@ -903,7 +919,7 @@ export class UI {
 
     if (this.nudgeActive && this.renderer.viewMode !== 'both') {
       this.setViewMode('both');
-      this.status('Nudge map: drag the scan under the grid, or arrow keys (shift = ×10). Offset autosaves with the project.', 6000);
+      this.status('Nudge: arrows translate the scan; Shift+arrows adjust pitch (±0.05, ⌥×10). Pitch + offset autosave with the project.', 6000);
     }
 
     this._reflectMode();
@@ -1005,7 +1021,11 @@ export class UI {
       return;
     }
     if (this.mode === 'nudge') {
-      hint.innerHTML = '<b>Nudge map</b> — drag scan or arrow keys to align<span class="hint-extra"> · <span class="kbd">Shift</span> + arrows = ×10</span>';
+      const r = gridPitchReadout(this.store.state.grid);
+      const pitch = r
+        ? `col ${r.col_pitch_x.toFixed(2)} / row ${r.row_pitch_y.toFixed(2)} · intercept ${r.x_intercept_col0.toFixed(2)}, ${r.y_intercept_row0.toFixed(2)}`
+        : 'no grid';
+      hint.innerHTML = `<b>Nudge</b> — arrows translate · <span class="kbd">Shift</span>+arrows pitch (±0.05, <span class="kbd">⌥</span>×10)<span class="hint-extra"> · ${pitch}</span>`;
       return;
     }
     hint.innerHTML = '<b>Inspect</b> — click a hex to edit it<span class="hint-extra"> · <span class="kbd">Esc</span> close · edges apply the ink you tap</span>';
@@ -1059,6 +1079,34 @@ export class UI {
 
   toggleNudge() {
     this.setMode('nudge');
+  }
+
+  _viewportAnchorCell() {
+    const canvas = this.renderer.canvas;
+    if (!canvas || !this.store.centers) return { col: 0, row: 0 };
+    const world = this.renderer.screenToWorld({
+      x: canvas.width / 2,
+      y: canvas.height / 2
+    });
+    const code = nearestCenterCode(world, this.store.centers);
+    if (!code) return { col: 0, row: 0 };
+    return parseCCRR(code);
+  }
+
+  _nudgeGridPitch(dCol, dRow) {
+    if (!dCol && !dRow) return;
+    const { col, row } = this._viewportAnchorCell();
+    const ok = this.store.nudgeGridPitch(dCol, dRow, col, row);
+    if (!ok) return;
+    this.renderer.draw();
+    this._updateModeHint();
+    const r = gridPitchReadout(this.store.state.grid);
+    if (r) {
+      this.status(
+        `Pitch col ${r.col_pitch_x.toFixed(2)} / row ${r.row_pitch_y.toFixed(2)} · intercept ${r.x_intercept_col0.toFixed(2)}, ${r.y_intercept_row0.toFixed(2)}`,
+        3500
+      );
+    }
   }
 
   _reflectNudge() {

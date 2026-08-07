@@ -1,4 +1,4 @@
-import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency, enumerateGridLattice, validateGrid, parseCCRR, isValidCell, hexCenter } from './geometry.js';
+import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency, enumerateGridLattice, validateGrid, parseCCRR, isValidCell, hexCenter, applyAnchoredPitch } from './geometry.js';
 import {
   validateNodesDocument, nodesDocumentToMap, validateEdgesDocument, edgesArrayToMap,
   edgesMapToArray, nodePairKey, ptpEdgeKey, normalizeNodePair, normalizePtpEdgeMap,
@@ -1754,6 +1754,30 @@ export class ProjectStore {
   nudgeMapOffset(dx, dy) {
     const off = this.state.mapOffset || [0, 0];
     this.setMapOffset(off[0] + dx, off[1] + dy);
+  }
+
+  // Live pitch (scale) tweak in Nudge mode. Anchors one lattice cell so the
+  // region under the viewport does not slide away. Persists via autosave the
+  // same way mapOffset does (exportProjectObject.grid + notify → debounce).
+  nudgeGridPitch(colPitchDelta, rowPitchDelta, anchorCol, anchorRow) {
+    if (!this.state.grid) return false;
+    const next = applyAnchoredPitch(this.state.grid, {
+      colPitchDelta,
+      rowPitchDelta,
+      anchorCol,
+      anchorRow
+    });
+    if (!next) return false;
+    this.state.grid = next;
+    this.rebuildIndex();
+    this.notify('grid');
+    return true;
+  }
+
+  exportGridJson() {
+    const grid = this.state.grid;
+    if (!grid) return 'null';
+    return JSON.stringify(deepClone(grid), null, 2);
   }
 
   setTraceOpacity(index, opacity) {

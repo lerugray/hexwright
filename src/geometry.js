@@ -184,6 +184,149 @@ export function hexCenter(code, grid) {
   return { x, y };
 }
 
+const MIN_GRID_PITCH = 0.05;
+
+function readColPitch(grid) {
+  return grid.col_pitch_x ?? grid.x_model?.col_pitch_x ?? 1;
+}
+
+function readRowPitch(grid) {
+  return grid.row_pitch_y ?? grid.y_model?.row_pitch_y ?? 1;
+}
+
+function readXIntercept(grid) {
+  return grid.x_model?.x_intercept_col0 ?? grid.x_intercept_col0 ?? 0;
+}
+
+function readYIntercept(grid) {
+  return grid.y_model?.y_intercept_row0 ?? grid.y_intercept_row0 ?? 0;
+}
+
+function readParityOffset(grid, rowPitch) {
+  if (gridVersion(grid) >= 2) {
+    return grid.odd_col_y_offset ?? (rowPitch / 2);
+  }
+  return grid.even_col_y_offset ?? grid.y_model?.even_col_down_offset ?? (rowPitch / 2);
+}
+
+function writeColPitch(grid, value) {
+  grid.col_pitch_x = value;
+  if (grid.x_model) grid.x_model.col_pitch_x = value;
+}
+
+function writeRowPitch(grid, value) {
+  grid.row_pitch_y = value;
+  if (grid.y_model) grid.y_model.row_pitch_y = value;
+}
+
+function writeXIntercept(grid, value) {
+  grid.x_intercept_col0 = value;
+  if (grid.x_model) grid.x_model.x_intercept_col0 = value;
+}
+
+function writeYIntercept(grid, value) {
+  grid.y_intercept_row0 = value;
+  if (grid.y_model) grid.y_model.y_intercept_row0 = value;
+}
+
+function writeParityOffset(grid, value) {
+  if (gridVersion(grid) >= 2) {
+    grid.odd_col_y_offset = value;
+  } else {
+    grid.even_col_y_offset = value;
+    if (grid.y_model) grid.y_model.even_col_down_offset = value;
+  }
+}
+
+/** True when |offset| tracks half-pitch within 5% (sign preserved separately). */
+function parityOffsetLockedToHalf(offset, rowPitch) {
+  const half = Math.abs(rowPitch) / 2;
+  if (!(half > 0) || !Number.isFinite(offset)) return false;
+  return Math.abs(Math.abs(offset) - half) <= 0.05 * half;
+}
+
+/**
+ * Adjust col/row pitch while keeping one lattice cell fixed in world pixels.
+ * new_intercept = anchor_px − anchor_index * new_pitch (parity offset updated first).
+ * Returns a deep-cloned grid, or null if nothing to change.
+ */
+export function applyAnchoredPitch(grid, {
+  colPitchDelta = 0,
+  rowPitchDelta = 0,
+  anchorCol = 0,
+  anchorRow = 0
+} = {}) {
+  if (!grid || typeof grid !== 'object') return null;
+  if (!colPitchDelta && !rowPitchDelta) return null;
+
+  const next = JSON.parse(JSON.stringify(grid));
+  const oldColPitch = readColPitch(next);
+  const oldRowPitch = readRowPitch(next);
+  const newColPitch = Math.max(MIN_GRID_PITCH, oldColPitch + colPitchDelta);
+  const newRowPitch = Math.max(MIN_GRID_PITCH, oldRowPitch + rowPitchDelta);
+  if (newColPitch === oldColPitch && newRowPitch === oldRowPitch) return null;
+
+  const code = formatCCRR(anchorCol, anchorRow);
+  const anchor = hexCenter(code, next);
+
+  if (newColPitch !== oldColPitch) {
+    writeColPitch(next, newColPitch);
+    writeXIntercept(next, anchor.x - anchorCol * newColPitch);
+  }
+
+  if (newRowPitch !== oldRowPitch) {
+    const oldOffset = readParityOffset(next, oldRowPitch);
+    let newOffset;
+    if (parityOffsetLockedToHalf(oldOffset, oldRowPitch)) {
+      const sign = oldOffset < 0 ? -1 : 1;
+      newOffset = sign * (newRowPitch / 2);
+    } else if (oldRowPitch !== 0) {
+      newOffset = oldOffset * (newRowPitch / oldRowPitch);
+    } else {
+      newOffset = oldOffset;
+    }
+    writeRowPitch(next, newRowPitch);
+    writeParityOffset(next, newOffset);
+    // y = y0 + row * pitch + offset(col); compensate intercept so anchor stays put.
+    const appliedOffset = (gridVersion(next) >= 2)
+      ? (anchorCol % 2 === 1 ? newOffset : 0)
+      : (anchorCol % 2 === 0 ? newOffset : 0);
+    writeYIntercept(next, anchor.y - anchorRow * newRowPitch - appliedOffset);
+  }
+
+  return next;
+}
+
+/** Nearest hex code by center distance (viewport-anchor helper). */
+export function nearestCenterCode(worldPt, centers) {
+  if (!worldPt || !centers) return null;
+  let best = null;
+  let bestD = Infinity;
+  for (const code of Object.keys(centers)) {
+    const c = centers[code];
+    if (!c) continue;
+    const d = Math.hypot(c.x - worldPt.x, c.y - worldPt.y);
+    if (d < bestD) {
+      bestD = d;
+      best = code;
+    }
+  }
+  return best;
+}
+
+/** Flat readout of the live-editable calibration fields. */
+export function gridPitchReadout(grid) {
+  if (!grid) return null;
+  const rowPitch = readRowPitch(grid);
+  return {
+    col_pitch_x: readColPitch(grid),
+    row_pitch_y: rowPitch,
+    x_intercept_col0: readXIntercept(grid),
+    y_intercept_row0: readYIntercept(grid),
+    parity_offset: readParityOffset(grid, rowPitch)
+  };
+}
+
 export function hexRadius(grid) {
   // flat-top side length / circumradius = 2/3 of column pitch
   return grid.col_pitch_x / 1.5;

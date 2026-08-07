@@ -45,9 +45,10 @@ counts** — use `grid_version: 2` with `row_counts_by_parity: {"even": N, "odd"
 and `odd_col_y_offset` instead. Full schema (v1 + v2, plus legacy aliases) is
 in the README under **Grid schema**.
 
-Expect to iterate: load, look, adjust the numbers, reload. The measurements
-from step 1 usually land within a hex on the first try, and step 5 below
-tells you which number is wrong from how the drift looks.
+Expect to iterate: load, look, adjust. Coarse numbers from step 1 usually
+land within a hex on the first try; step 5 below tells you which field is
+wrong from how the drift looks. Prefer live pitch tweaks in Nudge mode
+(below) over an edit-reload loop once you are close.
 
 ## 3. Wrap it in a project manifest
 
@@ -83,8 +84,18 @@ launchers out of version control, per the README's launcher pattern).
 
 ## 5. Sanity-check the fit
 
-Turn on Grid nudge (`n`) and drag the scan until hex centers sit under the
-printed hexes; the offset persists in autosave. If rows drift as you move
-right, your `col_pitch_x` is off; if columns drift as you move down, fix
-`row_pitch_y`. A wrong `even_col_y_offset` sign shows up immediately as
-every other column sitting a half-hex wrong.
+Turn on Grid nudge (`n`) and drag the scan (or use arrow keys) until hex
+centers sit under the printed hexes; the offset persists in autosave. If
+rows drift as you move right, your `col_pitch_x` is off; if columns drift
+as you move down, fix `row_pitch_y`. A wrong `even_col_y_offset` sign shows
+up immediately as every other column sitting a half-hex wrong.
+
+**Iterate live in Nudge mode.** With Shift held, arrow keys adjust pitch
+in place (`←`/`→` = `col_pitch_x` ±0.05 px, `↑`/`↓` = `row_pitch_y` ±0.05;
+add Option/Alt for ×10 / 0.5 px steps). Scaling is anchored to the hex
+nearest the viewport center so the region you are looking at stays put —
+translation alone can never fix a pitch error that fits one side of the
+map and misses the other. The mode hint shows live pitch + intercepts;
+Export ▾ → hexgrid.json (or Copy hexgrid) writes the adjusted calibration
+back out for your `hexgrid.json` on disk. Pitch changes autosave with the
+project the same way map nudge does.
