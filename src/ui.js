@@ -925,6 +925,14 @@ export class UI {
     this.mode = mode;
     this.brushActive = mode === 'terrain' && !this.store.isPtp();
     this.elevationActive = mode === 'elevation' && !this.store.isPtp();
+    // Entering elevation mode auto-shows both overlays — painting invisible paint
+    // confused the operator on the feature's first live use (2026-08-08).
+    if (this.elevationActive && (!this.renderer.elevationOverlayVisible || !this.renderer.slopeOverlayVisible)) {
+      this.renderer.elevationOverlayVisible = true;
+      this.renderer.slopeOverlayVisible = true;
+      this._saveViewSettings();
+      this._renderLayersPanel();
+    }
     this.edgePaintActive = mode === 'edges' && !this.store.isPtp();
     this.featurePaintActive = mode === 'features' && !this.store.isPtp();
     this.nodeFeaturePaintActive = mode === 'nodeFeatures';
