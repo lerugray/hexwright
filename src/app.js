@@ -752,6 +752,11 @@ async function main() {
         restored.grid = project.grid;
       }
       if (project.palette) restored.palette = project.palette;
+      // blankLattice is a manifest-owned STRUCTURAL flag (grid-first calibration
+      // projects always render the full lattice). Session snapshots saved before
+      // the manifest gained the flag must not switch it off on restore — that
+      // rendered only painted hexes and read as "the grid is missing" (2026-08-08).
+      if (project.blankLattice === true) restored.blankLattice = true;
       // Hexside-only autosaves (common during GotA tracing) must not discard the
       // manifest's production terrain layer on restore. But this must ONLY backfill
       // when the autosave has NO terrain at all — comparing counts (manifestLand >
