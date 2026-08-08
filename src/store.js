@@ -308,6 +308,7 @@ export class ProjectStore {
       grid: null,
       terrain: { terrain: {} },
       elevation: {},
+      defaultElevation: 0,
       features: {},
       names: {},
       hexFeatures: {},
@@ -404,6 +405,7 @@ export class ProjectStore {
       grid: project.grid || null,
       terrain: { terrain: deepClone(migrated.terrain || {}) },
       elevation: deepClone(migrated.elevation || {}),
+      defaultElevation: this._normalizeDefaultElevation(project.defaultElevation),
       features: deepClone(migrated.features || {}),
       names: deepClone(migrated.names || {}),
       hexFeatures: deepClone(migrated.hexFeatures || {}),
@@ -795,11 +797,22 @@ export class ProjectStore {
     return Math.max(0, Math.min(9, Math.round(n)));
   }
 
+  _normalizeDefaultElevation(level) {
+    const n = Number(level);
+    return Number.isInteger(n) && n >= 1 && n <= 9 ? n : 0;
+  }
+
   getElevation(code) {
     const v = this.state.elevation?.[code];
     if (v === undefined || v === null) return null;
     const n = this._clampElevation(v);
     return n >= 1 ? n : null;
+  }
+
+  getEffectiveElevation(code) {
+    const painted = this.getElevation(code);
+    if (painted !== null) return painted;
+    return this._normalizeDefaultElevation(this.state.defaultElevation) || null;
   }
 
   setElevation(code, level) {
@@ -858,6 +871,9 @@ export class ProjectStore {
     }
     return {
       _comment: `edited in Hexwright v2.1 ${todayStamp()}`,
+      ...(this._normalizeDefaultElevation(this.state.defaultElevation)
+        ? { defaultElevation: this._normalizeDefaultElevation(this.state.defaultElevation) }
+        : {}),
       elevation
     };
   }
@@ -866,26 +882,33 @@ export class ProjectStore {
     const obj = this.exportElevationObject();
     const codes = Object.keys(obj.elevation).sort((a, b) => a.localeCompare(b));
     if (!codes.length) {
-      return JSON.stringify({ _comment: obj._comment, elevation: {} }, null, 2);
+      return JSON.stringify(obj, null, 2);
     }
+    const defaultLine = obj.defaultElevation
+      ? `  "defaultElevation": ${obj.defaultElevation},\n`
+      : '';
     const inner = codes.map((code, i) =>
       `    ${JSON.stringify(code)}: ${obj.elevation[code]}${i < codes.length - 1 ? ',' : ''}`
     ).join('\n');
-    return `{\n  "_comment": ${JSON.stringify(obj._comment)},\n  "elevation": {\n${inner}\n  }\n}`;
+    return `{\n  "_comment": ${JSON.stringify(obj._comment)},\n${defaultLine}  "elevation": {\n${inner}\n  }\n}`;
   }
 
   deriveSlopes() {
     const grid = this.state.grid;
     if (!grid || this.isPtp()) return new Map();
     const elevation = this.state.elevation || {};
+    const defaultElevation = this._normalizeDefaultElevation(this.state.defaultElevation);
+    const codes = defaultElevation
+      ? Object.keys(enumerateGridLattice(grid))
+      : Object.keys(elevation);
     const slopes = new Map();
-    for (const code of Object.keys(elevation)) {
-      const levelA = this.getElevation(code);
+    for (const code of codes) {
+      const levelA = defaultElevation ? this.getEffectiveElevation(code) : this.getElevation(code);
       if (levelA === null) continue;
       for (let edgeIndex = 0; edgeIndex < 6; edgeIndex++) {
         const nb = edgeNeighborCode(code, edgeIndex, grid);
         if (!nb) continue;
-        const levelB = this.getElevation(nb);
+        const levelB = defaultElevation ? this.getEffectiveElevation(nb) : this.getElevation(nb);
         if (levelB === null) continue;
         const delta = levelA - levelB;
         if (delta === 0) continue;
@@ -1862,6 +1885,9 @@ export class ProjectStore {
       mapOffset: deepClone(this.state.mapOffset || [0, 0]),
       palette: this.palette?.name || 'default',
       paletteMigrationCursor: this.state.paletteMigrationCursor || 0,
+      ...(this._normalizeDefaultElevation(this.state.defaultElevation)
+        ? { defaultElevation: this._normalizeDefaultElevation(this.state.defaultElevation) }
+        : {}),
       ...(this.state.blankLattice ? { blankLattice: true } : {})
     };
     if (this.isPtp()) {

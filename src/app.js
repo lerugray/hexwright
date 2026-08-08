@@ -516,6 +516,10 @@ async function loadProjectFromManifest(manifestUrl) {
     palette,
     traces,
     blankLattice: manifest.blankLattice === true,
+    defaultElevation: Number.isInteger(manifest.defaultElevation)
+      && manifest.defaultElevation >= 1 && manifest.defaultElevation <= 9
+      ? manifest.defaultElevation
+      : 0,
     reviewMode: manifest.reviewMode === true,
     reviewModeHiddenLayers: Array.isArray(manifest.reviewModeHiddenLayers) ? manifest.reviewModeHiddenLayers : null,
     ...(nodesDoc ? { _nodesDocument: nodesDoc } : {})
@@ -757,6 +761,9 @@ async function main() {
       // the manifest gained the flag must not switch it off on restore — that
       // rendered only painted hexes and read as "the grid is missing" (2026-08-08).
       if (project.blankLattice === true) restored.blankLattice = true;
+      // defaultElevation is also manifest-owned. Older session snapshots do not
+      // carry it, so always inherit the current manifest's normalized value.
+      restored.defaultElevation = project.defaultElevation;
       // Hexside-only autosaves (common during GotA tracing) must not discard the
       // manifest's production terrain layer on restore. But this must ONLY backfill
       // when the autosave has NO terrain at all — comparing counts (manifestLand >

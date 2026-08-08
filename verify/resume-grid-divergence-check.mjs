@@ -168,6 +168,44 @@ const browser = await chromium.launch();
   await context.close();
 }
 
+// Case E: manifest-owned defaultElevation survives restoring an older session
+// snapshot that predates the field.
+{
+  const errors = [];
+  const context = await browser.newContext();
+  await context.route('**/demo/project.json', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({
+      name: 'Hexwright Demo — Ferrum Valley',
+      imageFull: [1330, 1180],
+      hexgrid: 'demo/hexgrid.json',
+      terrain: 'demo/terrain.json',
+      hexsides: 'demo/hexsides.json',
+      features: 'demo/features.json',
+      names: 'demo/names.json',
+      blankLattice: true,
+      defaultElevation: 1
+    })
+  }));
+  await context.addInitScript(({ key, value }) => {
+    localStorage.setItem(key, JSON.stringify(value));
+  }, { key: SESSION_KEY, value: session(diskGrid) });
+  const page = await context.newPage({ viewport: { width: 1400, height: 900 } });
+  page.on('pageerror', (error) => errors.push(String(error)));
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+  await page.goto(`http://localhost:${PORT}/?project=${PROJECT_URL}`, { waitUntil: 'load' });
+  await page.waitForSelector('#restore-prompt:not([hidden])', { timeout: 10000 });
+  await page.click('#restore-prompt-restore');
+  await page.waitForFunction(() => window.hexwright?.store?.state?.defaultElevation === 1);
+  const restoredDefault = await page.evaluate(() => window.hexwright.store.state.defaultElevation);
+  rec('manifest defaultElevation wins when restored session lacks the field',
+    restoredDefault === 1, `defaultElevation=${restoredDefault}`);
+  rec('case E has no console/page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
+  await context.close();
+}
+
 await browser.close();
 server.kill();
 if (results.some((ok) => !ok)) process.exit(1);

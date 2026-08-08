@@ -167,8 +167,11 @@ use `terrainAliases` (idempotent, applied every load).
 
 Per-hex **elevation** is an optional integer layer (1–9). Paint it with the elevation brush (`h`),
 pick a level in the brush card (or `1`–`0`, where `0` erases), and click/drag hexes. The inspector
-also edits elevation for the selected hex. Unpainted hexes and level `0` are treated as "no
-elevation data" and do not participate in slope derivation.
+also edits elevation for the selected hex. By default, unpainted hexes and level `0` are treated
+as "no elevation data" and do not participate in slope derivation. A map manifest may set
+`defaultElevation` to an integer from 1–9; then every unpainted in-grid hex has that effective
+level for derivation, while painted values win. This applies regardless of terrain, including
+water and coast hexes.
 
 **Slopes are derived, never hand-painted.** Whenever two adjacent hexes both have elevation and
 `|delta| >= 1`, the shared hexside auto-classifies:
@@ -180,11 +183,12 @@ The renderer draws downhill tick marks on the **lower** side of the edge (classi
 convention): short ticks for slopes, heavier/longer ticks for escarpments. The `Elevation overlay`
 and `Slopes` toggles in the Layers panel control visibility; both default to off. The elevation
 overlay also shows a subtle translucent hypsometric tint and a cased numeral per painted hex so
-levels remain readable over busy scans.
+levels remain readable over busy scans. Defaulted, unpainted hexes are not tinted or numbered.
 
 The derivation is recomputed on every elevation edit, so there is no stored duplicate that can go
-stale. Export carries the raw elevation values plus the derived edge classifications; consuming
-games attach their own mechanics (e.g. slope-as-crossing-cost, ridge/no-fire-across lines).
+stale. Export carries the painted-only raw elevation values, `defaultElevation` when enabled, and
+the derived edge classifications computed from effective levels; consuming games attach their
+own mechanics (e.g. slope-as-crossing-cost, ridge/no-fire-across lines).
 
 ## Grid schema
 
@@ -249,6 +253,7 @@ A manifest JSON lists paths relative to the served root (typically the parent of
   "features": "local/my-game/features.json",
   "palette": "local/palettes/my-game.json",
   "blankLattice": false,
+  "defaultElevation": 1,
   "traces": [
     { "name": "rivers", "img": "local/my-game/traces/rivers.png", "layer": "rivers" }
   ]
@@ -268,6 +273,7 @@ A manifest JSON lists paths relative to the served root (typically the parent of
 | `names` | Per-hex location names document: `{"names": {"CCRR": "Name", ...}}` |
 | `palette` | Palette JSON (terrain, hexFeatures, hexsideFeatures, aliases) |
 | `blankLattice` | When `true`, show every valid grid cell even if terrain is empty (hexside-only projects) |
+| `defaultElevation` | Optional integer 1–9 used for unpainted in-grid hexes during slope derivation; absent or `0` disables the default |
 | `traces` | Optional reference PNG overlays with opacity control |
 
 ### Location names
@@ -334,7 +340,7 @@ Hexwright loads `palettes/default.json` when a manifest omits `palette`. You can
 | --- | --- |
 | `hexsides.json` | Grouped layers; each pair `{a,b}` with `a < b`, once per layer. When elevation data exists, additional top-level arrays `slopes` and `escarpments` list derived edges with `{a,b,higher}` direction. |
 | `terrain.json` | `{"terrain": {"CCRR": key}}` |
-| `elevation.json` | `{"elevation": {"CCRR": 1-9}}` sorted by code |
+| `elevation.json` | `{"defaultElevation"?: 1-9, "elevation": {"CCRR": 1-9}}`; raw painted values sorted by code |
 | `features.json` | `{"_comment", "features": [{code, type, name?, attrs}]}` sorted by code |
 | `names.json` | `{"names": {"CCRR": "Name", ...}}` |
 | Classification PNG | Raster at `imageFull` resolution |
