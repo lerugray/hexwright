@@ -955,6 +955,10 @@ export class UI {
     }
 
     this._setupBrush();
+    // Elevation shares the renderer's single brush slot with terrain; arm it AFTER
+    // _setupBrush so mode entry alone paints (2026-08-08 field defect: only a digit
+    // keypress armed it, so toolbar entry left clicks falling through unarmed).
+    if (this.elevationActive) this._setupElevationBrush();
     this._setupEdgePaint();
     this._setupFeaturePaint();
     this._setupPtpEdgePaint();
