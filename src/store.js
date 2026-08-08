@@ -1,4 +1,4 @@
-import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency, enumerateGridLattice, validateGrid, parseCCRR, isValidCell, hexCenter, applyAnchoredPitch } from './geometry.js';
+import { EDITABLE_LAYERS, normalizePair, buildLandIndex, buildAdjacency, enumerateGridLattice, validateGrid, parseCCRR, isValidCell, hexCenter, edgeNeighborCode, applyAnchoredPitch } from './geometry.js';
 import {
   validateNodesDocument, nodesDocumentToMap, validateEdgesDocument, edgesArrayToMap,
   edgesMapToArray, nodePairKey, ptpEdgeKey, normalizeNodePair, normalizePtpEdgeMap,
@@ -307,6 +307,7 @@ export class ProjectStore {
       mapFamily: 'hex',
       grid: null,
       terrain: { terrain: {} },
+      elevation: {},
       features: {},
       names: {},
       hexFeatures: {},
@@ -402,6 +403,7 @@ export class ProjectStore {
       mapFamily: project.mapFamily === 'ptp' ? 'ptp' : 'hex',
       grid: project.grid || null,
       terrain: { terrain: deepClone(migrated.terrain || {}) },
+      elevation: deepClone(migrated.elevation || {}),
       features: deepClone(migrated.features || {}),
       names: deepClone(migrated.names || {}),
       hexFeatures: deepClone(migrated.hexFeatures || {}),
@@ -445,6 +447,7 @@ export class ProjectStore {
   migrateToV2(project, terrAliases, sideAliases) {
     if (!project) return {};
     const terrain = {};
+    const elevation = {};
     const features = {};
     const hexFeatures = {};
     const hexsides = {};
@@ -551,7 +554,15 @@ export class ProjectStore {
       }
     }
 
-    return { terrain, features, names, hexFeatures, hexsides, provenance, groups };
+    if (project.elevation && typeof project.elevation === 'object' && !Array.isArray(project.elevation)) {
+      const src = project.elevation.elevation || project.elevation;
+      for (const [code, level] of Object.entries(src)) {
+        const n = Number(level);
+        if (Number.isFinite(n) && n >= 1 && n <= 9) elevation[String(code).trim()] = n;
+      }
+    }
+
+    return { terrain, elevation, features, names, hexFeatures, hexsides, provenance, groups };
   }
 
   setProject(patch) {
@@ -625,6 +636,7 @@ export class ProjectStore {
   pushUndo() {
     const snap = {
       terrain: deepClone(this.state.terrain),
+      elevation: deepClone(this.state.elevation),
       features: deepClone(this.state.features),
       names: deepClone(this.state.names || {}),
       hexFeatures: deepClone(this.state.hexFeatures),
@@ -672,6 +684,7 @@ export class ProjectStore {
     const snap = this.undoStack.pop();
     this.redoStack.push({
       terrain: deepClone(this.state.terrain),
+      elevation: deepClone(this.state.elevation),
       features: deepClone(this.state.features),
       names: deepClone(this.state.names || {}),
       hexFeatures: deepClone(this.state.hexFeatures),
@@ -692,6 +705,7 @@ export class ProjectStore {
     const snap = this.redoStack.pop();
     this.undoStack.push({
       terrain: deepClone(this.state.terrain),
+      elevation: deepClone(this.state.elevation),
       features: deepClone(this.state.features),
       names: deepClone(this.state.names || {}),
       hexFeatures: deepClone(this.state.hexFeatures),
@@ -709,6 +723,7 @@ export class ProjectStore {
 
   applySnap(snap) {
     this.state.terrain = snap.terrain;
+    this.state.elevation = snap.elevation || {};
     this.state.features = snap.features || {};
     this.state.names = snap.names || {};
     this.state.hexFeatures = snap.hexFeatures;
@@ -770,6 +785,124 @@ export class ProjectStore {
   // Legacy alias kept for ui.js/renderer.js until multi-select lands.
   setTerrainType(code, type) {
     this.setTerrain(code, type);
+  }
+
+  // ----------------- elevation -----------------
+
+  _clampElevation(level) {
+    const n = Number(level);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(9, Math.round(n)));
+  }
+
+  getElevation(code) {
+    const v = this.state.elevation?.[code];
+    if (v === undefined || v === null) return null;
+    const n = this._clampElevation(v);
+    return n >= 1 ? n : null;
+  }
+
+  setElevation(code, level) {
+    const n = this._clampElevation(level);
+    if (n >= 1) {
+      if (this.state.elevation[code] === n) return;
+      this.pushUndo();
+      this.state.elevation[code] = n;
+    } else {
+      if (!(code in this.state.elevation)) return;
+      this.pushUndo();
+      delete this.state.elevation[code];
+    }
+    this.notify('elevation');
+  }
+
+  clearElevation(code) {
+    return this.setElevation(code, 0);
+  }
+
+  applyElevationBrush(code, level) {
+    const current = this.getElevation(code);
+    const n = this._clampElevation(level);
+    if (current === n) this.clearElevation(code);
+    else this.setElevation(code, n);
+  }
+
+  countElevation() {
+    return Object.keys(this.state.elevation || {}).length;
+  }
+
+  importElevation(input) {
+    const data = typeof input === 'string' ? JSON.parse(input) : input;
+    const source = data?.elevation || data;
+    if (!source || typeof source !== 'object' || Array.isArray(source)) return 0;
+
+    this.pushUndo();
+    let count = 0;
+    for (const code of Object.keys(source)) {
+      const n = this._clampElevation(source[code]);
+      if (n >= 1) {
+        this.state.elevation[code] = n;
+        count++;
+      }
+    }
+    this.notify('elevation');
+    return count;
+  }
+
+  exportElevationObject() {
+    const elevation = {};
+    const source = this.state.elevation || {};
+    for (const code of Object.keys(source).sort((a, b) => a.localeCompare(b))) {
+      const n = this._clampElevation(source[code]);
+      if (n >= 1) elevation[code] = n;
+    }
+    return {
+      _comment: `edited in Hexwright v2.1 ${todayStamp()}`,
+      elevation
+    };
+  }
+
+  exportElevationJson() {
+    const obj = this.exportElevationObject();
+    const codes = Object.keys(obj.elevation).sort((a, b) => a.localeCompare(b));
+    if (!codes.length) {
+      return JSON.stringify({ _comment: obj._comment, elevation: {} }, null, 2);
+    }
+    const inner = codes.map((code, i) =>
+      `    ${JSON.stringify(code)}: ${obj.elevation[code]}${i < codes.length - 1 ? ',' : ''}`
+    ).join('\n');
+    return `{\n  "_comment": ${JSON.stringify(obj._comment)},\n  "elevation": {\n${inner}\n  }\n}`;
+  }
+
+  deriveSlopes() {
+    const grid = this.state.grid;
+    if (!grid || this.isPtp()) return new Map();
+    const elevation = this.state.elevation || {};
+    const slopes = new Map();
+    for (const code of Object.keys(elevation)) {
+      const levelA = this.getElevation(code);
+      if (levelA === null) continue;
+      for (let edgeIndex = 0; edgeIndex < 6; edgeIndex++) {
+        const nb = edgeNeighborCode(code, edgeIndex, grid);
+        if (!nb) continue;
+        const levelB = this.getElevation(nb);
+        if (levelB === null) continue;
+        const delta = levelA - levelB;
+        if (delta === 0) continue;
+        const key = pairKey(code, nb);
+        if (slopes.has(key)) continue;
+        const higher = delta > 0 ? code : nb;
+        const lower = delta > 0 ? nb : code;
+        const abs = Math.abs(delta);
+        slopes.set(key, {
+          type: abs >= 2 ? 'escarpment' : 'slope',
+          higher,
+          lower,
+          delta: abs
+        });
+      }
+    }
+    return slopes;
   }
 
   importTerrain(input, opts = {}) {
@@ -1616,6 +1749,23 @@ export class ProjectStore {
       }
     }
 
+    // Derived slope/escarpment layers from the elevation layer. These are never
+    // hand-painted; they are regenerated on every export so they cannot go stale.
+    const slopes = [];
+    const escarpments = [];
+    for (const [edgeKey, info] of this.deriveSlopes()) {
+      const parts = edgeKey.split('|');
+      if (parts.length !== 2) continue;
+      const pair = normalizePair(parts[0], parts[1]);
+      const entry = { a: pair.a, b: pair.b, higher: info.higher };
+      if (info.type === 'escarpment') escarpments.push(entry);
+      else slopes.push(entry);
+    }
+    const sortDir = (p1, p2) =>
+      (p1.a < p2.a ? -1 : p1.a > p2.a ? 1 : p1.b < p2.b ? -1 : 1);
+    base.slopes = slopes.sort(sortDir);
+    base.escarpments = escarpments.sort(sortDir);
+
     return base;
   }
 
@@ -1702,6 +1852,7 @@ export class ProjectStore {
       mapFamily: this.state.mapFamily || 'hex',
       grid: deepClone(this.state.grid),
       terrain: this.exportTerrainObject(),
+      elevation: this.exportElevationObject(),
       features: this.exportFeaturesObject(),
       names: this.exportNamesObject(),
       hexFeatures: deepClone(this.state.hexFeatures),

@@ -214,7 +214,7 @@ try {
   const placed = await page.evaluate(() => {
     const { store, renderer } = window.hexwright;
     const nodes = store.state.nodes;
-    const a = renderer.worldToScreen({ x: nodes.gamma.x, y: nodes.gamma.y });
+    const a = renderer.worldToScreen({ x: nodes.alpha.x, y: nodes.alpha.y });
     const b = renderer.worldToScreen({ x: nodes.delta.x, y: nodes.delta.y });
     const canvas = document.getElementById('map-canvas');
     const box = canvas.getBoundingClientRect();
@@ -229,7 +229,7 @@ try {
   await clickAt(placed.a);
   await clickAt(placed.b);
 
-  const newEdge = await page.evaluate(() => window.hexwright.store.getPtpEdge('delta', 'gamma'));
+  const newEdge = await page.evaluate(() => window.hexwright.store.getPtpEdge('alpha', 'delta'));
   rec('click node A then B creates edge', newEdge === 'road', `type=${newEdge}`);
 
   const exportFromUi = await page.evaluate(() => window.hexwright.store.exportPtpEdgesObject());

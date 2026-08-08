@@ -37,12 +37,13 @@ On macOS, double-click `Launch Hexwright.command` to start a local server and op
 
 ## Editor modes
 
-Hexwright has five tool modes on the left rail:
+Hexwright has six tool modes on the left rail:
 
 | Mode | Key | Purpose |
 | --- | --- | --- |
-| **Inspect** | (default) | Click a hex to open the inspector. Toggle terrain, in-hex features, and individual hexside features. The Features section can also **add a new point feature directly** (a type picker filtered to types not already on the hex, plus an Add button) — no detour through Point Features mode required while working hex-by-hex. The feature editor opens immediately after adding, with its **Name field pre-filled from the hex's own name** (when set) on both the new Add flow and the existing Edit flow. |
+| **Inspect** | (default) | Click a hex to open the inspector. Toggle terrain, elevation, in-hex features, and individual hexside features. The Features section can also **add a new point feature directly** (a type picker filtered to types not already on the hex, plus an Add button) — no detour through Point Features mode required while working hex-by-hex. The feature editor opens immediately after adding, with its **Name field pre-filled from the hex's own name** (when set) on both the new Add flow and the existing Edit flow. |
 | **Terrain paint** | `b` | Brush-assign base terrain. Click toggles off a hex already painted with the active ink. Drag paints a stroke (one undo entry per stroke). |
+| **Elevation brush** | `h` | Brush-assign per-hex integer elevation levels (1–9). `0` or a second click on the same level clears the hex. Levels are stored; slope/escarpment hexsides are derived automatically from adjacent levels. |
 | **Hexside edges** | `e` | Paint shared edges. Click toggles the active feature. Drag sets on. **Shift** snaps the cursor to the nearest valid edge (cyan preview). **Alt+click** or **Alt+drag** erases only the active ink. **Alt+click** with no active ink strips every feature on that edge. A **stroke-opacity** slider fades line strength without affecting terrain fill. |
 | **Point features** | `p` | Place typed markers (city, fort, objective, etc.) with optional numeric attributes. Click an existing marker to edit name and attrs. |
 | **Grid nudge** | `n` | Drag the scan under the fixed grid, or use arrow keys for 1 px steps. Shift+arrows adjust col/row PITCH by 0.05 px (Alt+Shift = 0.5 px), anchored at the viewport-center hex, with a live numeric readout — fit a lattice by eye without edit-reload loops. Offset and pitch persist in the project autosave; export the adjusted grid from the File menu. |
@@ -162,6 +163,29 @@ restores never double-apply — which makes swap-chains safe (e.g. `rough`→`br
 is for renaming classes in existing data; for merely accepting alternate spellings at import,
 use `terrainAliases` (idempotent, applied every load).
 
+## Elevation and derived slopes
+
+Per-hex **elevation** is an optional integer layer (1–9). Paint it with the elevation brush (`h`),
+pick a level in the brush card (or `1`–`0`, where `0` erases), and click/drag hexes. The inspector
+also edits elevation for the selected hex. Unpainted hexes and level `0` are treated as "no
+elevation data" and do not participate in slope derivation.
+
+**Slopes are derived, never hand-painted.** Whenever two adjacent hexes both have elevation and
+`|delta| >= 1`, the shared hexside auto-classifies:
+
+- `delta == 1` → **slope**
+- `delta >= 2` → **escarpment**
+
+The renderer draws downhill tick marks on the **lower** side of the edge (classic hachure
+convention): short ticks for slopes, heavier/longer ticks for escarpments. The `Elevation overlay`
+and `Slopes` toggles in the Layers panel control visibility; both default to off. The elevation
+overlay also shows a subtle translucent hypsometric tint and a cased numeral per painted hex so
+levels remain readable over busy scans.
+
+The derivation is recomputed on every elevation edit, so there is no stored duplicate that can go
+stale. Export carries the raw elevation values plus the derived edge classifications; consuming
+games attach their own mechanics (e.g. slope-as-crossing-cost, ridge/no-fire-across lines).
+
 ## Grid schema
 
 Hex codes use flat-top **even-q** addressing: `"0803"` = column 08, row 03.
@@ -220,6 +244,7 @@ A manifest JSON lists paths relative to the served root (typically the parent of
   "imageFull": [5000, 3200],
   "hexgrid": "local/my-game/hexgrid.json",
   "terrain": "local/my-game/terrain.json",
+  "elevation": "local/my-game/elevation.json",
   "hexsides": "local/my-game/hexsides.json",
   "features": "local/my-game/features.json",
   "palette": "local/palettes/my-game.json",
@@ -237,7 +262,8 @@ A manifest JSON lists paths relative to the served root (typically the parent of
 | `imageFull` | Full-resolution `[width, height]` for overlay export scaling |
 | `hexgrid` | Grid calibration JSON |
 | `terrain` | `{"terrain": {"CCRR": "key", ...}}` |
-| `hexsides` | Grouped v1 bundle or v2 internal shape (loader migrates) |
+| `elevation` | `{"elevation": {"CCRR": 1-9}}` (optional) |
+| `hexsides` | Grouped v1 bundle or v2 internal shape (loader migrates); also carries derived `slopes`/`escarpments` arrays on export |
 | `features` | Point-feature document (see below) |
 | `names` | Per-hex location names document: `{"names": {"CCRR": "Name", ...}}` |
 | `palette` | Palette JSON (terrain, hexFeatures, hexsideFeatures, aliases) |
@@ -306,8 +332,9 @@ Hexwright loads `palettes/default.json` when a manifest omits `palette`. You can
 
 | Output | Shape |
 | --- | --- |
-| `hexsides.json` | Grouped layers; each pair `{a,b}` with `a < b`, once per layer |
+| `hexsides.json` | Grouped layers; each pair `{a,b}` with `a < b`, once per layer. When elevation data exists, additional top-level arrays `slopes` and `escarpments` list derived edges with `{a,b,higher}` direction. |
 | `terrain.json` | `{"terrain": {"CCRR": key}}` |
+| `elevation.json` | `{"elevation": {"CCRR": 1-9}}` sorted by code |
 | `features.json` | `{"_comment", "features": [{code, type, name?, attrs}]}` sorted by code |
 | `names.json` | `{"names": {"CCRR": "Name", ...}}` |
 | Classification PNG | Raster at `imageFull` resolution |
@@ -317,7 +344,7 @@ Hexwright loads `palettes/default.json` when a manifest omits `palette`. You can
 
 | Input | Behavior |
 | --- | --- |
-| Raw `hexsides.json` / `terrain.json` | Replace current layer data |
+| Raw `hexsides.json` / `terrain.json` / `elevation.json` | Replace current layer data |
 | `names.json` | Merges into current names (operator entries win on conflict) |
 | WMP draft | Classifier output with alias mapping; marks hexes `draft` until touched |
 | Pair-list layer | One `rivers.json` or `rail.json` pair-array file; validates shape strictly, wrong files fail loud with no mutation |
@@ -362,7 +389,7 @@ own placements and renames from a prior editing session are never clobbered by R
 npm test
 ```
 
-Runs headless Playwright checks under `verify/`: the bundled demo map (loads with zero console errors and renders painted hexes), smoke load, functional store/renderer API, UI interactions, edge and terrain paint, shift-snap, pair-list import/export round-trip, blank lattice, class-layer load, hexsides export dedup, v2 terrain fill, autosave slots, per-layer clear, and point features. CI (GitHub Actions) runs the same suite on every push and pull request.
+Runs headless Playwright checks under `verify/`: the bundled demo map (loads with zero console errors and renders painted hexes), smoke load, functional store/renderer API, UI interactions, edge and terrain paint, elevation brush + derived slope/escarpment logic and export, shift-snap, pair-list import/export round-trip, blank lattice, class-layer load, hexsides export dedup, v2 terrain fill, autosave slots, per-layer clear, and point features. CI (GitHub Actions) runs the same suite on every push and pull request.
 
 Checks that need operator data under `local/` print `SKIP local game data not present (...)` and exit 0 when those files are absent, so a fresh public clone passes `npm test`. With `local/` populated, the full suite runs unchanged.
 

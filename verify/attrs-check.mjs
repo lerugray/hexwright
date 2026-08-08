@@ -163,7 +163,7 @@ try {
 
   const nodeScreen = await page.evaluate(() => {
     const { store, renderer } = window.hexwright;
-    const node = store.state.nodes.gamma;
+    const node = store.state.nodes.alpha;
     const pt = renderer.worldToScreen({ x: node.x, y: node.y });
     const canvas = document.getElementById('map-canvas');
     const box = canvas.getBoundingClientRect();
@@ -172,7 +172,7 @@ try {
   await page.mouse.click(nodeScreen.x, nodeScreen.y);
   await sleep(200);
 
-  const taggedViaClick = await page.evaluate(() => window.hexwright.store.getNodeAttrs('gamma').vp === true);
+  const taggedViaClick = await page.evaluate(() => window.hexwright.store.getNodeAttrs('alpha').vp === true);
   rec('paint-mode click tags the active feature via store API', taggedViaClick);
 
   // Alt-click clears it. page.mouse.click() has no `modifiers` option (that's a
@@ -181,20 +181,20 @@ try {
   await page.mouse.click(nodeScreen.x, nodeScreen.y);
   await page.keyboard.up('Alt');
   await sleep(200);
-  const clearedViaAltClick = await page.evaluate(() => window.hexwright.store.getNodeAttrs('gamma').vp === undefined);
+  const clearedViaAltClick = await page.evaluate(() => window.hexwright.store.getNodeAttrs('alpha').vp === undefined);
   rec('alt-click in paint mode clears the active feature', clearedViaAltClick);
 
   // Re-tag + verify the canvas actually paints a badge chip (pixel check, not just state).
   await page.evaluate(() => {
     const { store, renderer } = window.hexwright;
-    store.setNodeAttr('gamma', 'vp', true);
+    store.setNodeAttr('alpha', 'vp', true);
     renderer.draw();
   });
   await sleep(150);
 
   const badgePixel = await page.evaluate(() => {
     const { store, renderer } = window.hexwright;
-    const node = store.state.nodes.gamma;
+    const node = store.state.nodes.alpha;
     const s = renderer.view.baseScale * renderer.view.zoom;
     const chipCenterWorld = { x: node.x, y: node.y - (7 / s) - (5.5 / s) - (3 / s) };
     const pt = renderer.worldToScreen(chipCenterWorld);

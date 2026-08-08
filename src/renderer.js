@@ -37,6 +37,8 @@ export class MapRenderer {
     this.terrainLabelScale = 1;      // View-only label-size multiplier (UI slider, 0.5-3x)
     this.hexsideStrokeAlpha = 1;     // View-only painted hexside ink opacity (UI slider)
     this.hexsideVisibility = {};     // View-only per-feature visibility map
+    this.elevationOverlayVisible = false; // View-only toggle: elevation numeral + hypsometric tint
+    this.slopeOverlayVisible = false;     // View-only toggle: derived slope/escarpment ticks
     this.mapDim = 0;                 // View-only raster dimming in both/map modes
     this.nudgeMode = false;          // drag/arrow-key the scan under the grid
     this.nudgeDrag = null;
@@ -1021,6 +1023,12 @@ export class MapRenderer {
       }
       this._drawHexsides(ctx, this.view);
       this._drawFeatureGlyphs(ctx, this.view);
+      if (this.elevationOverlayVisible) {
+        this._drawElevationOverlay(ctx, this.view);
+      }
+      if (this.slopeOverlayVisible) {
+        this._drawSlopes(ctx, this.view);
+      }
     }
 
     if (state.grid && this.store.centers) {
@@ -1274,6 +1282,115 @@ export class MapRenderer {
       const colors = this._terrainColor(type, mode);
       const poly = hexPolygon(code, grid);
       this._fillHexTerrain(ctx, poly, colors);
+    }
+    ctx.restore();
+  }
+
+  _elevationFillColor(level) {
+    // Subtle hypsometric ramp: low tan → mid brown → high grey-brown.
+    const ramp = [
+      '#d6c69a', '#c9b080', '#bc9a66', '#af844e',
+      '#a26e38', '#955824', '#884214', '#7b2e08', '#6e1a00'
+    ];
+    return ramp[Math.max(0, Math.min(8, level - 1))] || '#bc9a66';
+  }
+
+  _drawElevationOverlay(ctx, view) {
+    const s = view.baseScale * view.zoom;
+    const grid = this.store.state.grid;
+    const elevation = this.store.state.elevation || {};
+    ctx.save();
+    ctx.translate(view.panX, view.panY);
+    ctx.scale(s, s);
+
+    const dataFont = this._dataFontFamily();
+    for (const [code, raw] of Object.entries(elevation)) {
+      const level = this.store.getElevation(code);
+      if (level === null) continue;
+      const center = hexCenter(code, grid);
+      const r = hexRadius(grid);
+      const poly = hexPolygon(code, grid);
+
+      // Subtle hypsometric tint.
+      ctx.save();
+      this._traceHexPath(ctx, poly);
+      ctx.fillStyle = this._elevationFillColor(level);
+      ctx.globalAlpha = 0.22;
+      ctx.fill();
+      ctx.restore();
+
+      // Cased numeral.
+      const fontPx = Math.max(8, Math.min(13, r * 0.34 * s));
+      ctx.font = `700 ${fontPx / s}px ${dataFont}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3 / s;
+      ctx.strokeStyle = INK_CASING;
+      ctx.fillStyle = '#1a1a1a';
+      ctx.strokeText(String(level), center.x, center.y);
+      ctx.fillText(String(level), center.x, center.y);
+    }
+    ctx.restore();
+  }
+
+  _drawSlopes(ctx, view) {
+    const s = view.baseScale * view.zoom;
+    const grid = this.store.state.grid;
+    const slopes = this.store.deriveSlopes();
+    if (!slopes.size) return;
+
+    ctx.save();
+    ctx.translate(view.panX, view.panY);
+    ctx.scale(s, s);
+    ctx.lineCap = 'round';
+
+    for (const [edgeKey, info] of slopes) {
+      const parts = edgeKey.split('|');
+      if (parts.length !== 2) continue;
+      const [a, b] = parts;
+      const ep = sharedEdgeEndpoints(a, b, grid);
+      if (!ep) continue;
+
+      const highCenter = hexCenter(info.higher, grid);
+      const lowCenter = hexCenter(info.lower, grid);
+      const mid = { x: (ep.a.x + ep.b.x) / 2, y: (ep.a.y + ep.b.y) / 2 };
+      const dx = lowCenter.x - mid.x;
+      const dy = lowCenter.y - mid.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      // Unit vector pointing from the edge midpoint toward the lower hex.
+      const ux = dx / dist;
+      const uy = dy / dist;
+      // Along-edge unit vector for tick spacing.
+      const ex = ep.b.x - ep.a.x;
+      const ey = ep.b.y - ep.a.y;
+      const elen = Math.hypot(ex, ey) || 1;
+      const tx = ex / elen;
+      const ty = ey / elen;
+
+      const isEscarpment = info.type === 'escarpment';
+      const color = isEscarpment ? '#a03018' : '#8a6a3a';
+      const width = isEscarpment ? 2.6 : 1.4;
+      const tickLen = isEscarpment ? 7.5 : 4.5;
+      const tickCount = isEscarpment ? 3 : 2;
+      const spacing = elen / (tickCount + 1);
+
+      for (let i = 1; i <= tickCount; i++) {
+        const t = i * spacing - elen / 2;
+        const bx = mid.x + tx * t;
+        const by = mid.y + ty * t;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + ux * tickLen, by + uy * tickLen);
+        ctx.strokeStyle = INK_CASING;
+        ctx.lineWidth = (width + 1.6) / s;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + ux * tickLen, by + uy * tickLen);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width / s;
+        ctx.stroke();
+      }
     }
     ctx.restore();
   }
@@ -1901,6 +2018,8 @@ export class MapRenderer {
       this._drawHexFills(octx, view, 'full');
       this._drawHexsides(octx, view, { fullOpacity: true });
       this._drawFeatureGlyphs(octx, view);
+      if (this.elevationOverlayVisible) this._drawElevationOverlay(octx, view);
+      if (this.slopeOverlayVisible) this._drawSlopes(octx, view);
       this._drawGrid(octx, view);
     }
 

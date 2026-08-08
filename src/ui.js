@@ -37,6 +37,8 @@ export class UI {
     this.mode = 'inspect';
     this.brushActive = false;
     this.brushTerrain = 'clear';
+    this.elevationActive = false;
+    this.elevationLevel = 1;
     this.lastBrushHex = null;
     this.lastBrushScreen = null;
     this.edgePaintActive = false;
@@ -91,7 +93,7 @@ export class UI {
       'strip-project-name', 'strip-project-sub', 'mode-hint', 'save-state',
       'load-map', 'load-grid', 'load-terrain', 'load-sides',
       'fit-view', 'undo', 'clear-select', 'toggle-help',
-      'view-mode', 'tool-rail', 'tool-inspect', 'tool-terrain', 'tool-edges', 'tool-features', 'tool-nudge',
+      'view-mode', 'tool-rail', 'tool-inspect', 'tool-terrain', 'tool-elevation', 'tool-edges', 'tool-features', 'tool-nudge',
       'tool-node-features',
       'brush-card', 'brush-mode-tag', 'brush-ink-list',
       'node-paint-controls', 'node-paint-mode-toggle', 'node-paint-value-row',
@@ -108,7 +110,7 @@ export class UI {
       'map-dim', 'map-dim-value',
       'canvas-wrap',
       'export-overlay', 'toggle-anomaly', 'anomaly-count', 'load-palette', 'anomaly-status',
-      'import-sides', 'import-terrain', 'import-names', 'import-wmp', 'file-btn', 'file-popover', 'export-btn', 'export-popover',
+      'import-sides', 'import-terrain', 'import-elevation', 'import-names', 'import-wmp', 'file-btn', 'file-popover', 'export-btn', 'export-popover',
       'import-twu',
       'export-sides-file', 'export-sides-copy', 'export-terrain-file', 'export-terrain-copy',
       'export-features-file', 'export-features-copy', 'export-names-file', 'export-names-copy', 'export-twu',
@@ -116,10 +118,12 @@ export class UI {
       'feature-inspector', 'feat-insp-close', 'feat-insp-title', 'feat-insp-name', 'feat-insp-attrs',
       'feat-insp-delete', 'feat-insp-save',
       'hex-editor', 'hexed-close', 'hexed-title', 'hexed-name', 'hexed-terrain-current', 'hexed-terrain-grid',
+      'hexed-elevation-current', 'hexed-elevation-grid',
       'hexed-feat-count', 'hexed-featrow', 'hexed-point-feats', 'hexed-point-feat-add',
       'hexed-add-feat-select', 'hexed-add-feat-btn', 'hexed-edges-meta', 'hexed-svg', 'hexed-fill',
       'hexed-edges', 'hexed-edge-labels', 'hexed-center-code', 'hexed-on-edge-label',
       'hexed-edchips', 'hexed-inkgrid',
+      'elevation-overlay-eye', 'slope-overlay-eye', 'elevation-count', 'slope-count',
       'count-land', 'layer-counts', 'status',
       'help-overlay', 'close-help',
       'load-nodes', 'import-edges', 'import-attrs',
@@ -370,6 +374,7 @@ export class UI {
 
       if (e.key.toLowerCase() === 'i') this.setMode('inspect');
       if (e.key.toLowerCase() === 'b') this.setMode('terrain');
+      if (e.key.toLowerCase() === 'h') this.setMode('elevation');
       if (e.key.toLowerCase() === 'e') this.setMode('edges');
       if (e.key.toLowerCase() === 'p') this.setMode('features');
       if (e.key.toLowerCase() === 'n') this.setMode('nudge');
@@ -399,6 +404,10 @@ export class UI {
       if (e.key.toLowerCase() === 'v') this.cycleViewMode();
       if (e.key.toLowerCase() === 'l') this.toggleTerrainLabels();
       if (/^[0-9]$/.test(e.key)) {
+        if (this.mode === 'elevation') {
+          this.setElevationLevel(e.key === '0' ? 0 : parseInt(e.key, 10));
+          return;
+        }
         const idx = e.key === '0' ? 9 : parseInt(e.key, 10) - 1;
         if (this.mode === 'edges') this._selectEdgeFeatureByIndex(idx);
         else if (this.mode === 'features') this._selectPointFeatureByIndex(idx);
@@ -530,6 +539,15 @@ export class UI {
         this._toggleHexEditorInk(ink.dataset.feature);
         return;
       }
+      const elevChip = e.target.closest('.elevation-chip[data-elevation]');
+      if (elevChip && this.inspectorHex) {
+        const n = Number(elevChip.dataset.elevation);
+        this.store.setElevation(this.inspectorHex, n);
+        this.elevationLevel = n;
+        this._setupElevationBrush();
+        this._reflectElevation();
+        return;
+      }
       const remove = e.target.closest('.edgechip .x[data-remove]');
       if (remove) {
         this._toggleHexEditorInk(remove.dataset.remove);
@@ -559,6 +577,8 @@ export class UI {
     this.els['export-sides-copy'].addEventListener('click', () => this._copy(this.store.exportHexsidesJson(), 'hexsides.json'));
     this.els['export-terrain-file'].addEventListener('click', () => this._download('terrain.json', this.store.exportTerrainJson()));
     this.els['export-terrain-copy'].addEventListener('click', () => this._copy(this.store.exportTerrainJson(), 'terrain.json'));
+    this.els['export-elevation-file']?.addEventListener('click', () => this._download('elevation.json', this.store.exportElevationJson()));
+    this.els['export-elevation-copy']?.addEventListener('click', () => this._copy(this.store.exportElevationJson(), 'elevation.json'));
     this.els['export-features-file'].addEventListener('click', () => this._download('features.json', this.store.exportFeaturesJson()));
     this.els['export-features-copy'].addEventListener('click', () => this._copy(this.store.exportFeaturesJson(), 'features.json'));
     this.els['export-names-file'].addEventListener('click', () => this._download('names.json', this.store.exportNamesJson()));
@@ -641,6 +661,7 @@ export class UI {
       }
       else if (this.mode === 'features') this.setFeaturePaintType(key);
       else if (this.mode === 'nodeFeatures') this.setNodeFeaturePaintType(key);
+      else if (this.mode === 'elevation') this.setElevationLevel(Number(key));
       else this.setBrushTerrain(key);
     });
 
@@ -767,6 +788,20 @@ export class UI {
       this.renderer.draw();
     });
 
+    this.els['elevation-overlay-eye']?.addEventListener('click', () => {
+      this.renderer.elevationOverlayVisible = !this.renderer.elevationOverlayVisible;
+      this._saveViewSettings();
+      this._renderLayersPanel();
+      this.renderer.draw();
+    });
+
+    this.els['slope-overlay-eye']?.addEventListener('click', () => {
+      this.renderer.slopeOverlayVisible = !this.renderer.slopeOverlayVisible;
+      this._saveViewSettings();
+      this._renderLayersPanel();
+      this.renderer.draw();
+    });
+
     // View mode
     this.els['view-mode'].addEventListener('click', (e) => {
       const btn = e.target.closest('button[data-mode]');
@@ -801,6 +836,7 @@ export class UI {
     this.els['load-sides'].addEventListener('change', (e) => handlers.sides(e.target.files[0]));
     this.els['import-sides'].addEventListener('change', (e) => handlers.importSides(e.target.files[0]));
     this.els['import-terrain'].addEventListener('change', (e) => handlers.importTerrain(e.target.files[0]));
+    this.els['import-elevation']?.addEventListener('change', (e) => handlers.importElevation?.(e.target.files[0]));
     this.els['import-names'].addEventListener('change', (e) => handlers.importNames(e.target.files[0]));
     this.els['import-wmp'].addEventListener('change', (e) => handlers.importWmp(e.target.files[0]));
     this.els['import-twu'].addEventListener('change', (e) => handlers.importTwu(e.target.files[0]));
@@ -883,11 +919,12 @@ export class UI {
     if (this.store.isPtp()) {
       if (mode === 'features') mode = 'nodeFeatures';
       if (!['inspect', 'edges', 'nodeFeatures'].includes(mode)) mode = 'edges';
-    } else if (!['inspect', 'terrain', 'edges', 'features', 'nudge'].includes(mode)) {
+    } else if (!['inspect', 'terrain', 'elevation', 'edges', 'features', 'nudge'].includes(mode)) {
       return;
     }
     this.mode = mode;
     this.brushActive = mode === 'terrain' && !this.store.isPtp();
+    this.elevationActive = mode === 'elevation' && !this.store.isPtp();
     this.edgePaintActive = mode === 'edges' && !this.store.isPtp();
     this.featurePaintActive = mode === 'features' && !this.store.isPtp();
     this.nodeFeaturePaintActive = mode === 'nodeFeatures';
@@ -937,7 +974,7 @@ export class UI {
   _reflectMapFamily() {
     document.body.classList.toggle('map-family-ptp', this.store.isPtp());
     // Inspect is shared between families; terrain/hex-features/nudge stay hex-only.
-    const hexOnlyTools = ['tool-terrain', 'tool-features', 'tool-nudge'];
+    const hexOnlyTools = ['tool-terrain', 'tool-elevation', 'tool-features', 'tool-nudge'];
     for (const id of hexOnlyTools) {
       const el = this.els[id];
       if (el) el.hidden = this.store.isPtp();
@@ -1008,6 +1045,10 @@ export class UI {
       hint.innerHTML = `<b>Terrain brush · ${this._activeTerrainLabel()}</b> — click or drag hexes to paint<span class="hint-extra"> · <span class="kbd">B</span> terrain · <span class="kbd">1</span>–<span class="kbd">0</span> terrain keys</span>`;
       return;
     }
+    if (this.mode === 'elevation') {
+      hint.innerHTML = `<b>Elevation brush · level ${this.elevationLevel}</b> — click or drag hexes to paint<span class="hint-extra"> · <span class="kbd">H</span> elevation · <span class="kbd">1</span>–<span class="kbd">0</span> level · <span class="kbd">0</span> erases</span>`;
+      return;
+    }
     if (this.mode === 'edges') {
       hint.innerHTML = `<b>Edge paint · ${this._edgeFeatureLabel()}</b> — click edge to toggle · drag to paint<span class="hint-extra"> · <span class="kbd">⌥</span> wipe all layers on edge · <span class="kbd">1</span>–<span class="kbd">0</span> switch ink</span>`;
       return;
@@ -1070,6 +1111,43 @@ export class UI {
     const palette = this.store.getPalette();
     const t = palette?.terrain?.find(x => x.key === this.brushTerrain);
     if (btn) btn.title = `Terrain brush (B) — ${t ? t.label : this.brushTerrain}`;
+    this._updateModeHint();
+  }
+
+  setElevationLevel(level) {
+    const n = Number(level);
+    this.elevationLevel = Number.isFinite(n) && n >= 0 && n <= 9 ? Math.round(n) : 1;
+    this._setupElevationBrush();
+    this._reflectElevation();
+    this._renderBrushCard();
+    this._updateCanvasCursor();
+  }
+
+  _setupElevationBrush() {
+    this.renderer.setBrush({
+      active: this.elevationActive,
+      terrainKey: null,
+      onStrokeStart: () => this.store.beginStroke(),
+      onStrokeEnd: () => this.store.endStroke(),
+      onToggle: (code) => {
+        this.store.applyElevationBrush(code, this.elevationLevel);
+        this.lastBrushHex = code;
+        const center = this.store.centers[code];
+        if (center) this.lastBrushScreen = this.renderer.worldToScreen(center);
+      },
+      onPaint: (code) => {
+        if (this.elevationLevel === 0) this.store.clearElevation(code);
+        else this.store.setElevation(code, this.elevationLevel);
+        this.lastBrushHex = code;
+        const center = this.store.centers[code];
+        if (center) this.lastBrushScreen = this.renderer.worldToScreen(center);
+      }
+    });
+  }
+
+  _reflectElevation() {
+    const btn = this.els['tool-elevation'];
+    if (btn) btn.title = `Elevation brush (H) — level ${this.elevationLevel}`;
     this._updateModeHint();
   }
 
@@ -1814,7 +1892,7 @@ export class UI {
     const list = this.els['brush-ink-list'];
     if (!card || !list) return;
 
-    const show = this.mode === 'terrain' || this.mode === 'edges' || this.mode === 'features' || this.mode === 'nodeFeatures';
+    const show = this.mode === 'terrain' || this.mode === 'elevation' || this.mode === 'edges' || this.mode === 'features' || this.mode === 'nodeFeatures';
     card.style.display = show ? '' : 'none';
     if (this.mode !== 'nodeFeatures' && this.els['node-paint-controls']) {
       this.els['node-paint-controls'].hidden = true;
@@ -1824,7 +1902,7 @@ export class UI {
     const palette = this.store.getPalette() || {};
     this.els['brush-mode-tag'].textContent = this.mode === 'edges'
       ? 'Edge paint'
-      : (this.mode === 'features' ? 'Features' : (this.mode === 'nodeFeatures' ? 'Node features' : 'Terrain'));
+      : (this.mode === 'features' ? 'Features' : (this.mode === 'nodeFeatures' ? 'Node features' : (this.mode === 'elevation' ? 'Elevation' : 'Terrain')));
 
     if (this.mode === 'nodeFeatures') {
       const features = palette.nodeFeatures || [];
@@ -1888,6 +1966,29 @@ export class UI {
           <span class="name">${f.label || f.key}</span>
           <span class="count">${counts[f.key] || 0}</span>
           ${keycap ? `<span class="kbd">${keycap}</span>` : ''}
+        </div>`;
+      }).join('');
+      return;
+    }
+
+    if (this.mode === 'elevation') {
+      const countAt = {};
+      const el = this.store.state.elevation || {};
+      for (const code of Object.keys(el)) {
+        const n = this.store.getElevation(code);
+        if (n !== null) countAt[n] = (countAt[n] || 0) + 1;
+      }
+      list.innerHTML = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => {
+        const active = this.elevationLevel === n;
+        const label = n === 0 ? 'Erase' : `Level ${n}`;
+        const ramp = ['#d6c69a', '#c9b080', '#bc9a66', '#af844e', '#a26e38', '#955824', '#884214', '#7b2e08', '#6e1a00'];
+        const swatch = n === 0 ? '#888' : (ramp[Math.max(0, Math.min(8, n - 1))] || '#bc9a66');
+        const keycap = n === 0 ? '0' : String(n);
+        return `<div class="ink${active ? ' is-active' : ''}" data-ink-key="${n}">
+          <span class="swatch" style="background:${swatch}"></span>
+          <span class="name">${label}</span>
+          <span class="count">${countAt[n] || 0}</span>
+          <span class="kbd">${keycap}</span>
         </div>`;
       }).join('');
       return;
@@ -1964,6 +2065,12 @@ export class UI {
       if (Number.isFinite(v.terrainLabelScale)) {
         this.renderer.terrainLabelScale = Math.max(0.5, Math.min(3, v.terrainLabelScale));
       }
+      if (typeof v.elevationOverlayVisible === 'boolean') {
+        this.renderer.elevationOverlayVisible = v.elevationOverlayVisible;
+      }
+      if (typeof v.slopeOverlayVisible === 'boolean') {
+        this.renderer.slopeOverlayVisible = v.slopeOverlayVisible;
+      }
     } catch (_) { /* ignore corrupt view settings */ }
   }
 
@@ -1975,7 +2082,9 @@ export class UI {
         mapDim: this.renderer.mapDim,
         terrainFillVisible: this.renderer.terrainFillVisible !== false,
         terrainLabelsVisible: !!this.renderer.terrainLabelsVisible,
-        terrainLabelScale: Math.max(0.5, Math.min(3, this.renderer.terrainLabelScale ?? 1))
+        terrainLabelScale: Math.max(0.5, Math.min(3, this.renderer.terrainLabelScale ?? 1)),
+        elevationOverlayVisible: !!this.renderer.elevationOverlayVisible,
+        slopeOverlayVisible: !!this.renderer.slopeOverlayVisible
       }));
     } catch (_) { /* quota */ }
   }
@@ -2316,6 +2425,24 @@ export class UI {
     this.els['hexside-stroke-opacity'].value = String(hexsideStrokeOpacity);
     this.els['hexside-stroke-opacity-value'].textContent = `${Math.round(hexsideStrokeOpacity * 100)}%`;
 
+    const elevationOn = !!this.renderer.elevationOverlayVisible;
+    const elevationRow = document.getElementById('elevation-fill-row');
+    if (elevationRow) {
+      elevationRow.classList.toggle('dimmed', !elevationOn);
+      this.els['elevation-overlay-eye'].classList.toggle('off', !elevationOn);
+      this.els['elevation-overlay-eye'].innerHTML = elevationOn ? EYE_OPEN_SVG : EYE_OFF_SVG;
+    }
+    this.els['elevation-count'].textContent = String(this.store.countElevation());
+
+    const slopeOn = !!this.renderer.slopeOverlayVisible;
+    const slopeRow = document.getElementById('slope-overlay-row');
+    if (slopeRow) {
+      slopeRow.classList.toggle('dimmed', !slopeOn);
+      this.els['slope-overlay-eye'].classList.toggle('off', !slopeOn);
+      this.els['slope-overlay-eye'].innerHTML = slopeOn ? EYE_OPEN_SVG : EYE_OFF_SVG;
+    }
+    this.els['slope-count'].textContent = String(this.store.deriveSlopes().size);
+
     const traces = this.store.state.traces || [];
     this.els['trace-layer-wrap'].hidden = traces.length === 0;
     if (traces.length) {
@@ -2377,7 +2504,10 @@ export class UI {
       wrap.style.cursor = 'default';
       return;
     }
-    const color = this.mode === 'edges' ? this._edgeColorForCursor() : this._terrainColorForCursor();
+    let color;
+    if (this.mode === 'edges') color = this._edgeColorForCursor();
+    else if (this.mode === 'elevation') color = '#bc9a66';
+    else color = this._terrainColorForCursor();
     wrap.style.cursor = this._buildInkCursor(color);
   }
 
@@ -2649,6 +2779,16 @@ export class UI {
       btn.classList.toggle('is-active', btn.dataset.terrain === terrainKey);
     });
 
+    const currentElevation = this.store.getElevation(code);
+    this.els['hexed-elevation-current'].textContent = currentElevation !== null ? `Level ${currentElevation}` : '—';
+    this.els['hexed-elevation-grid'].innerHTML = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => {
+      const active = currentElevation === (n === 0 ? null : n);
+      const label = n === 0 ? 'Clear' : String(n);
+      return `<button type="button" class="elevation-chip${active ? ' is-active' : ''}" data-elevation="${n}">
+        <span class="level">${label}</span>
+      </button>`;
+    }).join('');
+
     const currentFeatures = this.store.getHexFeatures(code);
     this.els['hexed-feat-count'].textContent = String(currentFeatures.length);
     this.els['hexed-featrow'].querySelectorAll('.feat[data-feature]').forEach(btn => {
@@ -2906,7 +3046,9 @@ export class UI {
     this.els['count-land'].textContent = counts.land;
     const lc = this.els['layer-counts'];
     const palette = this.store.getPalette();
-    lc.innerHTML = EDITABLE_LAYERS.map(l => {
+    const elevationCount = this.store.countElevation();
+    const slopeCount = this.store.deriveSlopes().size;
+    let html = EDITABLE_LAYERS.map(l => {
       let color = '#888';
       if (palette && palette.hexsideFeatures) {
         const f = palette.hexsideFeatures.find(x => x.exportLayer === l || x.key === l);
@@ -2919,6 +3061,18 @@ export class UI {
         <span class="mono">${counts.layers[l] || 0}</span>
       </div>`;
     }).join('');
+    if (elevationCount > 0 || slopeCount > 0) {
+      html += `
+      <div class="layer-count">
+        <span><span class="layer-dot" style="background:#bc9a66"></span>elevation</span>
+        <span class="mono">${elevationCount}</span>
+      </div>
+      <div class="layer-count">
+        <span><span class="layer-dot" style="background:#8a6a3a"></span>slopes</span>
+        <span class="mono">${slopeCount}</span>
+      </div>`;
+    }
+    lc.innerHTML = html;
   }
 
   status(msg, timeout = 0) {

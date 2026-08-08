@@ -891,6 +891,11 @@ async function main() {
       store.importTerrain(text);
       ui.status('Imported terrain.json', 2000);
     },
+    importElevation: async (file) => {
+      const text = await readFile(file);
+      const count = store.importElevation(text);
+      ui.status(`Imported elevation.json (${count} hexes)`, 2000);
+    },
     importWmp: async (file) => {
       const text = await readFile(file);
       const count = store.importTerrain(text, { provenance: 'draft' });

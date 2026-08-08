@@ -1572,6 +1572,46 @@ button.active {
   margin-top: var(--sp-2, 8px);
 }
 
+.elevation-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+}
+
+.elevation-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 4px;
+  background: var(--hx-bg-raised, var(--chrome));
+  border: 1px solid var(--hx-hairline, var(--chrome-2));
+  border-radius: var(--rad-s, 6px);
+  cursor: pointer;
+  font-size: var(--fs-12, 12px);
+  color: var(--hx-text, var(--text));
+  min-height: 30px;
+}
+
+.elevation-chip:hover { background: var(--hx-bg-hover, var(--chrome-2)); }
+
+.elevation-chip.is-active {
+  background: var(--hx-accent-tint, rgba(80, 160, 190, 0.2));
+  border-color: var(--hx-accent-deep, var(--accent));
+  color: var(--hx-text-bright, var(--text));
+  font-weight: 600;
+}
+
+.elevation-chip .level {
+  font-weight: 700;
+  font-family: var(--font-data, var(--mono));
+}
+
+.elevation-chip .label {
+  font-size: var(--fs-10, 10px);
+  color: var(--hx-text-dim, var(--muted));
+}
+
 .inkmini {
   display: inline-flex;
   align-items: center;
