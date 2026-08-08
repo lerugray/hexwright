@@ -20,6 +20,15 @@
       ]
     },
     {
+      "key": "town",
+      "label": "Town",
+      "glyph": "○",
+      "attrs": [
+        { "key": "vp", "label": "VP", "type": "number" },
+        { "key": "bp", "label": "BP", "type": "number" }
+      ]
+    },
+    {
       "key": "fort",
       "label": "Fort",
       "glyph": "\u2726",
