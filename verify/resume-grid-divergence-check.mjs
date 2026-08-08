@@ -27,9 +27,22 @@ const diskGrid = {
   even_col_y_offset: 57.5
 };
 
-function session(grid, mapOffset = [17, -9]) {
+function comparableGrid(value) {
+  if (Array.isArray(value)) return value.map(comparableGrid);
+  if (!value || typeof value !== 'object') return value;
+  const normalized = {};
+  for (const key of Object.keys(value).sort()) {
+    if (key === 'fit_quality' || key.startsWith('_')) continue;
+    normalized[key] = comparableGrid(value[key]);
+  }
+  return normalized;
+}
+const fingerprint = (g) => JSON.stringify(comparableGrid(g));
+
+function session(grid, mapOffset = [17, -9], baseGridFingerprint = null) {
   return {
     savedAt: Date.now(),
+    baseGridFingerprint,
     project: {
       schemaVersion: 2,
       name: 'Hexwright Demo — Ferrum Valley',
@@ -129,6 +142,29 @@ const browser = await chromium.launch();
   const remains = await page.evaluate((key) => localStorage.getItem(key), SESSION_KEY);
   rec('Start fresh removes the project session key', remains === null, remains || 'removed');
   rec('case C has no console/page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
+  await context.close();
+}
+
+// Case D: session's own calibration (pitch nudge) wins when the DISK grid is
+// unchanged since the session started (baseGridFingerprint matches disk).
+{
+  const errors = [];
+  const nudgedGrid = { ...diskGrid, col_pitch_x: 100.45, x_intercept_col0: 98.2 };
+  const { context, page } = await seededPage(browser, session(nudgedGrid, [17, -9], fingerprint(diskGrid)), errors);
+  const prompt = await page.locator('#restore-prompt-msg').textContent();
+  rec('session-newer divergence announces calibration is kept', /calibration/i.test(prompt || ''), prompt);
+  await page.click('#restore-prompt-restore');
+  await page.waitForFunction(() => Math.abs((window.hexwright?.store?.state?.grid?.col_pitch_x ?? 0) - 100.45) < 1e-9);
+  const restored = await page.evaluate(() => ({
+    pitch: window.hexwright.store.state.grid.col_pitch_x,
+    intercept: window.hexwright.store.state.grid.x_intercept_col0,
+    mapOffset: window.hexwright.store.state.mapOffset
+  }));
+  rec('session-newer Resume keeps the nudged grid AND the map nudge',
+    Math.abs(restored.pitch - 100.45) < 1e-9 && Math.abs(restored.intercept - 98.2) < 1e-9 &&
+      restored.mapOffset[0] === 17 && restored.mapOffset[1] === -9,
+    JSON.stringify(restored));
+  rec('case D has no console/page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
   await context.close();
 }
 

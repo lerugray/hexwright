@@ -212,6 +212,7 @@ function parseSessionRecord(raw) {
   return {
     project,
     savedAt,
+    baseGridFingerprint: typeof parsed.baseGridFingerprint === 'string' ? parsed.baseGridFingerprint : null,
     land: countLandHexes(project),
     sides: countHexsideEdges(project),
     groups: countGroups(project),
@@ -245,8 +246,8 @@ function describeSlotContent(slot) {
   return parts.length ? parts.join(', ') : 'no content yet';
 }
 
-function encodeSessionRecord(project, savedAt = Date.now()) {
-  return JSON.stringify({ savedAt, project });
+function encodeSessionRecord(project, savedAt = Date.now(), baseGridFingerprint = loadedDiskGridFingerprint) {
+  return JSON.stringify({ savedAt, baseGridFingerprint, project });
 }
 
 function listSessionSlots() {
@@ -344,7 +345,19 @@ function gridsEqual(a, b) {
   return JSON.stringify(comparableGrid(a)) === JSON.stringify(comparableGrid(b));
 }
 
-function promptRestore(slot, kind = 'boot', gridDiverged = false) {
+function gridFingerprint(g) {
+  return g ? JSON.stringify(comparableGrid(g)) : null;
+}
+
+// Fingerprint of the DISK grid this session started from. Stamped into every
+// autosave slot so restore can tell WHICH side of a divergence is the newer
+// work: session pitch/nudge calibration (disk unchanged since load -> session
+// wins) vs a deliberately regenerated on-disk grid (disk changed -> disk wins,
+// the original hxw-005 case). Without this the operator's live calibration was
+// discarded on every restore (2026-08-08).
+let loadedDiskGridFingerprint = null;
+
+function promptRestore(slot, kind = 'boot', gridDiverged = false, sessionGridIsNewer = false) {
   return new Promise((resolve) => {
     if (!slot || !slot.project) {
       resolve(false);
@@ -362,9 +375,11 @@ function promptRestore(slot, kind = 'boot', gridDiverged = false) {
     const name = slot.project.name || 'untitled';
     const when = slot.savedAt ? formatRelativeTime(slot.savedAt) : 'unknown time';
     const content = describeSlotContent(slot);
-    const gridNotice = gridDiverged
-      ? " The project's grid changed on disk since this session was saved. Resume will use the updated grid and reset the map nudge."
-      : '';
+    const gridNotice = sessionGridIsNewer
+      ? ' This session contains grid calibration (pitch/size nudges) made after loading — Resume keeps it.'
+      : (gridDiverged
+        ? " The project's grid changed on disk since this session was saved. Resume will use the updated grid and reset the map nudge."
+        : '');
     msg.textContent = `Autosaved session from ${when} found for ${name} (${content}).${gridNotice} Resume it, or start fresh?`;
 
     const finish = (choice) => {
@@ -716,13 +731,21 @@ async function main() {
     const manifestLabel = String(manifestUrl || '').split('/').pop() || '';
     const project = await loadProjectFromManifest(manifestUrl);
     const slot = getSessionSlotForName(project.name);
+    const diskFp = gridFingerprint(project.grid);
+    loadedDiskGridFingerprint = diskFp;
     const gridDiverged = !!slot && !gridsEqual(project.grid, slot.project.grid);
-    if (slot && slotHasContent(slot) && await promptRestore(slot, 'project', gridDiverged)) {
+    // Diverged + the disk grid is byte-for-byte what this session STARTED from
+    // = the divergence is the session's own calibration work (pitch/size
+    // nudges). The session grid is the newer artifact; keep it AND the nudge.
+    const sessionGridIsNewer = gridDiverged
+      && slot.baseGridFingerprint != null
+      && slot.baseGridFingerprint === diskFp;
+    if (slot && slotHasContent(slot) && await promptRestore(slot, 'project', gridDiverged, sessionGridIsNewer)) {
       const restored = slot.project;
       restored.mapImage = project.mapImage;
-      if (!gridDiverged) restored.traces = project.traces || [];
+      if (!gridDiverged || sessionGridIsNewer) restored.traces = project.traces || [];
       if (!restored.imageFull || !restored.imageFull[0]) restored.imageFull = project.imageFull;
-      if (gridDiverged) {
+      if (gridDiverged && !sessionGridIsNewer) {
         restored.grid = project.grid;
         restored.mapOffset = [0, 0];
       } else if (!restored.grid) {
