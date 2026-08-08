@@ -114,7 +114,7 @@ export class UI {
       'import-twu',
       'export-sides-file', 'export-sides-copy', 'export-terrain-file', 'export-terrain-copy',
       'export-features-file', 'export-features-copy', 'export-names-file', 'export-names-copy', 'export-twu',
-      'export-grid-file', 'export-grid-copy',
+      'export-grid-file', 'export-grid-copy', 'export-elevation-file', 'export-elevation-copy',
       'feature-inspector', 'feat-insp-close', 'feat-insp-title', 'feat-insp-name', 'feat-insp-attrs',
       'feat-insp-delete', 'feat-insp-save',
       'hex-editor', 'hexed-close', 'hexed-title', 'hexed-name', 'hexed-terrain-current', 'hexed-terrain-grid',
