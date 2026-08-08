@@ -43,6 +43,12 @@
       "attrs": [
         { "key": "vp", "label": "VP", "type": "number" }
       ]
+    },
+    {
+      "key": "port",
+      "label": "Port",
+      "glyph": "\u2693\ufe0e",
+      "attrs": []
     }
   ],
   "hexsideFeatures": [
