@@ -22,6 +22,12 @@ take four measurements (flat-top hexes, **even-q** addressing — column first,
 Then count `n_cols` / `n_rows` and note the raster's full size as
 `image_full: [width, height]`.
 
+**Stretched (anisotropic) boards are supported.** Some printed maps draw hexes
+taller than regular hexagons — `row_pitch_y` larger than `sqrt(3) × col_pitch_x / 1.5`
+(Avalon Hill's PanzerBlitz boards run ~3-4% tall). Just record the pitches you
+measure: hex outlines scale their vertical component to the grid's real row pitch,
+so neighbouring outlines still coincide. For regular-hex boards nothing changes.
+
 ## 2. Write hexgrid.json
 
 The demo's grid, as a shape reference (`demo/hexgrid.json`):
