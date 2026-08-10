@@ -335,10 +335,19 @@ export function hexRadius(grid) {
 export function hexPolygon(code, grid) {
   const c = hexCenter(code, grid);
   const r = hexRadius(grid);
+  // Some printed boards (e.g. AH PanzerBlitz) draw hexes TALLER than regular
+  // hexagons: row_pitch_y > sqrt(3) * r. A regular-hexagon outline at such a
+  // grid's centers leaves every hexside drawn twice (neighbouring outlines no
+  // longer coincide — reads as a "doubled" lattice). Scale the polygon's
+  // vertical component to the grid's actual row pitch; for isotropic grids
+  // row_pitch_y === sqrt(3) * r and this factor is exactly 1 (no change).
+  const rowPitch = readRowPitch(grid);
+  const iso = Math.sqrt(3) * r;
+  const yScale = rowPitch > 0 && iso > 0 ? rowPitch / iso : 1;
   const pts = [];
   for (let i = 0; i < 6; i++) {
     const a = (Math.PI / 3) * i; // 0, 60, ... 300 (flat-top)
-    pts.push({ x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) });
+    pts.push({ x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) * yScale });
   }
   return pts;
 }
