@@ -1,6 +1,6 @@
 import {
   TERRAIN_COLORS, EDITABLE_LAYERS, HEXSIDE_COLORS, terrainSwatchBackground,
-  hexCenter, hexPolygon, edgeNeighbor, parseCCRR, nearestCenterCode, gridPitchReadout
+  hexCenter, hexPolygon, edgeNeighbor, parseCCRR, nearestCenterCode, gridPitchReadout, rotatePoint
 } from './geometry.js';
 import { syntheticHexFeaturesFromFeatures } from './store.js';
 
@@ -17,7 +17,6 @@ const VIEW_SETTINGS_KEY = 'hexwright.view';
 const INSPECTOR_POS_KEY = 'hexwright.inspectorPos';
 const INSPECTOR_MARGIN = 12;
 
-const EDGE_NAMES = ['E', 'NE', 'NW', 'W', 'SW', 'SE'];
 const EYE_OPEN_SVG = '<svg viewBox="0 0 24 24"><path d="M2 12 s4 -6 10 -6 s10 6 10 6 s-4 6 -10 6 s-10 -6 -10 -6 z"/><circle cx="12" cy="12" r="2.6"/></svg>';
 const EYE_OFF_SVG = '<svg viewBox="0 0 24 24"><path d="M4 4 l16 16 M2 12 s4 -6 10 -6 c2 0 3.8 0.7 5.3 1.6 M22 12 s-4 6 -10 6 c-2 0 -3.8 -0.7 -5.3 -1.6"/></svg>';
 
@@ -146,12 +145,25 @@ export class UI {
     const cx = 108;
     const cy = 100;
     const r = 58;
+    // Turn the diagram with the map view so edge i sits where it does on screen.
+    const rotation = this.renderer?.view?.rotation || 0;
     const pts = [];
     for (let i = 0; i < 6; i++) {
       const a = (Math.PI / 3) * i;
-      pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+      const p = rotatePoint({ x: r * Math.cos(a), y: r * Math.sin(a) }, rotation);
+      pts.push({ x: cx + p.x, y: cy + p.y });
     }
     return { cx, cy, r, pts };
+  }
+
+  // Compass name of edge i as it appears on screen (north = up), so labels
+  // stay true for flat-top and pointy-top views alike.
+  _edgeName(i) {
+    const { cx, cy, pts } = this._hexEditorVertices();
+    const a = pts[i];
+    const b = pts[(i + 1) % 6];
+    const deg = (Math.atan2(cy - (a.y + b.y) / 2, (a.x + b.x) / 2 - cx) * 180 / Math.PI + 360) % 360;
+    return ['E', 'NE', 'N', 'NW', 'W', 'SW', 'S', 'SE'][Math.round(deg / 45) % 8];
   }
 
   _buildHexEditorDiagram() {
@@ -217,7 +229,7 @@ export class UI {
       label.setAttribute('x', String(mid.x + (dx / len) * 18));
       label.setAttribute('y', String(mid.y + (dy / len) * 18 + 3));
       label.setAttribute('text-anchor', 'middle');
-      label.textContent = EDGE_NAMES[i];
+      label.textContent = this._edgeName(i);
       labelsG.appendChild(label);
       this.hexedEdgeLabels.push(label);
     }
@@ -269,7 +281,7 @@ export class UI {
       const n = edgeNeighbor(code, j, this.store.centers, this.store.state.grid);
       if (n && this.store.edgeFeatures(code, n).length) marked++;
     }
-    this.els['hexed-edges-meta'].textContent = `${marked} of 6 marked · ${EDGE_NAMES[i]} selected`;
+    this.els['hexed-edges-meta'].textContent = `${marked} of 6 marked · ${this._edgeName(i)} selected`;
     this.hexedEdgeLabels.forEach((label, idx) => label.classList.toggle('sel', idx === i));
 
     this._refreshHexEditorEdgePanel();
@@ -306,7 +318,7 @@ export class UI {
 
     const code = this.inspectorHex;
     const nb = edgeNeighbor(code, i, this.store.centers, this.store.state.grid);
-    label.textContent = nb ? `On edge ${EDGE_NAMES[i]}` : 'On edge —';
+    label.textContent = nb ? `On edge ${this._edgeName(i)}` : 'On edge —';
     const palette = this.store.getPalette();
     const features = palette?.hexsideFeatures || [];
     const current = nb ? this.store.edgeFeatures(code, nb) : [];
@@ -2073,6 +2085,7 @@ export class UI {
     } catch (_) { /* unavailable or corrupt storage: use project default */ }
     this.renderer.setRotation(rotation);
     this._updateRotationButton();
+    this._refreshHexEditorDiagramForRotation();
   }
 
   _updateRotationButton() {
@@ -2083,7 +2096,16 @@ export class UI {
     this.renderer.setRotation((this.renderer.view.rotation + 90) % 360);
     try { localStorage.setItem(this._rotationKey(), JSON.stringify(this.renderer.view.rotation)); } catch (_) { /* quota */ }
     this._updateRotationButton();
+    this._refreshHexEditorDiagramForRotation();
     if (this.inspectorHex) this._positionInspector();
+  }
+
+  _refreshHexEditorDiagramForRotation() {
+    if (!this.hexedEdgeGroups) return;
+    this._buildHexEditorDiagram();
+    if (!this.inspectorHex) return;
+    this._paintHexEditorDiagram();
+    if (this.hexedSelectedEdge !== null && this.hexedSelectedEdge !== undefined) this._selectHexEditorEdge(this.hexedSelectedEdge);
   }
 
   _loadViewSettings() {
@@ -2816,7 +2838,7 @@ export class UI {
     const terrainKey = this.store.state.terrain.terrain[code] || 'clear';
     const terrain = (palette?.terrain || []).find(t => t.key === terrainKey);
     this.els['hexed-terrain-current'].textContent = terrain?.label || terrainKey;
-    this.els['hexed-center-code'].textContent = code;
+    this.els['hexed-center-code'].textContent = this.store.displayCode(code);
     this.els['hexed-name'].value = this.store.getHexName(code);
 
     this._setHexEditorFill(terrain);
@@ -2856,7 +2878,7 @@ export class UI {
       if (nb && this.store.edgeFeatures(code, nb).length) marked++;
     }
 
-    const selLabel = this.hexedSelectedEdge !== null ? EDGE_NAMES[this.hexedSelectedEdge] : '—';
+    const selLabel = this.hexedSelectedEdge !== null ? this._edgeName(this.hexedSelectedEdge) : '—';
     this.els['hexed-edges-meta'].textContent = `${marked} of 6 marked · ${selLabel} selected`;
 
     this.hexedEdgeLabels.forEach((label, i) => {
