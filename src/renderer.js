@@ -1,7 +1,7 @@
 import {
   TERRAIN_COLORS, HEXSIDE_COLORS, paletteTerrainColors, terrainAbbrForKey,
   hexCenter, hexPolygon, sharedEdgeEndpoints, pointInPolygon,
-  worldToScreen, screenToWorld, edgeNeighbor, edgeMidpoint, hexRadius, nearestEdge,
+  rotatePoint, worldToScreen, screenToWorld, edgeNeighbor, edgeMidpoint, hexRadius, nearestEdge,
   isValidCell, parseCCRR, EDGE_HIT_TOLERANCE, EDGE_SNAP_ASSIST_TOLERANCE
 } from './geometry.js';
 import {
@@ -23,7 +23,7 @@ export class MapRenderer {
     this.ctx = canvas.getContext('2d');
     this.store = store;
 
-    this.view = { baseScale: 1, zoom: 1, panX: 0, panY: 0 };
+    this.view = { rotation: 0, baseScale: 1, zoom: 1, panX: 0, panY: 0 };
     this.selectedHex = null;
     this.selectedHexes = new Set();
     this.groupHoverHexes = new Set();
@@ -154,12 +154,58 @@ export class MapRenderer {
     } else {
       return;
     }
+    const corners = [{x:0,y:0}, {x:imgW,y:0}, {x:0,y:imgH}, {x:imgW,y:imgH}]
+      .map(p => rotatePoint(p, this.view.rotation));
+    const minX = Math.min(...corners.map(p => p.x));
+    const minY = Math.min(...corners.map(p => p.y));
+    imgW = Math.max(...corners.map(p => p.x)) - minX;
+    imgH = Math.max(...corners.map(p => p.y)) - minY;
     const pad = 24;
     const zoom = Math.min((this.width - pad * 2) / imgW, (this.height - pad * 2) / imgH);
     this.view.zoom = Math.max(0.02, zoom);
-    this.view.panX = (this.width - imgW * this.view.zoom) / 2;
-    this.view.panY = (this.height - imgH * this.view.zoom) / 2;
+    this.view.panX = (this.width - imgW * this.view.zoom) / 2 - minX * this.view.zoom;
+    this.view.panY = (this.height - imgH * this.view.zoom) / 2 - minY * this.view.zoom;
     this.draw();
+  }
+
+  setRotation(rotation) {
+    const center = { x: this.width / 2, y: this.height / 2 };
+    const anchor = screenToWorld(center, this.view);
+    this.view.rotation = [0, 90, 180, 270].includes(rotation) ? rotation : 0;
+    const moved = worldToScreen(anchor, this.view);
+    this.view.panX += center.x - moved.x;
+    this.view.panY += center.y - moved.y;
+    this.draw();
+  }
+
+  _applyView(ctx, view, off = [0, 0]) {
+    ctx.translate(view.panX, view.panY);
+    ctx.rotate((view.rotation || 0) * Math.PI / 180);
+    const s = view.baseScale * view.zoom;
+    ctx.scale(s, s);
+    ctx.translate(off[0], off[1]);
+  }
+
+  _uprightGroup(ctx, view, center) {
+    // Keep a label's internal layout (name/abbreviation, glyph/value, badges)
+    // upright as a unit, avoiding overlaps when vertical offsets rotate sideways.
+    if (!view.rotation) return;
+    ctx.translate(center.x, center.y);
+    ctx.rotate(-view.rotation * Math.PI / 180);
+    ctx.translate(-center.x, -center.y);
+  }
+
+  _text(ctx, method, text, x, y) {
+    // Derive orientation from the target context so native PNG exports remain
+    // independent of the interactive view, including when rotation is nonzero.
+    const t = ctx.getTransform();
+    const angle = Math.atan2(t.b, t.a);
+    if (!angle) { ctx[method](text, x, y); return; }
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(-angle);
+    ctx[method](text, 0, 0);
+    ctx.restore();
   }
 
   setViewMode(mode) {
@@ -550,8 +596,9 @@ export class MapRenderer {
       if (this.nudgeMode) {
         if (!this.isDragging || !this.nudgeDrag) return;
         const s = this.view.baseScale * this.view.zoom;
-        const nx = this.nudgeDrag.off[0] + (e.clientX - this.nudgeDrag.x) / s;
-        const ny = this.nudgeDrag.off[1] + (e.clientY - this.nudgeDrag.y) / s;
+        const delta = rotatePoint({ x: (e.clientX - this.nudgeDrag.x) / s, y: (e.clientY - this.nudgeDrag.y) / s }, -this.view.rotation);
+        const nx = this.nudgeDrag.off[0] + delta.x;
+        const ny = this.nudgeDrag.off[1] + delta.y;
         this.store.setMapOffset(nx, ny);
         this.draw();
         return;
@@ -963,7 +1010,7 @@ export class MapRenderer {
       ctx.fillRect(0, 0, width, height);
       ctx.fillStyle = '#555';
       ctx.font = '14px var(--mono)';
-      ctx.fillText('Load a project to begin', 20, height / 2);
+      this._text(ctx, 'fillText', 'Load a project to begin', 20, height / 2);
       return;
     }
 
@@ -1054,8 +1101,7 @@ export class MapRenderer {
     const [fw, fh] = this.store.state.imageFull || [];
     const off = this.store.state.mapOffset || [0, 0];
     ctx.save();
-    ctx.translate(view.panX + off[0] * s, view.panY + off[1] * s);
-    ctx.scale(s, s);
+    this._applyView(ctx, view, off);
     ctx.drawImage(img, 0, 0, fw || img.naturalWidth, fh || img.naturalHeight);
     ctx.restore();
   }
@@ -1065,8 +1111,7 @@ export class MapRenderer {
     const edges = this.store.state.ptpEdges || {};
     const s = view.baseScale * view.zoom;
     ctx.save();
-    ctx.translate(view.panX, view.panY);
-    ctx.scale(s, s);
+    this._applyView(ctx, view);
     ctx.lineCap = 'round';
     for (const edge of enumeratePtpEdges(edges, nodes)) {
       const selected = this.selectedPtpEdge?.edgeKey === edge.edgeKey;
@@ -1126,8 +1171,7 @@ export class MapRenderer {
     const visibility = this.nodeFeatureVisibility || {};
     const nodeAttrs = this.store.state.nodeAttrs || {};
     ctx.save();
-    ctx.translate(view.panX, view.panY);
-    ctx.scale(s, s);
+    this._applyView(ctx, view);
     for (const node of Object.values(nodes)) {
       const selected = pending === node.id;
       const hovered = hoverId === node.id;
@@ -1139,14 +1183,17 @@ export class MapRenderer {
       ctx.strokeStyle = selected ? '#ff7a1a' : '#1a1a1a';
       ctx.lineWidth = 1.5 / s;
       ctx.stroke();
+      ctx.save();
+      this._uprightGroup(ctx, view, node);
       const label = node.name || node.id;
       ctx.font = `${Math.max(10, 11 / s)}px var(--font-data)`;
       ctx.fillStyle = '#1a1a1a';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillText(label, node.x, node.y + r + 2 / s);
+      this._text(ctx, 'fillText', label, node.x, node.y + r + 2 / s);
 
       this._drawNodeFeatureBadges(ctx, node, r, s, nodeFeatures, visibility, nodeAttrs[node.id]);
+      ctx.restore();
     }
     ctx.restore();
   }
@@ -1191,7 +1238,7 @@ export class MapRenderer {
       ctx.fillStyle = '#111';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(chips[i].text, cx + w / 2, cy + chipH / 2 + 0.5 / s);
+      this._text(ctx, 'fillText', chips[i].text, cx + w / 2, cy + chipH / 2 + 0.5 / s);
       cx += w + chipGap;
     }
   }
@@ -1205,8 +1252,7 @@ export class MapRenderer {
       ctx.save();
       ctx.globalAlpha = trace.opacity;
       // Traces are registered to the scan raster — they nudge WITH the map.
-      ctx.translate(view.panX + off[0] * s, view.panY + off[1] * s);
-      ctx.scale(s, s);
+      this._applyView(ctx, view, off);
       ctx.drawImage(trace.img, 0, 0, fw || trace.img.naturalWidth, fh || trace.img.naturalHeight);
       ctx.restore();
     }
@@ -1270,8 +1316,7 @@ export class MapRenderer {
     const grid = this.store.state.grid;
     const terrain = this.store.state.terrain.terrain || {};
     ctx.save();
-    ctx.translate(view.panX, view.panY);
-    ctx.scale(s, s);
+    this._applyView(ctx, view);
     ctx.lineWidth = 1.2 / s;
     // Paint every terrain code — do not gate on store.centers. Hexsides already
     // use grid geometry directly; terrain must render when centers is lattice-only
@@ -1300,8 +1345,7 @@ export class MapRenderer {
     const grid = this.store.state.grid;
     const elevation = this.store.state.elevation || {};
     ctx.save();
-    ctx.translate(view.panX, view.panY);
-    ctx.scale(s, s);
+    this._applyView(ctx, view);
 
     const dataFont = this._dataFontFamily();
     for (const [code, raw] of Object.entries(elevation)) {
@@ -1327,8 +1371,8 @@ export class MapRenderer {
       ctx.lineWidth = 3 / s;
       ctx.strokeStyle = INK_CASING;
       ctx.fillStyle = '#1a1a1a';
-      ctx.strokeText(String(level), center.x, center.y);
-      ctx.fillText(String(level), center.x, center.y);
+      this._text(ctx, 'strokeText', String(level), center.x, center.y);
+      this._text(ctx, 'fillText', String(level), center.x, center.y);
     }
     ctx.restore();
   }
@@ -1340,8 +1384,7 @@ export class MapRenderer {
     if (!slopes.size) return;
 
     ctx.save();
-    ctx.translate(view.panX, view.panY);
-    ctx.scale(s, s);
+    this._applyView(ctx, view);
     ctx.lineCap = 'round';
 
     for (const [edgeKey, info] of slopes) {
@@ -1428,8 +1471,7 @@ export class MapRenderer {
     }
 
     ctx.save();
-    ctx.translate(view.panX, view.panY);
-    ctx.scale(s, s);
+    this._applyView(ctx, view);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     if (fade < 1) ctx.globalAlpha = fade;
@@ -1440,8 +1482,8 @@ export class MapRenderer {
       ctx.lineWidth = 3 / s;
       ctx.strokeStyle = INK_CASING;
       ctx.fillStyle = '#1a1a1a';
-      ctx.strokeText(text, x, y);
-      ctx.fillText(text, x, y);
+      this._text(ctx, 'strokeText', text, x, y);
+      this._text(ctx, 'fillText', text, x, y);
     };
 
     for (const code of codes) {
@@ -1458,6 +1500,8 @@ export class MapRenderer {
       const namePx = Math.max(7, Math.min(11, r * 0.28 * s)) * labelScale;
       if (abbr && abbrPx < 6 && !name) continue;
 
+      ctx.save();
+      this._uprightGroup(ctx, view, center);
       const x = center.x;
       if (abbr) {
         drawLabelText(abbr, x, center.y - r * 0.33, abbrPx, 600);
@@ -1466,6 +1510,7 @@ export class MapRenderer {
         const nameY = abbr ? center.y - r * 0.08 : center.y - r * 0.33;
         drawLabelText(name, x, nameY, namePx, 500);
       }
+      ctx.restore();
     }
     ctx.restore();
   }
@@ -1474,8 +1519,7 @@ export class MapRenderer {
     const s = view.baseScale * view.zoom;
     const grid = this.store.state.grid;
     ctx.save();
-    ctx.translate(view.panX, view.panY);
-    ctx.scale(s, s);
+    this._applyView(ctx, view);
     // Near-black for contrast over parchment scans (was white @22% — invisible
     // on light maps; Ray 2026-07-01).
     ctx.strokeStyle = 'rgba(10,10,10,0.65)';
@@ -1520,8 +1564,7 @@ export class MapRenderer {
     };
     ctx.save();
     if (strokeAlpha < 1) ctx.globalAlpha = strokeAlpha;
-    ctx.translate(view.panX, view.panY);
-    ctx.scale(s, s);
+    this._applyView(ctx, view);
     const spacing = 3.5 / s;
     const visible = this.hexsideVisibility || {};
     for (const [edgeKey, features] of Object.entries(this.store.state.hexsides || {})) {
@@ -1637,8 +1680,7 @@ export class MapRenderer {
     const visibility = this.pointFeatureVisibility || {};
     const labelsVisible = this.pointFeatureLabelsVisible !== false;
     ctx.save();
-    ctx.translate(view.panX, view.panY);
-    ctx.scale(s, s);
+    this._applyView(ctx, view);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -1651,6 +1693,8 @@ export class MapRenderer {
         return { type, rec: byType[type], pf };
       }).filter((e) => e.pf && e.pf.glyph && visibility[e.type] !== false);
       if (!entries.length) continue;
+      ctx.save();
+      this._uprightGroup(ctx, view, center);
 
       const fontPx = Math.max(10, Math.min(26, r * 0.65 * s));
       const labelPx = Math.max(8, Math.min(14, r * 0.38 * s));
@@ -1663,8 +1707,8 @@ export class MapRenderer {
         ctx.lineWidth = 3 / s;
         ctx.strokeStyle = INK_CASING;
         ctx.fillStyle = '#1a1a1a';
-        ctx.strokeText(String(text), x, y + step * 0.55);
-        ctx.fillText(String(text), x, y + step * 0.55);
+        this._text(ctx, 'strokeText', String(text), x, y + step * 0.55);
+        this._text(ctx, 'fillText', String(text), x, y + step * 0.55);
         ctx.font = `${fontPx}px serif`;
       };
 
@@ -1675,7 +1719,7 @@ export class MapRenderer {
           const x = center.x + startX + i * step;
           const y = center.y;
           ctx.fillStyle = '#1a1a1a';
-          ctx.fillText(entry.pf.glyph, x, y);
+          this._text(ctx, 'fillText', entry.pf.glyph, x, y);
           const num = labelsVisible ? this._firstNumericAttr(entry.rec?.attrs, entry.pf.attrs) : null;
           if (num != null) drawLabel(num, x, y);
         });
@@ -1686,11 +1730,12 @@ export class MapRenderer {
           const x = center.x;
           const y = center.y + startY + i * step;
           ctx.fillStyle = '#1a1a1a';
-          ctx.fillText(entry.pf.glyph, x, y);
+          this._text(ctx, 'fillText', entry.pf.glyph, x, y);
           const num = labelsVisible ? this._firstNumericAttr(entry.rec?.attrs, entry.pf.attrs) : null;
           if (num != null) drawLabel(num, x, y);
         });
       }
+      ctx.restore();
     }
 
     // Legacy hexFeatures tags (glyph-only, no attrs)
@@ -1713,14 +1758,14 @@ export class MapRenderer {
         const startX = -(n - 1) * step * 0.5;
         glyphs.forEach((g, i) => {
           ctx.fillStyle = '#1a1a1a';
-          ctx.fillText(g, center.x + startX + i * step, center.y);
+          this._text(ctx, 'fillText', g, center.x + startX + i * step, center.y);
         });
       } else {
         const n = glyphs.length;
         const startY = -(n - 1) * step * 0.5;
         glyphs.forEach((g, i) => {
           ctx.fillStyle = '#1a1a1a';
-          ctx.fillText(g, center.x, center.y + startY + i * step);
+          this._text(ctx, 'fillText', g, center.x, center.y + startY + i * step);
         });
       }
     }
@@ -1735,8 +1780,7 @@ export class MapRenderer {
     // Group hover fill is shown behind selection strokes.
     if (this.groupHoverHexes.size) {
       ctx.save();
-      ctx.translate(view.panX, view.panY);
-      ctx.scale(s, s);
+      this._applyView(ctx, view);
       for (const code of this.groupHoverHexes) {
         const poly = hexPolygon(code, grid);
         if (!poly) continue;
@@ -1757,8 +1801,7 @@ export class MapRenderer {
       if (code !== this.selectedHex) codes.push(code);
     }
     ctx.save();
-    ctx.translate(view.panX, view.panY);
-    ctx.scale(s, s);
+    this._applyView(ctx, view);
     for (const code of codes) {
       const poly = hexPolygon(code, grid);
       if (!poly) continue;
@@ -1798,8 +1841,7 @@ export class MapRenderer {
     const ep = sharedEdgeEndpoints(hex, nb, grid);
     if (ep) {
       ctx.save();
-      ctx.translate(view.panX, view.panY);
-      ctx.scale(s, s);
+      this._applyView(ctx, view);
       ctx.beginPath();
       ctx.moveTo(ep.a.x, ep.a.y);
       ctx.lineTo(ep.b.x, ep.b.y);
@@ -1814,8 +1856,7 @@ export class MapRenderer {
     if (nb && this.store.centers[nb]) {
       const poly = hexPolygon(nb, grid);
       ctx.save();
-      ctx.translate(view.panX, view.panY);
-      ctx.scale(s, s);
+      this._applyView(ctx, view);
       ctx.beginPath();
       ctx.moveTo(poly[0].x, poly[0].y);
       for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
@@ -1837,8 +1878,7 @@ export class MapRenderer {
     if (!ep) return;
     const s = view.baseScale * view.zoom;
     ctx.save();
-    ctx.translate(view.panX, view.panY);
-    ctx.scale(s, s);
+    this._applyView(ctx, view);
     ctx.beginPath();
     ctx.moveTo(ep.a.x, ep.a.y);
     ctx.lineTo(ep.b.x, ep.b.y);
@@ -1898,8 +1938,7 @@ export class MapRenderer {
       this._drawHatchedHex(ctx, view, code, '#d02020', false);
       const poly = hexPolygon(code, grid);
       ctx.save();
-      ctx.translate(view.panX, view.panY);
-      ctx.scale(s, s);
+      this._applyView(ctx, view);
       ctx.beginPath();
       ctx.moveTo(poly[0].x, poly[0].y);
       for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
@@ -1918,8 +1957,7 @@ export class MapRenderer {
 
     // Orphan hexsides: red X along the edge
     ctx.save();
-    ctx.translate(view.panX, view.panY);
-    ctx.scale(s, s);
+    this._applyView(ctx, view);
     ctx.strokeStyle = '#ff2050';
     ctx.lineWidth = 2.5 / s;
     ctx.setLineDash([]);
@@ -1950,8 +1988,7 @@ export class MapRenderer {
     const poly = hexPolygon(code, grid);
 
     ctx.save();
-    ctx.translate(view.panX, view.panY);
-    ctx.scale(s, s);
+    this._applyView(ctx, view);
     ctx.beginPath();
     ctx.moveTo(poly[0].x, poly[0].y);
     for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);

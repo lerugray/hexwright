@@ -92,7 +92,7 @@ export class UI {
     const ids = [
       'strip-project-name', 'strip-project-sub', 'mode-hint', 'save-state',
       'load-map', 'load-grid', 'load-terrain', 'load-sides',
-      'fit-view', 'undo', 'clear-select', 'toggle-help',
+      'fit-view', 'rotate-view', 'undo', 'clear-select', 'toggle-help',
       'view-mode', 'tool-rail', 'tool-inspect', 'tool-terrain', 'tool-elevation', 'tool-edges', 'tool-features', 'tool-nudge',
       'tool-node-features',
       'brush-card', 'brush-mode-tag', 'brush-ink-list',
@@ -395,11 +395,17 @@ export class UI {
           const step = 1; // world (full-image) pixels
           const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
           const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-          this.store.nudgeMapOffset(dx, dy);
+          const delta = this.renderer.screenToWorld({ x: this.renderer.view.panX + dx, y: this.renderer.view.panY + dy });
+          const scale = this.renderer.view.baseScale * this.renderer.view.zoom;
+          this.store.nudgeMapOffset(delta.x * scale, delta.y * scale);
           this.renderer.draw();
           const off = this.store.state.mapOffset || [0, 0];
           this.status(`Map offset: ${Math.round(off[0])}, ${Math.round(off[1])} px`, 2500);
         }
+      }
+      if (e.key.toLowerCase() === 'r' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        this.rotateView();
       }
       if (e.key.toLowerCase() === 'v') this.cycleViewMode();
       if (e.key.toLowerCase() === 'l') this.toggleTerrainLabels();
@@ -428,6 +434,7 @@ export class UI {
     this.store.onChange((reason) => {
       // Loads aren't edits: booting a project/palette must not flag "unsaved edit"
       // (the autosave listener registers after boot-load, so nothing would clear it).
+      if (reason === 'project') this._loadProjectRotation();
       if (reason !== 'project' && reason !== 'palette') this.markDirty();
       this.updateUI(reason);
     });
@@ -477,6 +484,7 @@ export class UI {
   }
 
   bindControls() {
+    this.els['rotate-view'].addEventListener('click', () => this.rotateView());
     this.els['fit-view'].addEventListener('click', () => this.renderer.fitView());
     this.els['undo'].addEventListener('click', () => this.store.undo());
     this.els['clear-select'].addEventListener('click', () => this.closeInspector());
@@ -2050,6 +2058,32 @@ export class UI {
     this.renderer.hexsideVisibility[featureKey] = !this._featureVisible(featureKey);
     this._renderLayersPanel();
     this.renderer.draw();
+  }
+
+  _rotationKey() {
+    const state = this.store.state;
+    return 'hexwright.view.rotation.' + JSON.stringify(state.name || '');
+  }
+
+  _loadProjectRotation() {
+    let rotation = this.store.viewDefaults?.rotation ?? 0;
+    try {
+      const saved = localStorage.getItem(this._rotationKey());
+      if (saved !== null && [0, 90, 180, 270].includes(JSON.parse(saved))) rotation = JSON.parse(saved);
+    } catch (_) { /* unavailable or corrupt storage: use project default */ }
+    this.renderer.setRotation(rotation);
+    this._updateRotationButton();
+  }
+
+  _updateRotationButton() {
+    this.els['rotate-view'].textContent = `Rotate view ${this.renderer.view.rotation}°`;
+  }
+
+  rotateView() {
+    this.renderer.setRotation((this.renderer.view.rotation + 90) % 360);
+    try { localStorage.setItem(this._rotationKey(), JSON.stringify(this.renderer.view.rotation)); } catch (_) { /* quota */ }
+    this._updateRotationButton();
+    if (this.inspectorHex) this._positionInspector();
   }
 
   _loadViewSettings() {

@@ -372,6 +372,7 @@ export class ProjectStore {
   // ----------------- project loading / migration -----------------
 
   async loadProject(project) {
+    this.viewDefaults = project.view || {};
     if (project && project.palette && typeof project.palette === 'object') {
       await this.loadPalette(project.palette);
     } else {

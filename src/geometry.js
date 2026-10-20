@@ -502,14 +502,25 @@ export function pointInPolygon(pt, poly) {
   return inside;
 }
 
+// Quarter-turn view transforms never alter native map coordinates.
+export function rotatePoint(pt, rotation = 0) {
+  switch (((rotation % 360) + 360) % 360) {
+    case 90: return { x: -pt.y, y: pt.x };
+    case 180: return { x: -pt.x, y: -pt.y };
+    case 270: return { x: pt.y, y: -pt.x };
+    default: return { x: pt.x, y: pt.y };
+  }
+}
+
 export function screenToWorld(pt, view) {
   const s = view.baseScale * view.zoom;
-  return { x: (pt.x - view.panX) / s, y: (pt.y - view.panY) / s };
+  return rotatePoint({ x: (pt.x - view.panX) / s, y: (pt.y - view.panY) / s }, -(view.rotation || 0));
 }
 
 export function worldToScreen(pt, view) {
   const s = view.baseScale * view.zoom;
-  return { x: pt.x * s + view.panX, y: pt.y * s + view.panY };
+  const p = rotatePoint(pt, view.rotation);
+  return { x: p.x * s + view.panX, y: p.y * s + view.panY };
 }
 
 export function pairKey(a, b) {

@@ -412,3 +412,33 @@ See `verify/README.md` for the full list.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+### View rotation
+
+Use **Rotate view** in the toolbar or press **R** to cycle 0°, 90°, 180°,
+and 270° clockwise. Fit (**F**) uses the rotated board dimensions. Map layers
+rotate together; generated labels and the inspector stay upright. Text baked
+into a raster rotates with that raster. Picks, painting, pan and cursor-centred
+zoom operate in the displayed orientation. All saved data and exports (including
+classification PNGs) retain native coordinates.
+
+A `project.json` manifest may provide a default:
+
+```json
+"view": { "rotation": 90 }
+```
+
+Only 0, 90, 180 and 270 are accepted; other values default to 0. A user's
+rotation choice is stored separately in browser localStorage per project name
+(the same identity used for saved sessions), overriding the manifest default.
+It does not modify project data or exports. Projects without a default or saved
+choice open at 0°. For USCW's `USCWMap-rot90ccw.png`, **90° clockwise** restores
+the upright map. Add the example above to the USCW manifest; that repository is
+not modified by this feature.
+
+Rotation verification: `node verify/view-rotation-check.mjs` runs geometry and
+headless Chromium interaction/export checks. `--unit-only` runs just the Node
+checks. Add `--frames` to also capture USCW at 0° and 90° and the demo at 90°,
+1440×900, in `verify/out/view-rotation-s312/`. The USCW source defaults to
+`~/Desktop/Dev Work/us-civil-war-digital/materials/map-data/uscw`; override with
+`USCW_MAP_DIR`. The capture server reads that directory without changing it.

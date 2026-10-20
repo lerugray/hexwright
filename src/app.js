@@ -499,6 +499,7 @@ async function loadProjectFromManifest(manifestUrl) {
 
   return {
     name: manifest.name,
+    view: manifest.view,
     mapFamily: manifest.mapFamily || (nodesDoc ? 'ptp' : 'hex'),
     mapImage: mapImg,
     imageFull: manifest.imageFull || grid?.image_full || nodesDoc?.meta?.imageFull || [mapImg.naturalWidth, mapImg.naturalHeight],
@@ -856,6 +857,7 @@ async function main() {
       }
       // Review-mode is a manifest-time view directive, not operator data; ensure
       // the restored session inherits it so the sitting opens clean every time.
+      restored.view = project.view;
       restored.reviewMode = project.reviewMode === true;
       restored.reviewModeHiddenLayers = Array.isArray(project.reviewModeHiddenLayers)
         ? project.reviewModeHiddenLayers
